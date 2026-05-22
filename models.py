@@ -57,7 +57,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS platforms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            short_name TEXT NOT NULL UNIQUE
+            short_name TEXT NOT NULL UNIQUE,
+            category TEXT NOT NULL DEFAULT 'modern_console'
         );
 
         -- Game-Platform relationship (which platforms you own the game on)
@@ -123,13 +124,13 @@ def init_db():
 
     # Insert default platforms
     platforms = [
-        ("PlayStation", "PS"),
-        ("Nintendo Switch", "Switch"),
-        ("Xbox", "Xbox"),
-        ("PC", "PC"),
+        ("PlayStation", "PS", "modern_console"),
+        ("Nintendo Switch", "Switch", "modern_console"),
+        ("Xbox", "Xbox", "modern_console"),
+        ("PC", "PC", "pc"),
     ]
     conn.executemany(
-        "INSERT OR IGNORE INTO platforms (name, short_name) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO platforms (name, short_name, category) VALUES (?, ?, ?)",
         platforms
     )
 
@@ -212,6 +213,26 @@ def clean_title(title):
     return title
 
 
+def migrate_platform_category(conn):
+    """Add platforms.category if missing and (re)backfill from short_name.
+
+    Idempotent: safe to run on every startup. Backfill is deterministic
+    (derived purely from short_name), so re-running never loses data.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(platforms)").fetchall()]
+    if "category" not in cols:
+        conn.execute(
+            "ALTER TABLE platforms ADD COLUMN category TEXT NOT NULL "
+            "DEFAULT 'modern_console'"
+        )
+    for row in conn.execute("SELECT id, short_name FROM platforms").fetchall():
+        conn.execute(
+            "UPDATE platforms SET category = ? WHERE id = ?",
+            (classify_platform(row[1]), row[0]),
+        )
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -245,6 +266,9 @@ def migrate_db():
         conn.execute("ALTER TABLE user_ratings ADD COLUMN series_order INTEGER")
         conn.commit()
         print("Added series columns to user_ratings")
+
+    # Add/backfill platform era category
+    migrate_platform_category(conn)
 
     # Clean up titles - remove (PS4), trademark symbols, etc.
     games = conn.execute("SELECT id, title FROM games").fetchall()
