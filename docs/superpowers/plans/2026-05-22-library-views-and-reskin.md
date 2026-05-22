@@ -25,7 +25,7 @@
 | `tests/test_migration.py` | Migration idempotency + backfill | Create |
 | `tests/test_api_games.py` | API payload includes `categories` + `physical` | Create |
 
-**Conventions:** Run all commands from the project root `C:\Users\Jeff\Documents\Projects\Game Tracker`. Tests run with `python -m pytest`. Commit after every task.
+**Conventions:** Run all commands from the project root. Tests run with `python -m pytest`. Commit after every task.
 
 ---
 
