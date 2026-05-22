@@ -1,0 +1,40 @@
+# ---- Secrets / credentials (NEVER commit) ----
+config.json
+.igdb_token.json
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ---- Personal library data (kept local-only) ----
+games.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+playstation_games.csv
+switch_games.csv
+xbox_games.csv
+My Game Backlog.html
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ---- Claude Code (machine-local) ----
+.claude/settings.local.json
+
+# ---- OS / editor junk ----
+nul
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
