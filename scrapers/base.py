@@ -28,6 +28,28 @@ SCRAPE_DIR = PROJECT_ROOT / "scraped"        # normalized JSON output (gitignore
 
 VALID_SOURCES = frozenset({"playstation", "xbox", "nintendo"})
 
+# Prefer a real installed browser (vendor logins like Nintendo block bundled
+# Chromium's automation fingerprint); fall back to bundled Chromium.
+BROWSER_CHANNELS = ("chrome", "msedge")
+# Hides the navigator.webdriver / AutomationControlled signal many logins check.
+LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled",)
+
+
+def _launch_context(p, headless: bool):
+    """Launch a persistent context, trying real browser channels first."""
+    for channel in BROWSER_CHANNELS:
+        try:
+            return p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR), headless=headless,
+                channel=channel, args=list(LAUNCH_ARGS),
+            )
+        except Exception as exc:  # channel not installed on this machine
+            logger.debug("browser channel %s unavailable: %s", channel, exc)
+    logger.info("falling back to bundled Chromium (no installed Chrome/Edge found)")
+    return p.chromium.launch_persistent_context(
+        user_data_dir=str(PROFILE_DIR), headless=headless, args=list(LAUNCH_ARGS),
+    )
+
 
 @dataclass
 class ScrapedGame:
@@ -83,10 +105,7 @@ def persistent_browser(headless: bool = False) -> Iterator[Page]:
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(PROFILE_DIR),
-            headless=headless,
-        )
+        context = _launch_context(p, headless)
         try:
             page = context.pages[0] if context.pages else context.new_page()
             yield page
@@ -106,3 +125,41 @@ def autoscroll(page: Page, max_rounds: int = 60, pause_ms: int = 500) -> None:
         prev_height = height
     else:
         logger.warning("autoscroll hit max_rounds=%d without a stable height", max_rounds)
+
+
+@contextmanager
+def capturing_browser(headless: bool = False):
+    """Persistent browser that records JSON XHR/fetch responses seen in the session.
+
+    Yields ``(page, captured)`` where ``captured`` is a growing list of
+    ``{"url", "status", "body"}`` dicts. Used for API-backed sites (virtualized
+    SPAs) whose game list is fetched as JSON rather than rendered into the HTML.
+    Registered at the context level so responses from popups (e.g. OAuth login)
+    are captured too.
+    """
+    from playwright.sync_api import sync_playwright
+
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    captured: list[dict] = []
+
+    def _on_response(response) -> None:
+        try:
+            if response.request.resource_type not in ("xhr", "fetch"):
+                return
+            ctype = (response.headers or {}).get("content-type", "")
+            if "json" not in ctype and "graphql" not in response.url:
+                return
+            captured.append(
+                {"url": response.url, "status": response.status, "body": response.text()}
+            )
+        except Exception as exc:  # body may be unavailable (redirects, aborted, etc.)
+            logger.debug("skip response %s: %s", getattr(response, "url", "?"), exc)
+
+    with sync_playwright() as p:
+        context = _launch_context(p, headless)
+        context.on("response", _on_response)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            yield page, captured
+        finally:
+            context.close()
