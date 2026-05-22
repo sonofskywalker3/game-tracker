@@ -11,6 +11,8 @@ import argparse
 import difflib
 import json
 import logging
+import sqlite3
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -44,7 +46,8 @@ class MatchResult:
     matched_title: Optional[str] = None
 
 
-def resolve_game(conn, source: str, external_id: Optional[str], title: str) -> MatchResult:
+def resolve_game(conn: sqlite3.Connection, source: str, external_id: Optional[str],
+                 title: str) -> MatchResult:
     """Resolve a scraped game to an existing game_id via the match cascade."""
     if external_id:
         row = conn.execute(
@@ -79,8 +82,8 @@ class ImportStats:
     platform_links_added: int = 0
     external_ids_added: int = 0
     ratings_created: int = 0
-    platforms_created: list = field(default_factory=list)
-    fuzzy_candidates: list = field(default_factory=list)  # (scraped, existing, score)
+    platforms_created: list[tuple[str, str]] = field(default_factory=list)
+    fuzzy_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
     def merge(self, other: "ImportStats") -> None:
         self.new_games += other.new_games
@@ -95,7 +98,7 @@ class ImportStats:
         self.fuzzy_candidates += other.fuzzy_candidates
 
 
-def _create_game(conn, game: dict) -> int:
+def _create_game(conn: sqlite3.Connection, game: dict) -> int:
     display = models.clean_title(game["title"])
     cur = conn.execute(
         "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?)",
@@ -104,7 +107,8 @@ def _create_game(conn, game: dict) -> int:
     return cur.lastrowid
 
 
-def _apply_or_plan(conn, game_id, game, source, stats, *, dry_run, is_new) -> None:
+def _apply_or_plan(conn: sqlite3.Connection, game_id: Optional[int], game: dict, source: str,
+                   stats: ImportStats, *, dry_run: bool, is_new: bool) -> None:
     """Add platform link + external id + default rating. Read-only when dry_run.
 
     When is_new, the game has no existing rows, so every sub-add is new (and the
@@ -171,10 +175,20 @@ def _interactive_confirm(scraped: str, existing: str, score: float) -> bool:
     return answer.strip().lower() == "y"
 
 
-def import_games(conn, games: list[dict], source: str, *, dry_run: bool = False,
+def _auto_confirm(scraped: str, existing: str, score: float) -> bool:
+    """confirm_fn that accepts every fuzzy match (used by --accept-fuzzy)."""
+    return True
+
+
+def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
+                 dry_run: bool = False,
                  confirm_fn: Callable[[str, str, float], bool] = _interactive_confirm) -> ImportStats:
     """Reconcile a list of scraped game dicts into the DB. Returns stats."""
     stats = ImportStats()
+    # Normalized keys of games created earlier in THIS call. In a dry run the new
+    # rows aren't inserted, so without this a same-batch duplicate title would be
+    # miscounted as another "new" game; a real run unifies them via the DB.
+    batch_new_keys: set[str] = set()
     for game in games:
         m = resolve_game(conn, source, game.get("external_id"), game["title"])
         is_new = False
@@ -197,7 +211,14 @@ def import_games(conn, games: list[dict], source: str, *, dry_run: bool = False,
                 stats.new_games += 1
                 is_new = True
                 game_id = _create_game(conn, game)
+                batch_new_keys.add(match_key(game["title"]))
         else:  # new
+            key = match_key(game["title"])
+            if dry_run and key in batch_new_keys:
+                # A real run would unify this with the earlier same-batch new game.
+                stats.title_matches += 1
+                continue
+            batch_new_keys.add(key)
             stats.new_games += 1
             is_new = True
             game_id = None if dry_run else _create_game(conn, game)
@@ -206,7 +227,7 @@ def import_games(conn, games: list[dict], source: str, *, dry_run: bool = False,
     return stats
 
 
-def _iter_json_paths(paths: list[str]):
+def _iter_json_paths(paths: Sequence[str]) -> Iterator[Path]:
     for p in paths:
         path = Path(p)
         if path.is_dir():
@@ -223,15 +244,18 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
     logger.info("matched by title:   %d", total.title_matches)
     logger.info("platform links:     +%d", total.platform_links_added)
     logger.info("external ids:       +%d", total.external_ids_added)
+    logger.info("default ratings:    +%d", total.ratings_created)
+    if total.fuzzy_confirmed or total.fuzzy_rejected:
+        logger.info("fuzzy merged/new:   %d / %d", total.fuzzy_confirmed, total.fuzzy_rejected)
     if total.platforms_created:
-        logger.info("new platform rows:  %s", total.platforms_created)
+        logger.info("new platform rows:  %s", sorted(set(total.platforms_created)))
     if total.fuzzy_candidates:
         logger.info("FUZZY — needs your review (%d):", len(total.fuzzy_candidates))
         for scraped, existing, score in total.fuzzy_candidates:
             logger.info("  '%s'  ~  '%s'  (%.2f)", scraped, existing, score)
 
 
-def main(argv=None) -> None:
+def main(argv: Optional[Sequence[str]] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Import scraped library JSON into games.db")
     parser.add_argument("paths", nargs="+", help="JSON files or a directory of them (e.g. scraped)")
@@ -242,7 +266,7 @@ def main(argv=None) -> None:
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
     conn = models.get_db()
-    confirm = (lambda *a: True) if args.accept_fuzzy else _interactive_confirm
+    confirm = _auto_confirm if args.accept_fuzzy else _interactive_confirm
 
     total = ImportStats()
     for path in _iter_json_paths(args.paths):
