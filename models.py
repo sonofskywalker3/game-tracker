@@ -131,6 +131,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_user_ratings_sort_order ON user_ratings(sort_order);
         CREATE INDEX IF NOT EXISTS idx_game_tags_game ON game_tags(game_id);
         CREATE INDEX IF NOT EXISTS idx_game_tags_tag ON game_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS idx_game_external_ids_game ON game_external_ids(game_id);
     """)
 
     # Insert default platforms

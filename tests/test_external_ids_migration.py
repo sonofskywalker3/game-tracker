@@ -24,6 +24,18 @@ def test_migration_is_idempotent():
     conn = _conn_without_table()
     migrate_external_ids(conn)
     migrate_external_ids(conn)  # second run must not raise
+    indexes = {r[1] for r in conn.execute("PRAGMA index_list(game_external_ids)").fetchall()}
+    assert "idx_game_external_ids_game" in indexes
+
+
+def test_fk_to_games_is_enforced():
+    conn = _conn_without_table()
+    conn.execute("PRAGMA foreign_keys = ON")
+    migrate_external_ids(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO game_external_ids (game_id, source, external_id) VALUES (999, 'xbox', 'X1')"
+        )
 
 
 def test_source_external_id_is_unique():
