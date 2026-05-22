@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 
-from scrapers.base import ScrapedGame
+from scrapers.base import ScrapedGame, auth_headers, capture_request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ OP_NAME = "getPurchasedGameList"
 SHA256 = "827a423f6a8ddca4107ac01395af2ec0eafd8396fc7fa204aaf9b7ed2eefa168"
 PAGE_SIZE = 50
 MAX_GAMES = 5000  # safety cap against a server that ignores the start cursor
+REQUEST_DELAY_MS = 400  # gentle pacing between API page requests
 
 # The API returns platform as "PS4"/"PS5" directly.
 PLATFORM_LABELS = {"PS5": "PS5", "PS4": "PS4"}
@@ -59,7 +60,7 @@ def _extract(payload: dict) -> list[ScrapedGame]:
     return parse_games(retrieve.get("games") or [])
 
 
-def _request_page(page, start: int) -> dict:
+def _request_page(page, start: int, headers: dict) -> dict:
     variables = {
         "isActive": True, "platform": ["ps4", "ps5"], "size": PAGE_SIZE,
         "start": start, "sortBy": "ACTIVE_DATE", "sortDirection": "desc",
@@ -72,7 +73,7 @@ def _request_page(page, start: int) -> dict:
             separators=(",", ":"),
         ),
     }
-    resp = page.request.get(GRAPHQL_URL, params=params)
+    resp = page.request.get(GRAPHQL_URL, params=params, headers=headers)
     if not resp.ok:
         raise RuntimeError(
             f"PSN getPurchasedGameList failed: {resp.status} {resp.status_text} "
@@ -88,11 +89,14 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     shared by page.request). Stops when a page yields no new product IDs. The
     `captured` page traffic is unused here — PSN's list comes from the API.
     """
+    headers = auth_headers(
+        capture_request_headers(page, OP_NAME, trigger=lambda: page.goto(VENDOR_URL))
+    )
     games: list[ScrapedGame] = []
     seen: set[str] = set()
     start = 0
     while start < MAX_GAMES:
-        items = _extract(_request_page(page, start))
+        items = _extract(_request_page(page, start, headers))
         new = [g for g in items if g.external_id and g.external_id not in seen]
         if not new:
             break
@@ -100,4 +104,5 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
         games.extend(new)
         start += len(items)
         logger.info("playstation: %d games so far...", len(games))
+        page.wait_for_timeout(REQUEST_DELAY_MS)
     return games

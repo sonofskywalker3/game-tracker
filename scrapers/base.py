@@ -182,3 +182,39 @@ def scroll_until_idle(page: Page, captured: list, *, max_rounds: int = 80,
                 return
         else:
             stable, last = 0, len(captured)
+
+
+def capture_request_headers(page, url_substring: str, trigger,
+                            *, timeout_ms: int = 15000) -> dict:
+    """Run `trigger` and capture the first matching XHR/fetch request's headers.
+
+    Lets us reuse the page's own auth (e.g. PSN's Authorization bearer) when
+    replaying an API for pagination, since cookies alone don't authenticate the
+    cross-origin np.playstation.com endpoints.
+    """
+    holder: dict = {}
+
+    def _on_request(req) -> None:
+        if not holder and url_substring in req.url:
+            holder.update(req.headers)
+
+    page.on("request", _on_request)
+    try:
+        trigger()
+        waited = 0
+        while not holder and waited < timeout_ms:
+            page.wait_for_timeout(250)
+            waited += 250
+    finally:
+        page.remove_listener("request", _on_request)
+    return holder
+
+
+def auth_headers(headers: dict) -> dict:
+    """Subset of captured request headers that are safe + relevant to replay."""
+    keep = {}
+    for key, value in (headers or {}).items():
+        k = key.lower()
+        if k == "authorization" or k.startswith("x-") or "token" in k or "csrf" in k:
+            keep[key] = value
+    return keep

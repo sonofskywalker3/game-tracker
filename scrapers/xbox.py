@@ -1,18 +1,17 @@
 """Xbox library scraper.
 
 Owned games come from the Microsoft account order history API
-(account.microsoft.com/billing/orders/list), which the page fetches as JSON and
-pages in as you scroll. We observe those responses (captured by the browser),
-filter each order's line items to itemTypeName == "Game", and read the title +
-stable Store product id. The default view shows only ~30 days, so widen the date
-filter before scraping to capture the full history.
+(account.microsoft.com/billing/orders/list). It paginates via a continuationToken
+(each response carries the token for the next page), so we replay the API through
+all pages with period=SevenYears, reusing the page's own auth headers. Each
+order's line items are filtered to itemTypeName == "Game" for the title + stable
+Store product id.
 """
 from __future__ import annotations
 
-import json
 import logging
 
-from scrapers.base import ScrapedGame, scroll_until_idle
+from scrapers.base import ScrapedGame, auth_headers, capture_request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +20,21 @@ SOURCE = "xbox"
 GAME_ITEM_TYPE = "Game"
 PLATFORM = "Xbox"  # modern Xbox; reuses the existing coarse platform row
 
+ORDERS_API = "https://account.microsoft.com/billing/orders/list"
+ORDERS_PARAMS = {
+    "period": "SevenYears",
+    "orderTypeFilter": "All",
+    "filterChangeCount": "1",
+    "isInD365Orders": "true",
+    "isPiDetailsRequired": "true",
+    "timeZoneOffsetMinutes": "240",
+}
+MAX_PAGES = 200
+REQUEST_DELAY_MS = 400
+
 
 def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
-    """Extract owned games from captured orders/list response payloads."""
+    """Extract owned games from orders/list response payloads."""
     games: list[ScrapedGame] = []
     seen: set[str] = set()
     for body in responses:
@@ -47,26 +58,32 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
     return games
 
 
-def _orders_responses(captured: list) -> list[dict]:
-    bodies = []
-    for entry in captured or []:
-        if "orders/list" not in entry.get("url", ""):
-            continue
-        try:
-            bodies.append(json.loads(entry["body"]))
-        except (json.JSONDecodeError, KeyError, TypeError):
-            continue
-    return bodies
+def collect(page, captured: list | None = None) -> list[ScrapedGame]:
+    """Replay the order-history API across all pages and return owned games.
 
-
-def collect(page, captured: list) -> list[ScrapedGame]:
-    """Scroll the order history so all pages load, then parse captured orders.
-
-    Relies on the browser having captured the orders/list JSON responses; widen
-    the date filter to the maximum range before pressing Enter so the full
-    history loads.
+    Follows the continuationToken until exhausted; reuses the page's auth headers
+    so the replay is authenticated. `captured` is unused (we drive the API).
     """
-    scroll_until_idle(page, captured)
-    games = parse_orders(_orders_responses(captured))
-    logger.info("xbox: extracted %d games from order history", len(games))
+    headers = auth_headers(
+        capture_request_headers(page, "orders/list", trigger=lambda: page.goto(VENDOR_URL))
+    )
+    responses: list[dict] = []
+    token = None
+    seen_tokens: set[str] = set()
+    for _ in range(MAX_PAGES):
+        params = dict(ORDERS_PARAMS)
+        if token:
+            params["continuationToken"] = token
+        resp = page.request.get(ORDERS_API, params=params, headers=headers)
+        if not resp.ok:
+            raise RuntimeError(f"Xbox orders/list failed: {resp.status} {resp.status_text}")
+        body = resp.json()
+        responses.append(body)
+        token = body.get("continuationToken")
+        if not token or token in seen_tokens:
+            break
+        seen_tokens.add(token)
+        page.wait_for_timeout(REQUEST_DELAY_MS)
+    games = parse_orders(responses)
+    logger.info("xbox: extracted %d games from %d order pages", len(games), len(responses))
     return games
