@@ -487,6 +487,22 @@ Replace the whole `{% block content %} ... {% endblock %}` with:
         <div id="platform-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden"></div>
     </div>
 
+    <!-- Rating Filter -->
+    <div class="relative" id="rating-dropdown">
+        <button type="button" onclick="toggleDropdown('rating')"
+                class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm flex items-center gap-1">
+            <span id="rating-label">Rating</span>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="rating-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden">
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="4" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">❤️ Loved</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="3" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">👍 Liked</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="2" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">😐 Meh</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="1" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">👎 Hated</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="unrated" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Unrated</span></label>
+        </div>
+    </div>
+
     <!-- Sort -->
     <select id="sort-select" class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm focus:border-accent focus:outline-none">
         <option value="title">Sort: Name</option>
@@ -584,6 +600,7 @@ Replace the existing `filterAndRenderGames()` function with:
         const search = document.getElementById('search-input').value.toLowerCase();
         const statuses = getSelectedStatuses();
         const platforms = getSelectedPlatforms();
+        const ratings = getSelectedRatings();
         const mode = MODES.find(m => m.id === currentMode) || MODES[0];
         const sort = document.getElementById('sort-select').value;
 
@@ -593,6 +610,10 @@ Replace the existing `filterAndRenderGames()` function with:
             if (platforms.length > 0) {
                 const gp = (game.platforms || []);
                 if (!gp.some(p => platforms.includes(p))) return false;
+            }
+            if (ratings.length > 0) {
+                const key = game.rating ? String(game.rating) : 'unrated';
+                if (!ratings.includes(key)) return false;
             }
             if (search && !game.title.toLowerCase().includes(search)) return false;
             return true;
@@ -627,6 +648,55 @@ Replace the existing `filterAndRenderGames()` function with:
         document.getElementById('empty-subtitle').textContent = subtitle;
         empty.classList.remove('hidden');
     }
+```
+
+- [ ] **Step 4b: Wire up the Rating dropdown plumbing**
+
+The original `index.html` defines `toggleDropdown`, the click-outside handler, and
+`updateFilterLabels`. Update them to include the new rating dropdown, and add `getSelectedRatings`.
+
+In `toggleDropdown`, change the close-all selector line to include rating:
+
+```javascript
+        document.querySelectorAll('#status-options, #platform-options, #rating-options').forEach(el => el.classList.add('hidden'));
+```
+
+In the document click-outside handler, replace it with:
+
+```javascript
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#status-dropdown') && !e.target.closest('#platform-dropdown') && !e.target.closest('#rating-dropdown')) {
+            document.querySelectorAll('#status-options, #platform-options, #rating-options').forEach(el => el.classList.add('hidden'));
+        }
+    });
+```
+
+Add `getSelectedRatings` next to `getSelectedPlatforms`:
+
+```javascript
+    function getSelectedRatings() {
+        return Array.from(document.querySelectorAll('.rating-check:checked')).map(cb => cb.value);
+    }
+```
+
+In `updateFilterLabels`, add the rating label (after the platform label is set):
+
+```javascript
+        const ratings = getSelectedRatings();
+        const totalRatings = document.querySelectorAll('.rating-check').length;
+        document.getElementById('rating-label').textContent =
+            ratings.length === totalRatings ? 'Rating' :
+            ratings.length === 0 ? 'None' :
+            `Rating (${ratings.length})`;
+```
+
+Register change listeners for the rating checkboxes (alongside the existing `.status-check`
+listener block near the bottom of the script):
+
+```javascript
+    document.querySelectorAll('.rating-check').forEach(cb => {
+        cb.addEventListener('change', () => { filterAndRenderGames(); saveViewState(); });
+    });
 ```
 
 - [ ] **Step 5: Rebuild mode counts after games load + register sort listener**
@@ -695,6 +765,7 @@ Replace the two stub functions from Task 4 with:
             mode: currentMode,
             statuses: getSelectedStatuses(),
             platforms: getSelectedPlatforms(),
+            ratings: getSelectedRatings(),
             sort: document.getElementById('sort-select').value,
         };
         try { localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -724,6 +795,11 @@ Replace the two stub functions from Task 4 with:
         if (Array.isArray(state.platforms)) {
             document.querySelectorAll('.platform-check').forEach(cb => {
                 cb.checked = state.platforms.includes(cb.value);
+            });
+        }
+        if (Array.isArray(state.ratings)) {
+            document.querySelectorAll('.rating-check').forEach(cb => {
+                cb.checked = state.ratings.includes(cb.value);
             });
         }
         window._pendingViewState = null;
@@ -938,9 +1014,8 @@ git commit -m "chore: reskin spot-fixes for series/recommendations/settings + re
   creating platform rows). The current importer never *creates* platform rows (it only links to
   the seeded ones), so no change is needed now; `classify_platform` is exported and ready for the
   scraping sub-project, which is where new platform rows get created. No task — intentional.
-- **Deviation noted:** the spec mentioned a "Rating" filter in the filter row. To avoid scope
-  creep this plan ships Status/Platform/Search/**Sort** (Sort added per the mockup). A Rating
-  filter is deferred; flag to the user during review if it's wanted in v1.
+- Filter row ships Status / Platform / **Rating** / Sort / Search — full spec coverage. Rating
+  filter (Loved/Liked/Meh/Hated/Unrated) added in Task 4 Steps 2/4/4b and persisted in Task 5.
 
 **Placeholder scan:** No "TBD"/"implement later". Task 4 introduces explicit temporary stubs that
 Task 5 replaces — called out in both tasks.
