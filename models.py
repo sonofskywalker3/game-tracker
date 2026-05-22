@@ -72,6 +72,17 @@ def init_db():
             FOREIGN KEY (platform_id) REFERENCES platforms(id) ON DELETE CASCADE
         );
 
+        -- External vendor IDs (rename-proof identity for scraped imports)
+        CREATE TABLE IF NOT EXISTS game_external_ids (
+            game_id      INTEGER NOT NULL,
+            source       TEXT    NOT NULL,
+            external_id  TEXT    NOT NULL,
+            source_title TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (source, external_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        );
+
         -- Tags table (genres, themes, custom tags)
         CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,6 +244,29 @@ def migrate_platform_category(conn):
     conn.commit()
 
 
+def migrate_external_ids(conn):
+    """Create the game_external_ids identity table if missing. Idempotent.
+
+    One game carries many rows here (one per vendor, even per edition); identity
+    is (source, external_id), so re-scrapes match by stable vendor id and never
+    duplicate a game the user has renamed.
+    """
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS game_external_ids (
+            game_id      INTEGER NOT NULL,
+            source       TEXT    NOT NULL,
+            external_id  TEXT    NOT NULL,
+            source_title TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (source, external_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_game_external_ids_game
+            ON game_external_ids(game_id);
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -269,6 +303,9 @@ def migrate_db():
 
     # Add/backfill platform era category
     migrate_platform_category(conn)
+
+    # Add the external-ids identity table
+    migrate_external_ids(conn)
 
     # Clean up titles - remove (PS4), trademark symbols, etc.
     games = conn.execute("SELECT id, title FROM games").fetchall()
