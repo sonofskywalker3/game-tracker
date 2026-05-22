@@ -19,7 +19,7 @@ from scrapers import nintendo, playstation, xbox
 from scrapers.base import (
     RECON_DIR,
     capturing_browser,
-    persistent_browser,
+    scroll_until_idle,
     write_scrape,
 )
 
@@ -55,26 +55,6 @@ def _wait_for_user(page, prompt: str) -> None:
         page.wait_for_timeout(300)
 
 
-def _scroll_until_idle(page, captured, *, max_rounds: int = 80, pause_ms: int = 700,
-                       idle_rounds: int = 4) -> None:
-    """Scroll until no new JSON responses arrive for several consecutive rounds.
-
-    Virtualized lists fetch more pages as you scroll; waiting for the capture
-    count to stop growing is a more reliable "fully loaded" signal than scroll
-    height (which can stay fixed while the list pages in new data).
-    """
-    stable, last = 0, len(captured)
-    for _ in range(max_rounds):
-        page.mouse.wheel(0, 25000)
-        page.wait_for_timeout(pause_ms)
-        if len(captured) == last:
-            stable += 1
-            if stable >= idle_rounds:
-                return
-        else:
-            stable, last = 0, len(captured)
-
-
 def run_recon(vendor: str) -> None:
     mod = SCRAPERS[vendor]
     RECON_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,7 +62,7 @@ def run_recon(vendor: str) -> None:
         page.goto(mod.VENDOR_URL)
         _wait_for_user(page, f"Log in if needed, navigate to your {mod.SOURCE} library / "
                              f"purchase history, wait for it to load, then press Enter here... ")
-        _scroll_until_idle(page, captured)
+        scroll_until_idle(page, captured)
         (RECON_DIR / f"{vendor}.html").write_text(page.content(), encoding="utf-8")
         out = RECON_DIR / f"{vendor}.responses.jsonl"
         with out.open("w", encoding="utf-8") as fh:
@@ -96,11 +76,11 @@ def run_scrape(vendor: str) -> None:
     mod = SCRAPERS[vendor]
     if not hasattr(mod, "collect"):
         raise SystemExit(f"{vendor} scraper not implemented yet (no collect()).")
-    with persistent_browser(headless=False) as page:
+    with capturing_browser(headless=False) as (page, captured):
         page.goto(mod.VENDOR_URL)
-        _wait_for_user(page, f"Log in if needed and make sure your {mod.SOURCE} library is "
-                             f"open, then press Enter here... ")
-        games = mod.collect(page)
+        _wait_for_user(page, f"Log in if needed, open your {mod.SOURCE} library / full "
+                             f"purchase history, then press Enter here... ")
+        games = mod.collect(page, captured)
     write_scrape(vendor, games)
     logger.info("scraped %d %s games", len(games), vendor)
 
