@@ -31,6 +31,7 @@ env/
 
 # ---- Claude Code (machine-local) ----
 .claude/settings.local.json
+.superpowers/
 
 # ---- OS / editor junk ----
 nul
