@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import logging
 
-from scrapers.base import ScrapedGame, auth_headers, capture_request_headers
+from scrapers.base import (
+    ScrapedGame,
+    auth_from_captured,
+    auth_headers,
+    capture_request_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +69,11 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     Follows the continuationToken until exhausted; reuses the page's auth headers
     so the replay is authenticated. `captured` is unused (we drive the API).
     """
-    headers = auth_headers(
-        capture_request_headers(page, "orders/list", trigger=lambda: page.goto(VENDOR_URL))
-    )
+    headers = auth_from_captured(captured or [], "orders/list")
+    if not headers:
+        logger.info("xbox: no captured auth; reloading to capture it...")
+        headers = auth_headers(capture_request_headers(page, "orders/list", trigger=page.reload))
+    logger.info("xbox: auth headers in use: %s", sorted(headers) or "NONE (will fail)")
     responses: list[dict] = []
     token = None
     seen_tokens: set[str] = set()
@@ -76,7 +83,9 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
             params["continuationToken"] = token
         resp = page.request.get(ORDERS_API, params=params, headers=headers)
         if not resp.ok:
-            raise RuntimeError(f"Xbox orders/list failed: {resp.status} {resp.status_text}")
+            raise RuntimeError(
+                f"Xbox orders/list {resp.status} {resp.status_text}: {resp.text()[:300]}"
+            )
         body = resp.json()
         responses.append(body)
         token = body.get("continuationToken")
