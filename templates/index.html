@@ -3,50 +3,37 @@
 {% block title %}Library - Game Tracker{% endblock %}
 {% block nav_library %}text-white bg-surface-lighter{% endblock %}
 
-{% block nav_filters %}
-<div class="flex-1 flex items-center gap-2 max-w-2xl">
-    <!-- Search -->
+{% block content %}
+<!-- Stats hero: stats left, mode switcher right -->
+<div class="rounded-2xl mb-6 p-5 bg-gradient-to-br from-[#241b3a] via-[#191522] to-[#151515] border border-gray-700/50 flex flex-wrap items-center gap-4">
+    <div id="hero-stats" class="flex gap-6">
+        <!-- Filled by renderHeroStats() -->
+    </div>
+    <div id="mode-switcher" class="ml-auto flex gap-1.5 bg-black/30 border border-gray-700/60 rounded-xl p-1.5">
+        <!-- Filled by renderModeBar() -->
+    </div>
+</div>
+
+<!-- Filter row -->
+<div class="flex flex-wrap items-center gap-2 mb-6">
     <input type="text" id="search-input" placeholder="Search..."
-           class="flex-1 min-w-0 bg-surface rounded-lg border border-gray-600 px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:border-accent focus:outline-none">
+           class="w-48 bg-surface rounded-lg border border-gray-600 px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:border-accent focus:outline-none">
 
     <!-- Status Filter -->
     <div class="relative" id="status-dropdown">
         <button type="button" onclick="toggleDropdown('status')"
                 class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm flex items-center gap-1">
             <span id="status-label">Status</span>
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-            </svg>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div id="status-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden">
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="backlog" checked class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Backlog</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="playing" checked class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Playing</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="parked" checked class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Parked</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="completed" checked class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Complete</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="100" checked class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">100%</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="dropped" class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Dropped</span>
-            </label>
-            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="wishlist" class="status-check accent-accent w-3.5 h-3.5">
-                <span class="text-white text-sm">Wishlist</span>
-            </label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="backlog" checked class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Backlog</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="playing" checked class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Playing</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="parked" checked class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Parked</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="completed" checked class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Complete</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="100" checked class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">100%</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="dropped" class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Dropped</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="wishlist" class="status-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Wishlist</span></label>
         </div>
     </div>
 
@@ -55,37 +42,47 @@
         <button type="button" onclick="toggleDropdown('platform')"
                 class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm flex items-center gap-1">
             <span id="platform-label">Platforms</span>
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-            </svg>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
-        <div id="platform-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden">
-            <!-- Filled by JS -->
+        <div id="platform-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden"></div>
+    </div>
+
+    <!-- Rating Filter -->
+    <div class="relative" id="rating-dropdown">
+        <button type="button" onclick="toggleDropdown('rating')"
+                class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm flex items-center gap-1">
+            <span id="rating-label">Rating</span>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="rating-options" class="absolute z-50 mt-1 w-40 bg-surface-light border border-gray-700 rounded-lg shadow-lg hidden">
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="4" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">❤️ Loved</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="3" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">👍 Liked</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="2" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">😐 Meh</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="1" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">👎 Hated</span></label>
+            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"><input type="checkbox" value="unrated" checked class="rating-check accent-accent w-3.5 h-3.5"><span class="text-white text-sm">Unrated</span></label>
         </div>
     </div>
-</div>
-{% endblock %}
 
-{% block content %}
+    <!-- Sort -->
+    <select id="sort-select" class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm focus:border-accent focus:outline-none">
+        <option value="title">Sort: Name</option>
+        <option value="rating">Sort: Rating</option>
+        <option value="priority">Sort: Priority</option>
+        <option value="metacritic">Sort: Metacritic</option>
+    </select>
+</div>
+
 <!-- Alphabet Bar - Fixed to left edge -->
-<div id="alphabet-bar" class="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 flex-col items-center py-4 px-1 z-30">
-    <!-- Filled by JS -->
-</div>
+<div id="alphabet-bar" class="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 flex-col items-center py-4 px-1 z-30"></div>
 
-<!-- Game Grid - 8 columns on widescreen -->
-<div id="games-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:ml-8">
-    <!-- Filled by JS -->
-</div>
+<!-- Game Grid -->
+<div id="games-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:ml-8"></div>
 
-<!-- Loading / Empty State -->
-<div id="loading-state" class="text-center py-12">
-    <div class="animate-pulse text-gray-500">Loading games...</div>
-</div>
-
+<div id="loading-state" class="text-center py-12"><div class="animate-pulse text-gray-500">Loading games...</div></div>
 <div id="empty-state" class="hidden text-center py-12">
     <div class="text-6xl mb-4">🎮</div>
-    <h3 class="text-xl font-medium text-gray-400">No games found</h3>
-    <p class="text-gray-500 mt-2">Try adjusting your filters</p>
+    <h3 class="text-xl font-medium text-gray-400" id="empty-title">No games found</h3>
+    <p class="text-gray-500 mt-2" id="empty-subtitle">Try adjusting your filters</p>
 </div>
 {% endblock %}
 
@@ -94,12 +91,74 @@
     let allGames = [];
     let debounceTimer;
 
+    // Temporary no-op stubs (replaced by real implementations in Task 5).
+    function saveViewState() {}
+    function restoreViewState() {}
+
+    // ---- Library view modes ----
+    const MODES = [
+        { id: 'all',      label: 'All',     match: () => true },
+        { id: 'modern',   label: 'Modern',  match: g => (g.categories || []).includes('modern_console') },
+        { id: 'legacy',   label: 'Legacy',  match: g => (g.categories || []).includes('legacy_console') },
+        { id: 'pc',       label: 'PC',      match: g => (g.categories || []).includes('pc') },
+        { id: 'physical', label: 'Physical', match: g => !!g.physical },
+    ];
+    let currentMode = 'all';
+
+    function modeCount(mode) {
+        return allGames.filter(mode.match).length;
+    }
+
+    function renderModeBar() {
+        const bar = document.getElementById('mode-switcher');
+        bar.innerHTML = MODES.map(m => {
+            const count = modeCount(m);
+            const active = m.id === currentMode;
+            const empty = count === 0;
+            return `<button onclick="setMode('${m.id}')"
+                class="px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors
+                       ${active ? 'bg-accent text-white' : 'text-gray-300 hover:bg-surface-light'}
+                       ${empty && !active ? 'opacity-50' : ''}">
+                ${m.label} <span class="opacity-60 text-xs">${count}</span>
+            </button>`;
+        }).join('');
+    }
+
+    function setMode(modeId) {
+        currentMode = modeId;
+        renderModeBar();
+        filterAndRenderGames();
+        saveViewState();
+    }
+
+    function renderHeroStats(stats) {
+        const done = stats.total_games
+            ? Math.round(((stats.by_status?.completed || 0) + (stats.by_status?.['100'] || 0)) / stats.total_games * 100)
+            : 0;
+        const tiles = [
+            ['total_games', stats.total_games || 0, 'games'],
+            ['completed', stats.by_status?.completed || 0, 'completed'],
+            ['playing', stats.by_status?.playing || 0, 'playing'],
+            ['backlog', stats.by_status?.backlog || 0, 'backlog'],
+            ['done', done + '%', 'done'],
+        ];
+        document.getElementById('hero-stats').innerHTML = tiles.map(([, v, label]) =>
+            `<div><div class="text-2xl font-bold text-white leading-none">${v}</div>
+                  <div class="text-xs text-gray-400 mt-1">${label}</div></div>`
+        ).join('');
+    }
+
+    async function loadHeroStats() {
+        const stats = await api.get('/api/stats');
+        if (stats) renderHeroStats(stats);
+    }
+
     function toggleDropdown(type) {
         const options = document.getElementById(`${type}-options`);
         const isHidden = options.classList.contains('hidden');
 
         // Close all dropdowns first
-        document.querySelectorAll('#status-options, #platform-options').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('#status-options, #platform-options, #rating-options').forEach(el => el.classList.add('hidden'));
 
         if (isHidden) {
             options.classList.remove('hidden');
@@ -108,8 +167,8 @@
 
     // Close dropdowns when clicking outside
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('#status-dropdown') && !e.target.closest('#platform-dropdown')) {
-            document.querySelectorAll('#status-options, #platform-options').forEach(el => el.classList.add('hidden'));
+        if (!e.target.closest('#status-dropdown') && !e.target.closest('#platform-dropdown') && !e.target.closest('#rating-dropdown')) {
+            document.querySelectorAll('#status-options, #platform-options, #rating-options').forEach(el => el.classList.add('hidden'));
         }
     });
 
@@ -119,6 +178,10 @@
 
     function getSelectedPlatforms() {
         return Array.from(document.querySelectorAll('.platform-check:checked')).map(cb => cb.value);
+    }
+
+    function getSelectedRatings() {
+        return Array.from(document.querySelectorAll('.rating-check:checked')).map(cb => cb.value);
     }
 
     function updateFilterLabels() {
@@ -136,11 +199,19 @@
             platforms.length === totalPlatforms ? 'Platforms' :
             platforms.length === 0 ? 'None' :
             `Platforms (${platforms.length})`;
+
+        const ratings = getSelectedRatings();
+        const totalRatings = document.querySelectorAll('.rating-check').length;
+        document.getElementById('rating-label').textContent =
+            ratings.length === totalRatings ? 'Rating' :
+            ratings.length === 0 ? 'None' :
+            `Rating (${ratings.length})`;
     }
 
     async function loadGames() {
         const games = await api.get('/api/games');
         allGames = games;
+        renderModeBar();
         filterAndRenderGames();
     }
 
@@ -148,32 +219,53 @@
         const search = document.getElementById('search-input').value.toLowerCase();
         const statuses = getSelectedStatuses();
         const platforms = getSelectedPlatforms();
+        const ratings = getSelectedRatings();
+        const mode = MODES.find(m => m.id === currentMode) || MODES[0];
+        const sort = document.getElementById('sort-select').value;
 
         let filtered = allGames.filter(game => {
-            // Status filter
-            if (statuses.length > 0 && !statuses.includes(game.status || 'backlog')) {
-                return false;
-            }
-
-            // Platform filter
+            if (!mode.match(game)) return false;
+            if (statuses.length > 0 && !statuses.includes(game.status || 'backlog')) return false;
             if (platforms.length > 0) {
-                const gamePlatforms = (game.platforms || []);
-                if (!gamePlatforms.some(p => platforms.includes(p))) {
-                    return false;
-                }
+                const gp = (game.platforms || []);
+                if (!gp.some(p => platforms.includes(p))) return false;
             }
-
-            // Search filter
-            if (search && !game.title.toLowerCase().includes(search)) {
-                return false;
+            if (ratings.length > 0) {
+                const key = game.rating ? String(game.rating) : 'unrated';
+                if (!ratings.includes(key)) return false;
             }
-
+            if (search && !game.title.toLowerCase().includes(search)) return false;
             return true;
         });
+
+        filtered = sortGames(filtered, sort);
 
         updateFilterLabels();
         renderGames(filtered);
         updateAlphabetBar(filtered);
+        updateEmptyState(filtered.length, mode);
+    }
+
+    function sortGames(games, sort) {
+        const arr = [...games];
+        if (sort === 'rating')      arr.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        else if (sort === 'priority') arr.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+        else if (sort === 'metacritic') arr.sort((a, b) => (b.metacritic_score || 0) - (a.metacritic_score || 0));
+        else arr.sort((a, b) => (a.series_name || a.title).localeCompare(b.series_name || b.title));
+        return arr;
+    }
+
+    function updateEmptyState(count, mode) {
+        const empty = document.getElementById('empty-state');
+        if (count > 0) { empty.classList.add('hidden'); return; }
+        const emptyModes = {
+            legacy: ['No legacy games yet', 'These fill in when you import your older-console libraries.'],
+            pc: ['No PC games yet', 'These fill in when you import your Steam / GOG / Epic libraries.'],
+        };
+        const [title, subtitle] = emptyModes[mode.id] || ['No games found', 'Try adjusting your filters'];
+        document.getElementById('empty-title').textContent = title;
+        document.getElementById('empty-subtitle').textContent = subtitle;
+        empty.classList.remove('hidden');
     }
 
     function renderGames(games) {
@@ -365,10 +457,20 @@
         cb.addEventListener('change', filterAndRenderGames);
     });
 
+    document.querySelectorAll('.rating-check').forEach(cb => {
+        cb.addEventListener('change', () => { filterAndRenderGames(); saveViewState(); });
+    });
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
+        restoreViewState();   // defined in Task 5
         loadPlatforms();
+        loadHeroStats();
         loadGames();
+        document.getElementById('sort-select').addEventListener('change', () => {
+            filterAndRenderGames();
+            saveViewState();   // defined in Task 5
+        });
     });
 </script>
 <style>
