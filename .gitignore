@@ -18,6 +18,11 @@ switch_games.csv
 xbox_games.csv
 My Game Backlog.html
 
+# ---- Scraper artifacts (local-only; contain login session + personal library) ----
+.pw-profile/
+.recon/
+scraped/
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
