@@ -11,7 +11,12 @@ from __future__ import annotations
 import json
 import logging
 
-from scrapers.base import ScrapedGame, auth_headers, capture_request_headers
+from scrapers.base import (
+    ScrapedGame,
+    auth_from_captured,
+    auth_headers,
+    capture_request_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +81,7 @@ def _request_page(page, start: int, headers: dict) -> dict:
     resp = page.request.get(GRAPHQL_URL, params=params, headers=headers)
     if not resp.ok:
         raise RuntimeError(
-            f"PSN getPurchasedGameList failed: {resp.status} {resp.status_text} "
-            f"(persisted-query hash may be stale — re-run recon to refresh it)"
+            f"PSN getPurchasedGameList {resp.status} {resp.status_text}: {resp.text()[:300]}"
         )
     return resp.json()
 
@@ -89,9 +93,11 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     shared by page.request). Stops when a page yields no new product IDs. The
     `captured` page traffic is unused here — PSN's list comes from the API.
     """
-    headers = auth_headers(
-        capture_request_headers(page, OP_NAME, trigger=lambda: page.goto(VENDOR_URL))
-    )
+    headers = auth_from_captured(captured or [], OP_NAME)
+    if not headers:
+        logger.info("playstation: no captured auth; reloading to capture it...")
+        headers = auth_headers(capture_request_headers(page, OP_NAME, trigger=page.reload))
+    logger.info("playstation: auth headers in use: %s", sorted(headers) or "NONE (will fail)")
     games: list[ScrapedGame] = []
     seen: set[str] = set()
     start = 0
@@ -105,4 +111,6 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
         start += len(items)
         logger.info("playstation: %d games so far...", len(games))
         page.wait_for_timeout(REQUEST_DELAY_MS)
+    if not games:
+        logger.warning("playstation: 0 games — auth likely failed (see any error above)")
     return games

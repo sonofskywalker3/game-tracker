@@ -149,9 +149,16 @@ def capturing_browser(headless: bool = False):
             ctype = (response.headers or {}).get("content-type", "")
             if "json" not in ctype and "graphql" not in response.url:
                 return
-            captured.append(
-                {"url": response.url, "status": response.status, "body": response.text()}
-            )
+            try:
+                req_headers = dict(response.request.all_headers())
+            except Exception:
+                req_headers = dict(response.request.headers)
+            captured.append({
+                "url": response.url,
+                "status": response.status,
+                "body": response.text(),
+                "request_headers": req_headers,
+            })
         except Exception as exc:  # body may be unavailable (redirects, aborted, etc.)
             logger.debug("skip response %s: %s", getattr(response, "url", "?"), exc)
 
@@ -218,3 +225,17 @@ def auth_headers(headers: dict) -> dict:
         if k == "authorization" or k.startswith("x-") or "token" in k or "csrf" in k:
             keep[key] = value
     return keep
+
+
+def auth_from_captured(captured: list, url_substring: str) -> dict:
+    """Find a captured request matching url_substring; return its auth headers.
+
+    Uses the auth the page already sent (captured passively during the session),
+    which is more reliable than trying to re-trigger the request.
+    """
+    for entry in captured or []:
+        if url_substring in entry.get("url", ""):
+            keep = auth_headers(entry.get("request_headers") or {})
+            if keep:
+                return keep
+    return {}
