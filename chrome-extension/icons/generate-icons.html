@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Icons</title>
+  <style>
+    body { font-family: system-ui; padding: 40px; background: #1a1a2e; color: white; }
+    canvas { border: 1px solid #444; margin: 10px; }
+    button { background: #7c3aed; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin: 20px 0; }
+    button:hover { background: #8b5cf6; }
+    .icons { display: flex; gap: 20px; align-items: end; }
+  </style>
+</head>
+<body>
+  <h1>Game Tracker Icon Generator</h1>
+  <p>Click the button to download all icon sizes.</p>
+
+  <div class="icons">
+    <div>
+      <canvas id="c128" width="128" height="128"></canvas>
+      <p>128x128</p>
+    </div>
+    <div>
+      <canvas id="c48" width="48" height="48"></canvas>
+      <p>48x48</p>
+    </div>
+    <div>
+      <canvas id="c16" width="16" height="16"></canvas>
+      <p>16x16</p>
+    </div>
+  </div>
+
+  <button onclick="downloadAll()">Download All Icons</button>
+
+  <script>
+    function drawIcon(canvas) {
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+      const scale = size / 128;
+
+      // Background
+      ctx.fillStyle = '#7c3aed';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, 20 * scale);
+      ctx.fill();
+
+      // Game controller shape
+      ctx.fillStyle = 'white';
+      const cx = size / 2;
+      const cy = size / 2;
+
+      // Main body
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 40 * scale, 25 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Left grip
+      ctx.beginPath();
+      ctx.ellipse(cx - 35 * scale, cy + 15 * scale, 15 * scale, 20 * scale, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right grip
+      ctx.beginPath();
+      ctx.ellipse(cx + 35 * scale, cy + 15 * scale, 15 * scale, 20 * scale, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // D-pad
+      ctx.fillStyle = '#7c3aed';
+      ctx.fillRect(cx - 30 * scale, cy - 5 * scale, 12 * scale, 4 * scale);
+      ctx.fillRect(cx - 26 * scale, cy - 9 * scale, 4 * scale, 12 * scale);
+
+      // Buttons
+      ctx.beginPath();
+      ctx.arc(cx + 20 * scale, cy - 5 * scale, 4 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + 28 * scale, cy, 4 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw all sizes
+    drawIcon(document.getElementById('c128'));
+    drawIcon(document.getElementById('c48'));
+    drawIcon(document.getElementById('c16'));
+
+    function downloadAll() {
+      ['c128', 'c48', 'c16'].forEach(id => {
+        const canvas = document.getElementById(id);
+        const size = canvas.width;
+        const link = document.createElement('a');
+        link.download = `icon${size}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

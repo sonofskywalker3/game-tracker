@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 320px;
+      background: #1a1a2e;
+      color: white;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    .header {
+      padding: 16px;
+      border-bottom: 1px solid #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .header span {
+      color: #7c3aed;
+    }
+    .content {
+      padding: 16px;
+    }
+    .field {
+      margin-bottom: 14px;
+    }
+    .field label {
+      display: block;
+      color: #999;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .field input[type="text"] {
+      width: 100%;
+      background: #25253d;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 10px;
+      color: white;
+      font-size: 14px;
+    }
+    .field input[type="text"]:focus {
+      outline: none;
+      border-color: #7c3aed;
+    }
+    .platforms {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .platforms label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: white;
+      font-size: 13px;
+    }
+    .platforms input {
+      accent-color: #7c3aed;
+      width: 14px;
+      height: 14px;
+    }
+    .suggestions {
+      margin-top: 4px;
+      background: #25253d;
+      border: 1px solid #444;
+      border-radius: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+      display: none;
+    }
+    .suggestion {
+      padding: 8px 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #333;
+    }
+    .suggestion:hover {
+      background: #333;
+    }
+    .suggestion:last-child {
+      border-bottom: none;
+    }
+    .suggestion img {
+      width: 24px;
+      height: 32px;
+      object-fit: cover;
+      border-radius: 3px;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      background: #166534;
+      color: #86efac;
+    }
+    .status.error {
+      background: #7f1d1d;
+      color: #fca5a5;
+    }
+    .status.warning {
+      background: #854d0e;
+      color: #fcd34d;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-primary {
+      background: #7c3aed;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #8b5cf6;
+    }
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #333;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background: #444;
+    }
+    .settings {
+      padding: 12px 16px;
+      border-top: 1px solid #333;
+      font-size: 12px;
+    }
+    .settings input {
+      width: 100%;
+      background: #25253d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 6px 8px;
+      color: white;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span>Game</span>Tracker</h1>
+  </div>
+
+  <div class="content">
+    <div class="field">
+      <label>Game Title</label>
+      <input type="text" id="title" placeholder="Search for a game...">
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+
+    <div class="field">
+      <label>Platforms</label>
+      <div class="platforms">
+        <label><input type="checkbox" class="platform" value="PS4"> PS4</label>
+        <label><input type="checkbox" class="platform" value="PS5"> PS5</label>
+        <label><input type="checkbox" class="platform" value="Switch"> Switch</label>
+        <label><input type="checkbox" class="platform" value="Xbox"> Xbox</label>
+      </div>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="buttons">
+      <button class="btn-secondary" id="detectBtn">Detect from Page</button>
+      <button class="btn-primary" id="addBtn">Add Game</button>
+    </div>
+  </div>
+
+  <div class="settings">
+    <label>Server URL</label>
+    <input type="text" id="serverUrl" placeholder="http://localhost:5000">
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

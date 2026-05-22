@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Game Tracker - Quick Add",
+  "version": "1.0",
+  "description": "Quickly add games to your Game Tracker library",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:5000/*",
+    "http://127.0.0.1:5000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://store.playstation.com/*",
+        "*://www.xbox.com/*",
+        "*://www.microsoft.com/*/store/*",
+        "*://store.steampowered.com/*",
+        "*://www.nintendo.com/*",
+        "*://www.gog.com/*",
+        "*://www.humblebundle.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

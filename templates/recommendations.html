@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}What to Play - Game Tracker{% endblock %}
+{% block nav_recommendations %}text-white bg-surface-lighter{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Hero Section -->
+    <div class="text-center py-8">
+        <h1 class="text-3xl font-bold text-white mb-2">What Should You Play Next?</h1>
+        <p class="text-gray-400">Personalized recommendations based on your ratings and preferences</p>
+    </div>
+
+    <!-- Quick Picks Section -->
+    <div id="quick-picks" class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Filled by JS -->
+    </div>
+
+    <!-- Top Recommendations -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="text-2xl mr-2">🎯</span>
+            Top Recommendations
+        </h2>
+        <div id="recommendations-list" class="space-y-4">
+            <!-- Filled by JS -->
+        </div>
+    </div>
+
+    <!-- Needs Rating Section -->
+    <div id="needs-rating-section" class="hidden bg-surface-light rounded-xl p-6">
+        <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="text-2xl mr-2">📝</span>
+            Needs Rating
+            <span class="ml-2 text-sm font-normal text-gray-400">Games you've played but haven't rated</span>
+        </h2>
+        <div id="needs-rating-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <!-- Filled by JS -->
+        </div>
+    </div>
+
+    <!-- Tip -->
+    <div class="bg-surface-light/50 rounded-xl p-4 border border-gray-700/50">
+        <p class="text-sm text-gray-400">
+            <span class="text-accent font-medium">Tip:</span>
+            Rate more games to improve recommendations! The more you rate, the better we can match games to your taste.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadRecommendations() {
+        const [recData, games] = await Promise.all([
+            api.get('/api/recommendations?limit=10'),
+            api.get('/api/games')
+        ]);
+
+        renderQuickPicks(recData.quick_picks);
+        renderRecommendations(recData.recommendations);
+
+        // Find games that aren't in backlog and don't have a rating
+        const needsRating = games.filter(g =>
+            g.status && g.status !== 'backlog' && g.status !== 'wishlist' && !g.rating
+        );
+        renderNeedsRating(needsRating);
+    }
+
+    function renderQuickPicks(picks) {
+        const container = document.getElementById('quick-picks');
+
+        const categories = [
+            { key: 'continue_playing', title: 'Continue Playing', icon: '▶️', color: 'blue' },
+            { key: 'critically_acclaimed', title: 'Critically Acclaimed', icon: '⭐', color: 'yellow' },
+            { key: 'quick_session', title: 'Quick Session', icon: '⚡', color: 'green' },
+            { key: 'hidden_gems', title: 'Hidden Gems', icon: '💎', color: 'purple' }
+        ];
+
+        container.innerHTML = categories.map(cat => {
+            const games = picks[cat.key] || [];
+            if (!games.length) return '';
+
+            return `
+                <div class="bg-surface-light rounded-xl p-4">
+                    <h3 class="font-medium text-white mb-3 flex items-center">
+                        <span class="mr-2">${cat.icon}</span>
+                        ${cat.title}
+                    </h3>
+                    <div class="space-y-2">
+                        ${games.map(game => `
+                            <div class="flex items-center space-x-3 p-2 rounded-lg hover:bg-surface-lighter cursor-pointer transition-colors"
+                                 onclick="openModal(${game.id})">
+                                ${game.cover_url ? `
+                                    <img src="${game.cover_url}" alt="${game.title}"
+                                         class="w-10 h-10 object-cover rounded">
+                                ` : `
+                                    <div class="w-10 h-10 cover-placeholder rounded flex items-center justify-center text-lg">🎮</div>
+                                `}
+                                <span class="text-sm text-gray-300 truncate flex-1">${game.title}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderRecommendations(recs) {
+        const container = document.getElementById('recommendations-list');
+
+        if (!recs.length) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <p>No recommendations yet.</p>
+                    <p class="text-sm mt-2">Add some games to your backlog and rate them to get personalized suggestions!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = recs.map((rec, index) => {
+            const game = rec.game;
+            const criticScore = game.metacritic_score || game.opencritic_score;
+
+            return `
+                <div class="flex items-start space-x-4 p-4 rounded-xl hover:bg-surface-lighter cursor-pointer transition-colors"
+                     onclick="openModal(${game.id})">
+                    <!-- Rank -->
+                    <div class="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold flex-shrink-0">
+                        ${index + 1}
+                    </div>
+
+                    <!-- Cover -->
+                    ${game.cover_url ? `
+                        <img src="${game.cover_url}" alt="${game.title}"
+                             class="w-16 h-16 object-cover rounded-lg flex-shrink-0">
+                    ` : `
+                        <div class="w-16 h-16 cover-placeholder rounded-lg flex items-center justify-center text-2xl flex-shrink-0">🎮</div>
+                    `}
+
+                    <!-- Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <h3 class="font-medium text-white">${game.title}</h3>
+                                <div class="mt-1 flex items-center space-x-2 text-sm">
+                                    ${criticScore ? `
+                                        <span class="${criticScore >= 75 ? 'text-green-400' : criticScore >= 50 ? 'text-yellow-400' : 'text-red-400'}">
+                                            ${criticScore} critic score
+                                        </span>
+                                    ` : ''}
+                                    ${game.priority && game.priority !== 5 ? `
+                                        <span class="text-gray-500">Priority: ${game.priority}/10</span>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <div class="text-lg font-bold text-accent">${rec.score}</div>
+                                <div class="text-xs text-gray-500">score</div>
+                            </div>
+                        </div>
+
+                        <!-- Reasons -->
+                        ${rec.reasons.length ? `
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                ${rec.reasons.map(r => `
+                                    <span class="text-xs px-2 py-1 bg-surface rounded-full text-gray-400">${r}</span>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderNeedsRating(games) {
+        const section = document.getElementById('needs-rating-section');
+        const container = document.getElementById('needs-rating-list');
+
+        if (!games.length) {
+            section.classList.add('hidden');
+            return;
+        }
+
+        section.classList.remove('hidden');
+        container.innerHTML = games.map(game => `
+            <div class="bg-surface rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-accent transition-all"
+                 onclick="openModal(${game.id})">
+                <div class="aspect-[3/4] relative">
+                    ${game.cover_url ? `
+                        <img src="${game.cover_url}" alt="${game.title}" class="w-full h-full object-cover">
+                    ` : `
+                        <div class="w-full h-full flex items-center justify-center bg-surface-lighter text-2xl">🎮</div>
+                    `}
+                    <div class="absolute bottom-1 right-1">
+                        <span class="status-badge status-${game.status} text-xs">${game.status === '100' ? '100%' : game.status === 'completed' ? 'done' : game.status}</span>
+                    </div>
+                </div>
+                <div class="p-2">
+                    <p class="text-xs text-white truncate" title="${game.title}">${game.title}</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function refreshGameList() {
+        loadRecommendations();
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadRecommendations);
+</script>
+{% endblock %}

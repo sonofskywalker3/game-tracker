@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Game Tracker{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        surface: {
+                            DEFAULT: '#1a1a2e',
+                            light: '#25253d',
+                            lighter: '#2d2d4a'
+                        },
+                        accent: {
+                            DEFAULT: '#7c3aed',
+                            hover: '#8b5cf6'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+        }
+        .game-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .game-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+        }
+        .cover-placeholder {
+            background: linear-gradient(135deg, #2d2d4a 0%, #1a1a2e 100%);
+        }
+        .rating-star {
+            cursor: pointer;
+            transition: color 0.15s ease;
+        }
+        .status-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 9999px;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .status-backlog { background: #374151; color: #9ca3af; }
+        .status-playing { background: #1e40af; color: #93c5fd; }
+        .status-parked { background: #854d0e; color: #fcd34d; }
+        .status-completed { background: #166534; color: #86efac; }
+        .status-100 { background: #ca8a04; color: #fef08a; }
+        .status-dropped { background: #7f1d1d; color: #fca5a5; }
+        .status-wishlist { background: #7c3aed; color: #c4b5fd; }
+        .platform-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .platform-PS4 { background: #003087; color: white; }
+        .platform-PS5 { background: #ffffff; color: #000000; }
+        .platform-Switch { background: #e60012; color: white; }
+        .platform-Xbox { background: #107c10; color: white; }
+        .platform-PC { background: #374151; color: white; }
+    </style>
+</head>
+<body class="text-gray-100">
+    <!-- Navigation -->
+    <nav class="bg-surface-light border-b border-gray-700/50 sticky top-0 z-50">
+        <div class="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16 gap-4">
+                <div class="flex items-center space-x-4 flex-shrink-0">
+                    <a href="/" class="text-xl font-bold text-white">
+                        <span class="text-accent">Game</span>Tracker
+                    </a>
+                    <div class="hidden md:flex space-x-2">
+                        <a href="/" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_library %}{% endblock %}">Library</a>
+                        <a href="/series" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_series %}{% endblock %}">Series</a>
+                        <a href="/recommendations" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_recommendations %}{% endblock %}">Picks</a>
+                        <a href="/settings" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_settings %}{% endblock %}">Settings</a>
+                    </div>
+                </div>
+                {% block nav_filters %}{% endblock %}
+                <div class="flex items-center space-x-3 flex-shrink-0">
+                    <div id="stats-summary" class="hidden lg:flex items-center space-x-3 text-sm text-gray-400">
+                        <!-- Filled by JS -->
+                    </div>
+                    <button onclick="openAddGameModal()" class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm font-medium transition-colors whitespace-nowrap">
+                        + Add
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Game Detail Modal -->
+    <div id="game-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div id="game-modal-content">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Game Modal -->
+    <div id="add-game-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl max-w-md w-full shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-white">Add Game</h2>
+                    <button onclick="closeAddGameModal()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <div class="relative">
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Title</label>
+                        <input type="text" id="new-game-title" placeholder="Search IGDB..."
+                               class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white focus:border-accent focus:outline-none"
+                               oninput="searchIGDB(this.value)"
+                               onkeypress="if(event.key==='Enter' && !document.getElementById('igdb-results').children.length) addNewGame()">
+                        <div id="igdb-results" class="absolute z-10 w-full mt-1 bg-surface border border-gray-600 rounded-lg shadow-lg hidden max-h-60 overflow-y-auto">
+                        </div>
+                        <input type="hidden" id="new-game-cover-url" value="">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Platforms</label>
+                        <div id="new-game-platforms" class="flex flex-wrap gap-3">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                    <div id="add-game-error" class="text-red-400 text-sm hidden"></div>
+                    <button onclick="addNewGame()" class="w-full px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
+                        Add Game
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global utilities
+        const api = {
+            async get(url) {
+                const res = await fetch(url);
+                return res.json();
+            },
+            async put(url, data) {
+                const res = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            async delete(url) {
+                const res = await fetch(url, { method: 'DELETE' });
+                return res.json();
+            },
+            async post(url, data) {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return { ok: res.ok, status: res.status, data: await res.json() };
+            }
+        };
+
+        const ratingOptions = [
+            { value: 1, label: 'Hate it', color: 'bg-red-600/30 text-red-400 border-red-600/50' },
+            { value: 2, label: 'Meh', color: 'bg-gray-600/30 text-gray-400 border-gray-600/50' },
+            { value: 3, label: 'Like it', color: 'bg-blue-600/30 text-blue-400 border-blue-600/50' },
+            { value: 4, label: 'Love it', color: 'bg-green-600/30 text-green-400 border-green-600/50' }
+        ];
+
+        function getRatingLabel(rating) {
+            const opt = ratingOptions.find(o => o.value === rating);
+            return opt ? opt.label : null;
+        }
+
+        function renderRating(rating, gameId, interactive = true) {
+            if (!interactive) {
+                const opt = ratingOptions.find(o => o.value === rating);
+                return opt ? `<span class="text-sm ${opt.color.split(' ')[1]}">${opt.label}</span>` : '';
+            }
+            return `<div class="flex flex-wrap gap-2">
+                ${ratingOptions.map(opt => `
+                    <button onclick="setRating(${gameId}, ${rating === opt.value ? 'null' : opt.value})"
+                            class="px-3 py-1 rounded-lg border text-sm transition-colors ${rating === opt.value ? opt.color + ' border-2' : 'bg-surface border-gray-600 text-gray-400 hover:border-gray-500'}">
+                        ${opt.label}
+                    </button>
+                `).join('')}
+            </div>`;
+        }
+
+        function renderPlatforms(platforms) {
+            return platforms.map(p =>
+                `<span class="platform-badge platform-${p}">${p}</span>`
+            ).join(' ');
+        }
+
+        function renderStatus(status) {
+            const label = status === '100' ? '100%' : status.replace('_', ' ');
+            return `<span class="status-badge status-${status}">${label}</span>`;
+        }
+
+        async function setRating(gameId, rating) {
+            await api.put(`/api/games/${gameId}`, { rating });
+            // Refresh the game display
+            if (typeof refreshGameList === 'function') refreshGameList();
+            loadGameModal(gameId);
+        }
+
+        async function setStatus(gameId, status) {
+            await api.put(`/api/games/${gameId}`, { status });
+            if (typeof refreshGameList === 'function') refreshGameList();
+            if (typeof loadGame === 'function') loadGame(gameId);
+        }
+
+        async function setPriority(gameId, priority) {
+            await api.put(`/api/games/${gameId}`, { priority: parseInt(priority) });
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        // Global platforms list
+        let allPlatforms = [];
+
+        async function loadAllPlatforms() {
+            allPlatforms = await api.get('/api/platforms');
+        }
+
+        function renderPlatformCheckboxes(game) {
+            const gamePlatforms = (game.platforms || []).map(p => p.short_name);
+            // Sort platforms: PS4, PS5, Switch, Xbox (no PC)
+            const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
+            const sortedPlatforms = [...allPlatforms]
+                .filter(p => p.short_name !== 'PC')
+                .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
+            return sortedPlatforms.map(p => {
+                const checked = gamePlatforms.includes(p.short_name) ? 'checked' : '';
+                return '<label class="flex items-center gap-2 cursor-pointer">' +
+                    '<input type="checkbox" ' + checked + ' ' +
+                    'onchange="togglePlatform(' + game.id + ', \'' + p.short_name + '\', this.checked)" ' +
+                    'class="accent-accent w-4 h-4">' +
+                    '<span class="platform-badge platform-' + p.short_name + '">' + p.short_name + '</span>' +
+                    '</label>';
+            }).join('');
+        }
+
+        // Load stats into nav
+        async function loadNavStats() {
+            const stats = await api.get('/api/stats');
+            const el = document.getElementById('stats-summary');
+            if (el && stats) {
+                el.innerHTML = `
+                    <span><strong class="text-white">${stats.total_games}</strong> games</span>
+                    <span class="text-gray-600">|</span>
+                    <span><strong class="text-green-400">${stats.by_status?.completed || 0}</strong> complete</span>
+                    <span class="text-gray-600">|</span>
+                    <span><strong class="text-blue-400">${stats.by_status?.playing || 0}</strong> playing</span>
+                `;
+            }
+        }
+
+        // Modal handling
+        function openModal(gameId) {
+            const modal = document.getElementById('game-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            loadGameModal(gameId);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('game-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        document.getElementById('game-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'game-modal') closeModal();
+        });
+
+        async function loadGameModal(gameId) {
+            const game = await api.get(`/api/games/${gameId}`);
+            const content = document.getElementById('game-modal-content');
+
+            const coverUrl = game.cover_url || '';
+            const criticScore = game.metacritic_score || game.opencritic_score;
+
+            content.innerHTML = `
+                <div class="relative">
+                    ${coverUrl ? `
+                        <div class="h-48 overflow-hidden rounded-t-xl">
+                            <img src="${coverUrl}" alt="${game.title}" class="w-full h-full object-cover opacity-30">
+                        </div>
+                    ` : '<div class="h-24 bg-surface-lighter rounded-t-xl flex items-center justify-center"><span class="text-yellow-400 text-sm">No cover art</span></div>'}
+                    <button onclick="closeModal()" class="absolute top-4 right-4 text-white/70 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="p-6 ${coverUrl ? '-mt-16 relative' : ''}">
+                    <div class="flex items-start space-x-4">
+                        ${coverUrl ? `
+                            <img src="${coverUrl}" alt="${game.title}"
+                                 class="w-24 h-24 object-cover rounded-lg shadow-lg flex-shrink-0">
+                        ` : `
+                            <div class="w-24 h-24 cover-placeholder rounded-lg flex items-center justify-center flex-shrink-0 border-2 border-dashed border-gray-600">
+                                <span class="text-3xl">🎮</span>
+                            </div>
+                        `}
+                        <div class="flex-1 min-w-0">
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                ${renderPlatforms(game.platforms?.map(p => p.short_name) || [])}
+                                ${renderStatus(game.status || 'backlog')}
+                                ${!coverUrl ? '<span class="status-badge bg-yellow-600/30 text-yellow-400">No Art</span>' : ''}
+                            </div>
+                            ${criticScore ? `
+                                <div class="mt-2 text-sm text-gray-400">
+                                    Critic Score: <span class="text-white font-medium">${criticScore}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <div class="mt-4 space-y-3">
+                        <!-- Title (editable) -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Title</label>
+                            <input type="text" value="${game.title.replace(/"/g, '&quot;')}"
+                                   class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white focus:border-accent focus:outline-none"
+                                   onblur="renameGame(${game.id}, this.value)">
+                        </div>
+
+                        <!-- Cover URL -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Cover Art URL</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="cover-url-${game.id}" value="${coverUrl}" placeholder="https://..."
+                                       class="flex-1 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <button onclick="setCoverUrl(${game.id}, document.getElementById('cover-url-${game.id}').value)"
+                                        class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm transition-colors">
+                                    Save
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                ${(() => {
+                                    const plats = (game.platforms || []).map(p => p.short_name);
+                                    const links = ['<a href="https://www.igdb.com/search?type=1&q=' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">IGDB</a>'];
+                                    if (plats.includes('PS4') || plats.includes('PS5')) links.push('<a href="https://store.playstation.com/en-us/search/' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">PSN</a>');
+                                    if (plats.includes('Switch')) links.push('<a href="https://www.nintendo.com/us/search/#q=' + encodeURIComponent(game.title) + '&sort=df&f=corePlatforms&corePlatforms=Nintendo+Switch" target="_blank" class="text-accent hover:underline">Nintendo</a>');
+                                    if (plats.includes('Xbox')) links.push('<a href="https://www.xbox.com/en-US/search?q=' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">Xbox</a>');
+                                    return links.join(' · ');
+                                })()}
+                            </p>
+                        </div>
+
+                        <!-- Status & Priority row -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Status</label>
+                                <select onchange="setStatus(${game.id}, this.value)"
+                                        class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white focus:border-accent focus:outline-none">
+                                    ${['backlog', 'playing', 'parked', 'completed', '100', 'dropped', 'wishlist'].map(s =>
+                                        `<option value="${s}" ${game.status === s ? 'selected' : ''}>${s === '100' ? '100%' : s === 'completed' ? 'complete' : s.replace('_', ' ')}</option>`
+                                    ).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">
+                                    Priority: <span id="priority-value" class="text-white">${game.priority || 5}</span>/10
+                                </label>
+                                <input type="range" min="1" max="10" value="${game.priority || 5}"
+                                       onchange="setPriority(${game.id}, this.value); document.getElementById('priority-value').textContent = this.value"
+                                       class="w-full accent-accent mt-2">
+                            </div>
+                        </div>
+
+                        <!-- Platforms & Rating row -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Platforms</label>
+                                <div class="flex flex-wrap gap-2" id="platform-checkboxes-${game.id}">
+                                    ${renderPlatformCheckboxes(game)}
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Your Rating</label>
+                                ${renderRating(game.rating, game.id, true)}
+                            </div>
+                        </div>
+
+                        <!-- Series (if any) -->
+                        ${game.series_id ? `
+                        <div class="text-sm">
+                            <span class="text-gray-400">Series:</span>
+                            <span class="text-white ml-1">${game.series_name}${game.series_order !== null ? ` (#${game.series_order})` : ''}</span>
+                        </div>
+                        ` : ''}
+
+                        <!-- Tags -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Tags</label>
+                            <div class="flex flex-wrap gap-2 items-center">
+                                <label class="flex items-center gap-1 cursor-pointer text-sm text-gray-300">
+                                    <input type="checkbox" ${(game.tags || []).some(t => t.name === 'Physical') ? 'checked' : ''}
+                                           onchange="toggleTag(${game.id}, 'Physical', this.checked)"
+                                           class="accent-accent w-4 h-4">
+                                    Physical
+                                </label>
+                                <span class="text-gray-600">|</span>
+                                ${(game.tags || []).filter(t => t.name !== 'Physical').map(t =>
+                                    `<span class="px-2 py-0.5 bg-surface rounded text-sm group cursor-pointer" onclick="removeTag(${game.id}, '${t.name}')">${t.name} <span class="text-gray-500 group-hover:text-red-400">×</span></span>`
+                                ).join('')}
+                                <input type="text" placeholder="+ tag"
+                                       class="bg-transparent border-b border-gray-600 px-1 py-0.5 text-white text-sm focus:border-accent focus:outline-none w-20"
+                                       onkeypress="if(event.key==='Enter') addTag(${game.id}, this.value, this)">
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Notes</label>
+                            <textarea rows="2" placeholder="Your notes..."
+                                      class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none resize-none"
+                                      onblur="saveNotes(${game.id}, this.value)">${game.notes || ''}</textarea>
+                        </div>
+
+                        <!-- Delete -->
+                        <div class="pt-3 border-t border-gray-700">
+                            <button id="delete-btn-${game.id}"
+                                    onclick="handleDeleteClick(${game.id})"
+                                    class="px-4 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 rounded text-red-400 text-sm transition-colors">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function addTag(gameId, tagName, input) {
+            if (!tagName.trim()) return;
+            const game = await api.get(`/api/games/${gameId}`);
+            const existingTags = (game.tags || []).map(t => t.name);
+            if (!existingTags.includes(tagName.trim())) {
+                existingTags.push(tagName.trim());
+                await api.put(`/api/games/${gameId}`, { tags: existingTags });
+                loadGameModal(gameId);
+            }
+            input.value = '';
+        }
+
+        async function removeTag(gameId, tagName) {
+            const game = await api.get(`/api/games/${gameId}`);
+            const existingTags = (game.tags || []).map(t => t.name).filter(t => t !== tagName);
+            await api.put(`/api/games/${gameId}`, { tags: existingTags });
+            loadGameModal(gameId);
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        async function toggleTag(gameId, tagName, checked) {
+            const game = await api.get(`/api/games/${gameId}`);
+            let tags = (game.tags || []).map(t => t.name);
+
+            if (checked && !tags.includes(tagName)) {
+                tags.push(tagName);
+            } else if (!checked) {
+                tags = tags.filter(t => t !== tagName);
+            }
+
+            await api.put(`/api/games/${gameId}`, { tags: tags });
+            loadGameModal(gameId);
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        async function saveNotes(gameId, notes) {
+            await api.put(`/api/games/${gameId}`, { notes });
+        }
+
+        async function renameGame(gameId, newTitle) {
+            if (!newTitle.trim()) return;
+            const result = await api.put(`/api/games/${gameId}`, { title: newTitle.trim() });
+            if (!result.ok) {
+                alert(result.data.error || 'Failed to rename game');
+                loadGameModal(gameId);
+                return;
+            }
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        async function setCoverUrl(gameId, url) {
+            await api.put(`/api/games/${gameId}`, { cover_url: url.trim() });
+            loadGameModal(gameId);
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        let deleteConfirmPending = null;
+
+        function handleDeleteClick(gameId) {
+            const btn = document.getElementById(`delete-btn-${gameId}`);
+
+            if (deleteConfirmPending === gameId) {
+                // Second click - actually delete
+                deleteGame(gameId);
+            } else {
+                // First click - change to confirm state
+                deleteConfirmPending = gameId;
+                btn.textContent = 'Click again to confirm';
+                btn.classList.remove('bg-red-600/20', 'hover:bg-red-600/40');
+                btn.classList.add('bg-red-600', 'hover:bg-red-700', 'text-white');
+
+                // Reset after 3 seconds if not confirmed
+                setTimeout(() => {
+                    if (deleteConfirmPending === gameId) {
+                        resetDeleteButton(gameId);
+                    }
+                }, 3000);
+            }
+        }
+
+        function resetDeleteButton(gameId) {
+            const btn = document.getElementById(`delete-btn-${gameId}`);
+            if (btn) {
+                deleteConfirmPending = null;
+                btn.textContent = 'Delete Game';
+                btn.classList.remove('bg-red-600', 'hover:bg-red-700', 'text-white');
+                btn.classList.add('bg-red-600/20', 'hover:bg-red-600/40');
+            }
+        }
+
+        async function deleteGame(gameId) {
+            await api.delete(`/api/games/${gameId}`);
+            deleteConfirmPending = null;
+            closeModal();
+            if (typeof refreshGameList === 'function') refreshGameList();
+            loadNavStats();
+        }
+
+        async function togglePlatform(gameId, platformShortName, checked) {
+            const game = await api.get(`/api/games/${gameId}`);
+            let platforms = (game.platforms || []).map(p => p.short_name);
+
+            if (checked && !platforms.includes(platformShortName)) {
+                platforms.push(platformShortName);
+            } else if (!checked) {
+                platforms = platforms.filter(p => p !== platformShortName);
+            }
+
+            await api.put(`/api/games/${gameId}`, { platforms: platforms });
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        // Add Game Modal
+        let igdbSearchTimeout = null;
+
+        function openAddGameModal() {
+            const modal = document.getElementById('add-game-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.getElementById('new-game-title').value = '';
+            document.getElementById('new-game-cover-url').value = '';
+            document.getElementById('igdb-results').classList.add('hidden');
+            document.getElementById('add-game-error').classList.add('hidden');
+            renderNewGamePlatforms();
+            document.getElementById('new-game-title').focus();
+        }
+
+        function closeAddGameModal() {
+            const modal = document.getElementById('add-game-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        document.getElementById('add-game-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'add-game-modal') closeAddGameModal();
+            if (!e.target.closest('#igdb-results') && !e.target.closest('#new-game-title')) {
+                document.getElementById('igdb-results').classList.add('hidden');
+            }
+        });
+
+        function searchIGDB(query) {
+            clearTimeout(igdbSearchTimeout);
+            const resultsDiv = document.getElementById('igdb-results');
+
+            if (!query.trim() || query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+
+            igdbSearchTimeout = setTimeout(async () => {
+                try {
+                    const results = await api.get(`/api/igdb/search?q=${encodeURIComponent(query)}`);
+
+                    if (results.error) {
+                        resultsDiv.innerHTML = `<div class="px-3 py-2 text-gray-500 text-sm">${results.error}</div>`;
+                        resultsDiv.classList.remove('hidden');
+                        return;
+                    }
+
+                    if (!results.length) {
+                        resultsDiv.innerHTML = '<div class="px-3 py-2 text-gray-500 text-sm">No results found</div>';
+                        resultsDiv.classList.remove('hidden');
+                        return;
+                    }
+
+                    resultsDiv.innerHTML = results.map(game => `
+                        <div class="flex items-center gap-3 px-3 py-2 hover:bg-surface-lighter cursor-pointer"
+                             onclick="selectIGDBGame('${game.name.replace(/'/g, "\\'")}', '${game.cover_url || ''}')">
+                            ${game.cover_url ?
+                                `<img src="${game.cover_url}" class="w-8 h-10 object-cover rounded">` :
+                                `<div class="w-8 h-10 bg-surface rounded flex items-center justify-center text-xs">🎮</div>`
+                            }
+                            <span class="text-white text-sm">${game.name}</span>
+                        </div>
+                    `).join('');
+                    resultsDiv.classList.remove('hidden');
+                } catch (e) {
+                    resultsDiv.innerHTML = '<div class="px-3 py-2 text-red-400 text-sm">Search failed</div>';
+                    resultsDiv.classList.remove('hidden');
+                }
+            }, 300);
+        }
+
+        function selectIGDBGame(name, coverUrl) {
+            document.getElementById('new-game-title').value = name;
+            document.getElementById('new-game-cover-url').value = coverUrl;
+            document.getElementById('igdb-results').classList.add('hidden');
+        }
+
+        function renderNewGamePlatforms() {
+            const container = document.getElementById('new-game-platforms');
+            const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
+            const sorted = [...allPlatforms]
+                .filter(p => p.short_name !== 'PC')
+                .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
+            container.innerHTML = sorted.map(p => `
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" value="${p.short_name}" class="accent-accent w-4 h-4">
+                    <span class="platform-badge platform-${p.short_name}">${p.short_name}</span>
+                </label>
+            `).join('');
+        }
+
+        async function addNewGame() {
+            const title = document.getElementById('new-game-title').value.trim();
+            const coverUrl = document.getElementById('new-game-cover-url').value.trim();
+            const errorEl = document.getElementById('add-game-error');
+
+            if (!title) {
+                errorEl.textContent = 'Please enter a game title';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const platforms = Array.from(document.querySelectorAll('#new-game-platforms input:checked'))
+                .map(cb => cb.value);
+
+            const gameData = { title, platforms };
+            if (coverUrl) gameData.cover_url = coverUrl;
+
+            const result = await api.post('/api/games', gameData);
+
+            if (result.ok) {
+                closeAddGameModal();
+                if (typeof refreshGameList === 'function') refreshGameList();
+                loadNavStats();
+                // Open the new game's modal for further editing
+                openModal(result.data.game_id);
+            } else {
+                if (result.status === 409) {
+                    errorEl.textContent = 'Game already exists';
+                    // Optionally open existing game
+                    setTimeout(() => {
+                        closeAddGameModal();
+                        openModal(result.data.game_id);
+                    }, 1000);
+                } else {
+                    errorEl.textContent = result.data.error || 'Failed to add game';
+                }
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAllPlatforms();
+            loadNavStats();
+        });
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
