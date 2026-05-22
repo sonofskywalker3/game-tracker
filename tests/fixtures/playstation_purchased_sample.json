@@ -1,0 +1,29 @@
+{
+  "data": {
+    "purchasedTitlesRetrieve": {
+      "__typename": "GameList",
+      "games": [
+        {
+          "__typename": "GameLibraryTitle",
+          "name": "Returnal Sample",
+          "platform": "PS5",
+          "productId": "UP0000-PPSA00001_00-SAMPLE0000000001",
+          "titleId": "PPSA00001_00",
+          "conceptId": null,
+          "isActive": true,
+          "image": {"__typename": "Media", "url": "https://example/returnal.png"}
+        },
+        {
+          "__typename": "GameLibraryTitle",
+          "name": "Bloodborne Sample",
+          "platform": "PS4",
+          "productId": "UP0000-CUSA00002_00-SAMPLE0000000002",
+          "titleId": "CUSA00002_00",
+          "conceptId": null,
+          "isActive": true,
+          "image": {"__typename": "Media", "url": "https://example/bloodborne.png"}
+        }
+      ]
+    }
+  }
+}
