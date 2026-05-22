@@ -14,8 +14,8 @@ import logging
 from scrapers.base import (
     ScrapedGame,
     auth_from_captured,
-    auth_headers,
     capture_request_headers,
+    replay_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,10 @@ def _request_page(page, start: int, headers: dict) -> dict:
             separators=(",", ":"),
         ),
     }
-    resp = page.request.get(GRAPHQL_URL, params=params, headers=headers)
+    # Apollo CSRF guard: must send a non-simple content-type or the preflight header.
+    req_headers = {**headers, "content-type": "application/json",
+                   "apollo-require-preflight": "true"}
+    resp = page.request.get(GRAPHQL_URL, params=params, headers=req_headers)
     if not resp.ok:
         raise RuntimeError(
             f"PSN getPurchasedGameList {resp.status} {resp.status_text}: {resp.text()[:300]}"
@@ -95,9 +98,9 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     """
     headers = auth_from_captured(captured or [], OP_NAME)
     if not headers:
-        logger.info("playstation: no captured auth; reloading to capture it...")
-        headers = auth_headers(capture_request_headers(page, OP_NAME, trigger=page.reload))
-    logger.info("playstation: auth headers in use: %s", sorted(headers) or "NONE (will fail)")
+        logger.info("playstation: no captured headers; reloading to capture them...")
+        headers = replay_headers(capture_request_headers(page, OP_NAME, trigger=page.reload))
+    logger.info("playstation: replay headers: %s", sorted(headers) or "NONE (will fail)")
     games: list[ScrapedGame] = []
     seen: set[str] = set()
     start = 0

@@ -14,8 +14,8 @@ import logging
 from scrapers.base import (
     ScrapedGame,
     auth_from_captured,
-    auth_headers,
     capture_request_headers,
+    replay_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,9 +71,9 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     """
     headers = auth_from_captured(captured or [], "orders/list")
     if not headers:
-        logger.info("xbox: no captured auth; reloading to capture it...")
-        headers = auth_headers(capture_request_headers(page, "orders/list", trigger=page.reload))
-    logger.info("xbox: auth headers in use: %s", sorted(headers) or "NONE (will fail)")
+        logger.info("xbox: no captured headers; reloading to capture them...")
+        headers = replay_headers(capture_request_headers(page, "orders/list", trigger=page.reload))
+    logger.info("xbox: replay headers: %s", sorted(headers) or "NONE (will fail)")
     responses: list[dict] = []
     token = None
     seen_tokens: set[str] = set()

@@ -217,25 +217,35 @@ def capture_request_headers(page, url_substring: str, trigger,
     return holder
 
 
-def auth_headers(headers: dict) -> dict:
-    """Subset of captured request headers that are safe + relevant to replay."""
-    keep = {}
-    for key, value in (headers or {}).items():
-        k = key.lower()
-        if k == "authorization" or k.startswith("x-") or "token" in k or "csrf" in k:
-            keep[key] = value
-    return keep
+# Request headers we must NOT replay (the API client manages these itself).
+SKIP_REPLAY_HEADERS = frozenset({
+    "host", "content-length", "connection", "accept-encoding", "cookie",
+})
+
+
+def replay_headers(headers: dict) -> dict:
+    """Captured request headers safe to replay (drops auto-managed + pseudo headers).
+
+    Replaying the page's full header set (content-type, x-*, apollo-*, origin,
+    etc.) is what gets past API CSRF checks; cookies are dropped because
+    page.request sends the browser context's cookie jar itself.
+    """
+    return {
+        key: value
+        for key, value in (headers or {}).items()
+        if key.lower() not in SKIP_REPLAY_HEADERS and not key.startswith(":")
+    }
 
 
 def auth_from_captured(captured: list, url_substring: str) -> dict:
-    """Find a captured request matching url_substring; return its auth headers.
+    """Find a captured request matching url_substring; return its replayable headers.
 
-    Uses the auth the page already sent (captured passively during the session),
-    which is more reliable than trying to re-trigger the request.
+    Uses the headers the page already sent (captured passively during the
+    session), which is more reliable than trying to re-trigger the request.
     """
     for entry in captured or []:
         if url_substring in entry.get("url", ""):
-            keep = auth_headers(entry.get("request_headers") or {})
-            if keep:
-                return keep
+            hdrs = replay_headers(entry.get("request_headers") or {})
+            if hdrs:
+                return hdrs
     return {}
