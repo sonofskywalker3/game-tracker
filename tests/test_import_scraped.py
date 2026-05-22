@@ -168,28 +168,46 @@ def test_dry_run_dedups_same_batch_new_titles(temp_db):
     conn.close()
 
 
-def test_is_demo_filters_only_real_demos():
-    assert imp.is_demo("FINAL FANTASY XVI DEMO")
-    assert imp.is_demo("Stranger of Paradise TRIAL VERSION")
-    assert imp.is_demo("Halo Infinite (Beta)")
-    assert not imp.is_demo("Demon's Souls")   # word boundary: 'demo' inside 'demon'
-    assert not imp.is_demo("Trials Rising")   # not the phrase 'trial version'
+def test_is_non_game_filters_apps_demos_and_dlc():
+    # demos / trials
+    assert imp.is_non_game("FINAL FANTASY XVI DEMO")
+    assert imp.is_non_game("Stranger of Paradise TRIAL VERSION")
+    assert imp.is_non_game("CODE VEIN Trial Edition")
+    assert imp.is_non_game("Halo Infinite (Beta)")
+    # apps
+    assert imp.is_non_game("Netflix")
+    assert imp.is_non_game("Amazon Prime Video")
+    assert imp.is_non_game("SHAREfactory")
+    # dlc / media
+    assert imp.is_non_game("inFAMOUS Second Son Soundtrack")
+    assert imp.is_non_game("FINAL FANTASY VII REMAKE Digital Artbook")
+    assert imp.is_non_game("The Art of Horizon Zero Dawn")
+    assert imp.is_non_game("Sea of Solitude - Unlock Key")
+    assert imp.is_non_game("Ratchet & Clank: Rift Apart Bonus Content")
+    # real games must NOT be caught
+    assert not imp.is_non_game("Demon's Souls")
+    assert not imp.is_non_game("Trials Rising")
+    assert not imp.is_non_game("Alpha Protocol")
+    assert not imp.is_non_game("The Jackbox Party Pack 3")
+    assert not imp.is_non_game("Assassin's Creed Odyssey - Ultimate Edition")
+    assert not imp.is_non_game("The Last of Us Remastered")
 
 
-def test_skip_demos_excludes_them(temp_db):
+def test_skip_non_games_excludes_them(temp_db):
     conn = models.get_db()
     stats = imp.import_games(
         conn,
         [_g("Cool Game", "PS4", external_id="C1"),
-         _g("Cool Game DEMO", "PS4", external_id="C1D")],
+         _g("Cool Game DEMO", "PS4", external_id="C1D"),
+         _g("Netflix", "PS4", external_id="APP1")],
         "playstation",
     )
     conn.commit()
     assert stats.new_games == 1
-    assert stats.skipped_demos == 1
+    assert stats.skipped_non_games == 2
     titles = {r[0] for r in conn.execute("SELECT title FROM games")}
     assert "Cool Game" in titles
-    assert not any("DEMO" in t.upper() for t in titles)
+    assert "Netflix" not in titles
     conn.close()
 
 

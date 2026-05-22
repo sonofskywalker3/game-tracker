@@ -25,13 +25,35 @@ logger = logging.getLogger(__name__)
 FUZZY_MATCH_THRESHOLD = 0.85
 DEFAULT_STATUS = "backlog"
 
-# Non-game entries to skip (deterministic; word-boundary so "Demon's Souls" and
-# "Trials Rising" are NOT caught).
-DEMO_PATTERN = re.compile(r"\b(demo|beta|trial version)\b", re.IGNORECASE)
+# Non-game library entries (PSN lists apps + add-ons alongside games). DLC is
+# skipped for now; a future feature will attach it to its parent game.
+NON_GAME_APPS = frozenset({
+    "netflix", "hulu", "crunchyroll", "amazon prime video", "youtube",
+    "spotify", "twitch", "disney plus", "disney", "max", "hbo max", "peacock",
+    "funimation", "pluto tv", "apple tv", "plex", "wwe network", "media player",
+    "vidzone", "littlstar", "littlstar cinema", "live events viewer",
+    "sharefactory", "headset companion app", "within", "ps@e3",
+})
+# Word-boundaried so real titles aren't caught ("Demon's Souls", "Alpha
+# Protocol", "Jackbox Party Pack" all stay).
+NON_GAME_PATTERN = re.compile(
+    r"\b(demo|beta|trial version|trial edition|soundtrack|artbook|art book|"
+    r"bonus content|unlock key|season pass|dlc|expansion pass|wallpaper)\b"
+    r"|the art of |first look alpha|episode duscae|edition upgrade",
+    re.IGNORECASE,
+)
 
 
-def is_demo(title: str) -> bool:
-    return bool(DEMO_PATTERN.search(title or ""))
+def _clean_for_match(title: str) -> str:
+    cleaned = (title or "").replace("™", "").replace("®", "").replace("©", "")
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def is_non_game(title: str) -> bool:
+    """True for apps / demos / DLC-style entries that aren't base games."""
+    if _clean_for_match(title) in NON_GAME_APPS:
+        return True
+    return bool(NON_GAME_PATTERN.search(title or ""))
 
 # Display names for platform rows created on the fly (short_name -> name).
 PLATFORM_DISPLAY_NAMES = {
@@ -91,7 +113,7 @@ class ImportStats:
     platform_links_added: int = 0
     external_ids_added: int = 0
     ratings_created: int = 0
-    skipped_demos: int = 0
+    skipped_non_games: int = 0
     platforms_created: list[tuple[str, str]] = field(default_factory=list)
     fuzzy_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
@@ -104,7 +126,7 @@ class ImportStats:
         self.platform_links_added += other.platform_links_added
         self.external_ids_added += other.external_ids_added
         self.ratings_created += other.ratings_created
-        self.skipped_demos += other.skipped_demos
+        self.skipped_non_games += other.skipped_non_games
         self.platforms_created += other.platforms_created
         self.fuzzy_candidates += other.fuzzy_candidates
 
@@ -199,7 +221,7 @@ def _safe_auto_confirm(scraped: str, existing: str, score: float) -> bool:
 
 
 def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
-                 dry_run: bool = False, skip_demos: bool = True,
+                 dry_run: bool = False, skip_non_games: bool = True,
                  confirm_fn: Callable[[str, str, float], bool] = _interactive_confirm) -> ImportStats:
     """Reconcile a list of scraped game dicts into the DB. Returns stats."""
     stats = ImportStats()
@@ -208,8 +230,8 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
     # miscounted as another "new" game; a real run unifies them via the DB.
     batch_new_keys: set[str] = set()
     for game in games:
-        if skip_demos and is_demo(game["title"]):
-            stats.skipped_demos += 1
+        if skip_non_games and is_non_game(game["title"]):
+            stats.skipped_non_games += 1
             continue
         m = resolve_game(conn, source, game.get("external_id"), game["title"])
         is_new = False
@@ -266,8 +288,8 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
     logger.info("platform links:     +%d", total.platform_links_added)
     logger.info("external ids:       +%d", total.external_ids_added)
     logger.info("default ratings:    +%d", total.ratings_created)
-    if total.skipped_demos:
-        logger.info("skipped demos:      %d", total.skipped_demos)
+    if total.skipped_non_games:
+        logger.info("skipped non-games:  %d", total.skipped_non_games)
     if total.fuzzy_confirmed or total.fuzzy_rejected:
         logger.info("fuzzy merged/new:   %d / %d", total.fuzzy_confirmed, total.fuzzy_rejected)
     if total.platforms_created:
@@ -287,8 +309,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="auto-confirm ALL fuzzy matches")
     parser.add_argument("--auto-fuzzy", action="store_true",
                         help="auto-confirm only spacing/punctuation renames; reject the rest")
-    parser.add_argument("--keep-demos", action="store_true",
-                        help="do not skip demos / trials / betas")
+    parser.add_argument("--keep-non-games", action="store_true",
+                        help="do not skip apps / demos / DLC-style entries")
     args = parser.parse_args(argv)
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
@@ -304,7 +326,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     for path in _iter_json_paths(args.paths):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         stats = import_games(conn, data["games"], data["source"], dry_run=args.dry_run,
-                             skip_demos=not args.keep_demos, confirm_fn=confirm)
+                             skip_non_games=not args.keep_non_games, confirm_fn=confirm)
         total.merge(stats)
         logger.info("%s (%s): +%d new, %d id, %d title, %d fuzzy",
                     Path(path).name, data["source"], stats.new_games,
