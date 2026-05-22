@@ -11,7 +11,12 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from playwright.sync_api import Page
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,8 @@ def write_scrape(source: str, games: list[ScrapedGame], out_dir: Path = SCRAPE_D
         "count": len(games),
         "games": [asdict(g) for g in games],
     }
+    # Date-only filename: re-scraping the same vendor on the same day overwrites
+    # (latest-wins), which keeps directory-based imports from processing stale dupes.
     out_path = out_dir / f"{source}_{now:%Y%m%d}.json"
     out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("wrote %d games to %s", len(games), out_path)
@@ -66,7 +73,7 @@ def read_scrape(path: Path) -> list[dict]:
 
 
 @contextmanager
-def persistent_browser(headless: bool = False):
+def persistent_browser(headless: bool = False) -> Iterator[Page]:
     """Yield a Playwright page backed by a persistent profile (login persists).
 
     Live shell — verified manually, not unit-tested. First run per vendor opens a
@@ -87,7 +94,7 @@ def persistent_browser(headless: bool = False):
             context.close()
 
 
-def autoscroll(page, max_rounds: int = 60, pause_ms: int = 500) -> None:
+def autoscroll(page: Page, max_rounds: int = 60, pause_ms: int = 500) -> None:
     """Scroll to the bottom repeatedly to trigger lazy-loaded library items."""
     prev_height = 0
     for _ in range(max_rounds):
@@ -97,3 +104,5 @@ def autoscroll(page, max_rounds: int = 60, pause_ms: int = 500) -> None:
         if height == prev_height:
             break
         prev_height = height
+    else:
+        logger.warning("autoscroll hit max_rounds=%d without a stable height", max_rounds)

@@ -11,14 +11,17 @@ def test_scraped_game_defaults_source_title_to_title():
 def test_write_and_read_roundtrip(tmp_path):
     games = [
         ScrapedGame("Hades", "PS5", "playstation", external_id="P1", cover_url="u"),
-        ScrapedGame("Celeste", "Switch", "playstation"),
+        ScrapedGame("Journey", "PS4", "playstation", status_hint="played"),
+        ScrapedGame("極限脱出", "PS4", "playstation"),  # non-ASCII (ensure_ascii=False)
     ]
     out = write_scrape("playstation", games, out_dir=tmp_path)
     assert out.exists()
     rows = read_scrape(out)
-    assert [r["title"] for r in rows] == ["Hades", "Celeste"]
+    assert [r["title"] for r in rows] == ["Hades", "Journey", "極限脱出"]
     assert rows[0]["external_id"] == "P1"
-    assert rows[1]["source_title"] == "Celeste"
+    assert rows[1]["source_title"] == "Journey"
+    assert rows[1]["status_hint"] == "played"
+    assert rows[2]["title"] == "極限脱出"  # non-ASCII survives the JSON round-trip
 
 
 def test_write_rejects_unknown_source(tmp_path):
