@@ -11,6 +11,7 @@ import argparse
 import difflib
 import json
 import logging
+import re
 import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 
 FUZZY_MATCH_THRESHOLD = 0.85
 DEFAULT_STATUS = "backlog"
+
+# Non-game entries to skip (deterministic; word-boundary so "Demon's Souls" and
+# "Trials Rising" are NOT caught).
+DEMO_PATTERN = re.compile(r"\b(demo|beta|trial version)\b", re.IGNORECASE)
+
+
+def is_demo(title: str) -> bool:
+    return bool(DEMO_PATTERN.search(title or ""))
 
 # Display names for platform rows created on the fly (short_name -> name).
 PLATFORM_DISPLAY_NAMES = {
@@ -82,6 +91,7 @@ class ImportStats:
     platform_links_added: int = 0
     external_ids_added: int = 0
     ratings_created: int = 0
+    skipped_demos: int = 0
     platforms_created: list[tuple[str, str]] = field(default_factory=list)
     fuzzy_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
@@ -94,6 +104,7 @@ class ImportStats:
         self.platform_links_added += other.platform_links_added
         self.external_ids_added += other.external_ids_added
         self.ratings_created += other.ratings_created
+        self.skipped_demos += other.skipped_demos
         self.platforms_created += other.platforms_created
         self.fuzzy_candidates += other.fuzzy_candidates
 
@@ -180,8 +191,15 @@ def _auto_confirm(scraped: str, existing: str, score: float) -> bool:
     return True
 
 
+def _safe_auto_confirm(scraped: str, existing: str, score: float) -> bool:
+    """Auto-confirm only when titles differ solely by spacing/punctuation
+    (e.g. 'NieR:Automata' vs 'Nier: Automata'); reject real differences like
+    'Final Fantasy XV' vs 'Final Fantasy XIV'."""
+    return match_key(scraped).replace(" ", "") == match_key(existing).replace(" ", "")
+
+
 def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
-                 dry_run: bool = False,
+                 dry_run: bool = False, skip_demos: bool = True,
                  confirm_fn: Callable[[str, str, float], bool] = _interactive_confirm) -> ImportStats:
     """Reconcile a list of scraped game dicts into the DB. Returns stats."""
     stats = ImportStats()
@@ -190,6 +208,9 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
     # miscounted as another "new" game; a real run unifies them via the DB.
     batch_new_keys: set[str] = set()
     for game in games:
+        if skip_demos and is_demo(game["title"]):
+            stats.skipped_demos += 1
+            continue
         m = resolve_game(conn, source, game.get("external_id"), game["title"])
         is_new = False
 
@@ -245,6 +266,8 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
     logger.info("platform links:     +%d", total.platform_links_added)
     logger.info("external ids:       +%d", total.external_ids_added)
     logger.info("default ratings:    +%d", total.ratings_created)
+    if total.skipped_demos:
+        logger.info("skipped demos:      %d", total.skipped_demos)
     if total.fuzzy_confirmed or total.fuzzy_rejected:
         logger.info("fuzzy merged/new:   %d / %d", total.fuzzy_confirmed, total.fuzzy_rejected)
     if total.platforms_created:
@@ -261,18 +284,27 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("paths", nargs="+", help="JSON files or a directory of them (e.g. scraped)")
     parser.add_argument("--dry-run", action="store_true", help="preview changes; write nothing")
     parser.add_argument("--accept-fuzzy", action="store_true",
-                        help="auto-confirm fuzzy matches instead of prompting")
+                        help="auto-confirm ALL fuzzy matches")
+    parser.add_argument("--auto-fuzzy", action="store_true",
+                        help="auto-confirm only spacing/punctuation renames; reject the rest")
+    parser.add_argument("--keep-demos", action="store_true",
+                        help="do not skip demos / trials / betas")
     args = parser.parse_args(argv)
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
     conn = models.get_db()
-    confirm = _auto_confirm if args.accept_fuzzy else _interactive_confirm
+    if args.accept_fuzzy:
+        confirm = _auto_confirm
+    elif args.auto_fuzzy:
+        confirm = _safe_auto_confirm
+    else:
+        confirm = _interactive_confirm
 
     total = ImportStats()
     for path in _iter_json_paths(args.paths):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        stats = import_games(conn, data["games"], data["source"],
-                             dry_run=args.dry_run, confirm_fn=confirm)
+        stats = import_games(conn, data["games"], data["source"], dry_run=args.dry_run,
+                             skip_demos=not args.keep_demos, confirm_fn=confirm)
         total.merge(stats)
         logger.info("%s (%s): +%d new, %d id, %d title, %d fuzzy",
                     Path(path).name, data["source"], stats.new_games,
