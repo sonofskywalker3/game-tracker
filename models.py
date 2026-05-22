@@ -4,6 +4,29 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "games.db"
 
+# Platform era classification (module-level, immutable).
+PC_PLATFORMS = frozenset({"PC", "Steam", "GOG", "Epic", "EGS"})
+LEGACY_PLATFORMS = frozenset({
+    "PS3", "PS2", "PS1", "PSX", "PSV", "Vita", "PSP",
+    "X360", "XBOX", "OGXbox",
+    "Wii", "WiiU", "GC", "GCN", "N64", "SNES", "NES",
+    "3DS", "NDS", "DS", "GBA", "GBC", "GB",
+    "Genesis", "Saturn", "Dreamcast",
+})
+
+MODERN_CONSOLE = "modern_console"
+LEGACY_CONSOLE = "legacy_console"
+PC_CATEGORY = "pc"
+
+
+def classify_platform(short_name: str) -> str:
+    """Map a platform short_name to an era category."""
+    if short_name in PC_PLATFORMS:
+        return PC_CATEGORY
+    if short_name in LEGACY_PLATFORMS:
+        return LEGACY_CONSOLE
+    return MODERN_CONSOLE
+
 
 def get_db():
     """Get database connection with row factory."""
