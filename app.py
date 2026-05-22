@@ -140,14 +140,15 @@ def api_games():
     for row in rows:
         game = dict(row)
 
-        # Get platforms for this game
+        # Get platforms (+ era category) for this game
         platforms = conn.execute("""
-            SELECT p.short_name
+            SELECT p.short_name, p.category
             FROM platforms p
             JOIN game_platforms gp ON gp.platform_id = p.id
             WHERE gp.game_id = ?
         """, (row['id'],)).fetchall()
         game['platforms'] = [p['short_name'] for p in platforms]
+        game['categories'] = sorted({p['category'] for p in platforms})
 
         # Get tags for this game
         tags = conn.execute("""
@@ -157,6 +158,7 @@ def api_games():
             WHERE gt.game_id = ?
         """, (row['id'],)).fetchall()
         game['tags'] = [{'name': t['name'], 'category': t['category']} for t in tags]
+        game['physical'] = any(t['name'] == 'Physical' for t in game['tags'])
 
         games.append(game)
 
