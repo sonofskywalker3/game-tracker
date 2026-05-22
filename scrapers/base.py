@@ -163,3 +163,22 @@ def capturing_browser(headless: bool = False):
             yield page, captured
         finally:
             context.close()
+
+
+def scroll_until_idle(page: Page, captured: list, *, max_rounds: int = 80,
+                      pause_ms: int = 700, idle_rounds: int = 4) -> None:
+    """Scroll until no new captured responses arrive for several rounds.
+
+    Lazy/paginated lists fetch more as you scroll; waiting for the capture count
+    to stop growing is a more reliable "fully loaded" signal than scroll height.
+    """
+    stable, last = 0, len(captured)
+    for _ in range(max_rounds):
+        page.mouse.wheel(0, 25000)
+        page.wait_for_timeout(pause_ms)
+        if len(captured) == last:
+            stable += 1
+            if stable >= idle_rounds:
+                return
+        else:
+            stable, last = 0, len(captured)

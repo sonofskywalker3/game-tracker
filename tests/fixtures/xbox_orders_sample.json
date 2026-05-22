@@ -1,0 +1,23 @@
+{
+  "orders": [
+    {
+      "orderId": "order-1",
+      "items": [
+        {"itemTypeName": "Game", "productId": "9PSAMPLE0001", "localTitle": "Sample Quest", "logoLink": "https://example/sq.png"},
+        {"itemTypeName": "Durable", "productId": "9PDLC0001", "localTitle": "Sample Quest - Season Pass"}
+      ]
+    },
+    {
+      "orderId": "order-2",
+      "items": [
+        {"itemTypeName": "Game", "productId": "9PSAMPLE0002", "localTitle": "Another Game"}
+      ]
+    },
+    {
+      "orderId": "order-3",
+      "items": [
+        {"itemTypeName": "Subscription", "productId": "SUB1", "localTitle": "Game Pass Ultimate"}
+      ]
+    }
+  ]
+}

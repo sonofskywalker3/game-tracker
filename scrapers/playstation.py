@@ -81,11 +81,12 @@ def _request_page(page, start: int) -> dict:
     return resp.json()
 
 
-def collect(page) -> list[ScrapedGame]:
+def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     """Page through the authenticated library API and return all owned games.
 
     Assumes the page is on an authenticated PSN session (cookies carry the auth,
-    shared by page.request). Stops when a page yields no new product IDs.
+    shared by page.request). Stops when a page yields no new product IDs. The
+    `captured` page traffic is unused here — PSN's list comes from the API.
     """
     games: list[ScrapedGame] = []
     seen: set[str] = set()
