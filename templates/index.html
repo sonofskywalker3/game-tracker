@@ -91,9 +91,52 @@
     let allGames = [];
     let debounceTimer;
 
-    // Temporary no-op stubs (replaced by real implementations in Task 5).
-    function saveViewState() {}
-    function restoreViewState() {}
+    const VIEW_STATE_KEY = 'gametracker.viewState.v1';
+
+    function saveViewState() {
+        const state = {
+            mode: currentMode,
+            statuses: getSelectedStatuses(),
+            platforms: getSelectedPlatforms(),
+            ratings: getSelectedRatings(),
+            sort: document.getElementById('sort-select').value,
+        };
+        try { localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+
+    function restoreViewState() {
+        let state;
+        try { state = JSON.parse(localStorage.getItem(VIEW_STATE_KEY)); } catch (e) { state = null; }
+        if (!state) return;
+        if (MODES.some(m => m.id === state.mode)) currentMode = state.mode;
+        if (state.sort) {
+            const sel = document.getElementById('sort-select');
+            if ([...sel.options].some(o => o.value === state.sort)) sel.value = state.sort;
+        }
+        // Status/platform checkbox restoration happens after their checkboxes exist:
+        window._pendingViewState = state;
+    }
+
+    function applyPendingCheckboxState() {
+        const state = window._pendingViewState;
+        if (!state) return;
+        if (Array.isArray(state.statuses)) {
+            document.querySelectorAll('.status-check').forEach(cb => {
+                cb.checked = state.statuses.includes(cb.value);
+            });
+        }
+        if (Array.isArray(state.platforms)) {
+            document.querySelectorAll('.platform-check').forEach(cb => {
+                cb.checked = state.platforms.includes(cb.value);
+            });
+        }
+        if (Array.isArray(state.ratings)) {
+            document.querySelectorAll('.rating-check').forEach(cb => {
+                cb.checked = state.ratings.includes(cb.value);
+            });
+        }
+        window._pendingViewState = null;
+    }
 
     // ---- Library view modes ----
     const MODES = [
@@ -271,19 +314,9 @@
     function renderGames(games) {
         const grid = document.getElementById('games-grid');
         const loading = document.getElementById('loading-state');
-        const empty = document.getElementById('empty-state');
 
         loading.classList.add('hidden');
-
-        if (!games.length) {
-            grid.innerHTML = '';
-            empty.classList.remove('hidden');
-            return;
-        }
-
-        empty.classList.add('hidden');
-
-        grid.innerHTML = games.map(game => {
+        grid.innerHTML = games.length ? games.map(game => {
             const coverUrl = game.cover_url || '';
             const isPhysical = (game.tags || []).some(t => t.name === 'Physical');
             const sortName = game.series_name || game.title;
@@ -330,7 +363,7 @@
                     </div>
                 </div>
             `;
-        }).join('');
+        }).join('') : '';
     }
 
     async function loadPlatforms() {
@@ -351,8 +384,11 @@
 
         // Add event listeners to new checkboxes
         container.querySelectorAll('.platform-check').forEach(cb => {
-            cb.addEventListener('change', filterAndRenderGames);
+            cb.addEventListener('change', () => { filterAndRenderGames(); saveViewState(); });
         });
+
+        applyPendingCheckboxState();
+        filterAndRenderGames();
     }
 
     function refreshGameList() {
@@ -454,7 +490,7 @@
     });
 
     document.querySelectorAll('.status-check').forEach(cb => {
-        cb.addEventListener('change', filterAndRenderGames);
+        cb.addEventListener('change', () => { filterAndRenderGames(); saveViewState(); });
     });
 
     document.querySelectorAll('.rating-check').forEach(cb => {
