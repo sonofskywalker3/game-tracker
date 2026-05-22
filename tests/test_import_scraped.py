@@ -166,3 +166,34 @@ def test_dry_run_dedups_same_batch_new_titles(temp_db):
     assert real.new_games == 1
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
     conn.close()
+
+
+def test_is_demo_filters_only_real_demos():
+    assert imp.is_demo("FINAL FANTASY XVI DEMO")
+    assert imp.is_demo("Stranger of Paradise TRIAL VERSION")
+    assert imp.is_demo("Halo Infinite (Beta)")
+    assert not imp.is_demo("Demon's Souls")   # word boundary: 'demo' inside 'demon'
+    assert not imp.is_demo("Trials Rising")   # not the phrase 'trial version'
+
+
+def test_skip_demos_excludes_them(temp_db):
+    conn = models.get_db()
+    stats = imp.import_games(
+        conn,
+        [_g("Cool Game", "PS4", external_id="C1"),
+         _g("Cool Game DEMO", "PS4", external_id="C1D")],
+        "playstation",
+    )
+    conn.commit()
+    assert stats.new_games == 1
+    assert stats.skipped_demos == 1
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Cool Game" in titles
+    assert not any("DEMO" in t.upper() for t in titles)
+    conn.close()
+
+
+def test_safe_auto_confirm_merges_punctuation_not_real_differences():
+    assert imp._safe_auto_confirm("NieR:Automata", "Nier: Automata", 0.96)
+    assert not imp._safe_auto_confirm("Final Fantasy XV", "Final Fantasy XIV", 0.97)
+    assert not imp._safe_auto_confirm("Life is Strange 2", "Life is Strange", 0.94)
