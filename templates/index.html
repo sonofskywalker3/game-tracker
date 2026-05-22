@@ -70,13 +70,20 @@
         <option value="priority">Sort: Priority</option>
         <option value="metacritic">Sort: Metacritic</option>
     </select>
+
+    <!-- Tile size -->
+    <select id="tile-size" class="bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm focus:border-accent focus:outline-none">
+        <option value="small">Size: Small</option>
+        <option value="regular" selected>Size: Regular</option>
+        <option value="large">Size: Large</option>
+    </select>
 </div>
 
 <!-- Alphabet Bar - Fixed to left edge -->
 <div id="alphabet-bar" class="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 flex-col items-center py-4 px-1 z-30"></div>
 
 <!-- Game Grid -->
-<div id="games-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:ml-8"></div>
+<div id="games-grid" class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 lg:ml-8"></div>
 
 <div id="loading-state" class="text-center py-12"><div class="animate-pulse text-gray-500">Loading games...</div></div>
 <div id="empty-state" class="hidden text-center py-12">
@@ -91,6 +98,14 @@
     let allGames = [];
     let debounceTimer;
 
+    // ---- Tile size (grid density) ----
+    const TILE_SIZES = { small: 160, regular: 190, large: 235 };
+    function applyTileSize(size) {
+        const px = TILE_SIZES[size] || TILE_SIZES.regular;
+        const grid = document.getElementById('games-grid');
+        if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${px}px, 1fr))`;
+    }
+
     const VIEW_STATE_KEY = 'gametracker.viewState.v1';
 
     function saveViewState() {
@@ -100,6 +115,7 @@
             platforms: getSelectedPlatforms(),
             ratings: getSelectedRatings(),
             sort: document.getElementById('sort-select').value,
+            tileSize: document.getElementById('tile-size').value,
         };
         try { localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(state)); } catch (e) {}
     }
@@ -112,6 +128,10 @@
         if (state.sort) {
             const sel = document.getElementById('sort-select');
             if ([...sel.options].some(o => o.value === state.sort)) sel.value = state.sort;
+        }
+        if (state.tileSize) {
+            const tsel = document.getElementById('tile-size');
+            if ([...tsel.options].some(o => o.value === state.tileSize)) tsel.value = state.tileSize;
         }
         // Status/platform checkbox restoration happens after their checkboxes exist:
         window._pendingViewState = state;
@@ -506,6 +526,11 @@
         document.getElementById('sort-select').addEventListener('change', () => {
             filterAndRenderGames();
             saveViewState();   // defined in Task 5
+        });
+        applyTileSize(document.getElementById('tile-size').value);
+        document.getElementById('tile-size').addEventListener('change', (e) => {
+            applyTileSize(e.target.value);
+            saveViewState();
         });
     });
 </script>
