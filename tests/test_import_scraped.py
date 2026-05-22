@@ -130,3 +130,39 @@ def test_fuzzy_reject_creates_new(temp_db):
     assert stats.fuzzy_rejected == 1
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
     conn.close()
+
+
+def test_dry_run_reports_fuzzy_without_calling_confirm(temp_db):
+    _add_existing_game("The Legend of Zelda: Breath of the Wild", "Switch")
+    conn = models.get_db()
+    calls = []
+    stats = imp.import_games(
+        conn,
+        [_g("Legend of Zelda Breath of the Wild", "Switch", "nintendo", external_id="N1")],
+        "nintendo",
+        dry_run=True,
+        confirm_fn=lambda *a: calls.append(a) or True,
+    )
+    conn.commit()
+    assert len(stats.fuzzy_candidates) == 1
+    assert calls == []  # confirm_fn must not be called in a dry run
+    assert stats.fuzzy_confirmed == 0 and stats.fuzzy_rejected == 0
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1  # nothing written
+    conn.close()
+
+
+def test_dry_run_dedups_same_batch_new_titles(temp_db):
+    conn = models.get_db()
+    # Same title twice in one batch, no external id: a real run unifies them into
+    # one game, so the dry-run preview must report new_games == 1, not 2.
+    games = [_g("Untracked Indie", "PS4"), _g("Untracked Indie", "PS4")]
+    dry = imp.import_games(conn, games, "playstation", dry_run=True)
+    conn.commit()
+    assert dry.new_games == 1
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+    # A real run of the same batch indeed creates exactly one game.
+    real = imp.import_games(conn, games, "playstation")
+    conn.commit()
+    assert real.new_games == 1
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+    conn.close()
