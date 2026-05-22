@@ -9,6 +9,8 @@ config.json
 
 # ---- Personal library data (kept local-only) ----
 games.db
+games.db.bak*
+*.bak
 *.db
 *.db-journal
 *.db-wal
