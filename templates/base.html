@@ -12,13 +12,13 @@
                 extend: {
                     colors: {
                         surface: {
-                            DEFAULT: '#1a1a2e',
-                            light: '#25253d',
-                            lighter: '#2d2d4a'
+                            DEFAULT: '#1c1c1c',
+                            light: '#202020',
+                            lighter: '#2a2a2a'
                         },
                         accent: {
-                            DEFAULT: '#7c3aed',
-                            hover: '#8b5cf6'
+                            DEFAULT: '#6c5ce7',
+                            hover: '#7d6df0'
                         }
                     }
                 }
@@ -27,7 +27,7 @@
     </script>
     <style>
         body {
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            background: #141414;
             min-height: 100vh;
         }
         .game-card {
@@ -74,27 +74,24 @@
 </head>
 <body class="text-gray-100">
     <!-- Navigation -->
-    <nav class="bg-surface-light border-b border-gray-700/50 sticky top-0 z-50">
+    <nav class="bg-surface-light border-b border-gray-800 sticky top-0 z-50">
         <div class="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16 gap-4">
-                <div class="flex items-center space-x-4 flex-shrink-0">
+                <div class="flex items-center space-x-6 flex-shrink-0">
                     <a href="/" class="text-xl font-bold text-white">
                         <span class="text-accent">Game</span>Tracker
                     </a>
-                    <div class="hidden md:flex space-x-2">
-                        <a href="/" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_library %}{% endblock %}">Library</a>
-                        <a href="/series" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_series %}{% endblock %}">Series</a>
-                        <a href="/recommendations" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_recommendations %}{% endblock %}">Picks</a>
-                        <a href="/settings" class="px-2 py-1 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_settings %}{% endblock %}">Settings</a>
+                    <div class="hidden md:flex space-x-1">
+                        <a href="/" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_library %}{% endblock %}">Library</a>
+                        <a href="/series" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_series %}{% endblock %}">Series</a>
+                        <a href="/recommendations" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_recommendations %}{% endblock %}">Picks</a>
+                        <a href="/settings" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_settings %}{% endblock %}">Settings</a>
                     </div>
                 </div>
                 {% block nav_filters %}{% endblock %}
-                <div class="flex items-center space-x-3 flex-shrink-0">
-                    <div id="stats-summary" class="hidden lg:flex items-center space-x-3 text-sm text-gray-400">
-                        <!-- Filled by JS -->
-                    </div>
+                <div class="flex items-center flex-shrink-0">
                     <button onclick="openAddGameModal()" class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm font-medium transition-colors whitespace-nowrap">
-                        + Add
+                        + Add Game
                     </button>
                 </div>
             </div>
@@ -261,15 +258,12 @@
 
         // Load stats into nav
         async function loadNavStats() {
-            const stats = await api.get('/api/stats');
             const el = document.getElementById('stats-summary');
-            if (el && stats) {
+            if (!el) return;
+            const stats = await api.get('/api/stats');
+            if (stats) {
                 el.innerHTML = `
                     <span><strong class="text-white">${stats.total_games}</strong> games</span>
-                    <span class="text-gray-600">|</span>
-                    <span><strong class="text-green-400">${stats.by_status?.completed || 0}</strong> complete</span>
-                    <span class="text-gray-600">|</span>
-                    <span><strong class="text-blue-400">${stats.by_status?.playing || 0}</strong> playing</span>
                 `;
             }
         }
