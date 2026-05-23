@@ -446,6 +446,7 @@
                     <button onclick="closeSeriesDialog()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Cancel</button>
                 </div>`;
             showModalEl('series-dialog');
+            document.getElementById('series-name').focus();
         }
 
         function closeSeriesDialog() { hideModalEl('series-dialog'); }
@@ -465,8 +466,11 @@
                 closeSeriesDialog();
                 dedupData.groups[idx].existing_series_id = res.data.series_id;
                 dedupData.groups[idx].existing_series_name = name;
+                const bodyEl = document.getElementById(`grp-body-${idx}`);
+                const wasExpanded = bodyEl && !bodyEl.classList.contains('hidden');
                 const card = document.getElementById(`grp-${idx}`);
                 if (card) card.outerHTML = groupCard(idx);  // flips button to "Add to series"
+                if (wasExpanded) toggleGroup(idx);  // preserve expanded state
                 if (typeof refreshGameList === 'function') refreshGameList();
                 alert(`Saved "${name}" — ${res.data.assigned} game${res.data.assigned === 1 ? '' : 's'} ${res.data.created ? 'in a new series' : 'added'}.`);
             } finally {
