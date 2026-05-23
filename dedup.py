@@ -219,3 +219,29 @@ def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int],
         + [merged_curation.get(f) for f in _CURATION_FIELDS])
     conn.commit()
     return plan
+
+
+def refresh_normalized_titles(conn: sqlite3.Connection, *, dry_run: bool = False) -> list[dict]:
+    """Recompute stored normalized_title = base_key(title) for all games.
+
+    Safe to run after dedup (duplicates merged, so no UNIQUE collisions). On a
+    residual collision, logs and skips that row instead of crashing. Returns the
+    changed rows as {"id", "old", "new"}.
+    """
+    changes = []
+    for row in conn.execute("SELECT id, title, normalized_title FROM games").fetchall():
+        new = base_key(row["title"])
+        if new == row["normalized_title"]:
+            continue
+        changes.append({"id": row["id"], "old": row["normalized_title"], "new": new})
+        if not dry_run:
+            try:
+                conn.execute("UPDATE games SET normalized_title = ? WHERE id = ?",
+                             (new, row["id"]))
+            except sqlite3.IntegrityError:
+                log.warning("normalized_title collision for game %s (%r) -> %r; skipped",
+                            row["id"], row["title"], new)
+                changes.pop()
+    if not dry_run:
+        conn.commit()
+    return changes
