@@ -117,6 +117,44 @@ def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
     return {"definite": definite, "candidates": candidates}
 
 
+def group_candidates(candidates: list[dict]) -> list[dict]:
+    """Cluster candidate pairs into families via union-find (connected components).
+
+    Each group: {"members": [ids sorted asc], "pairs": [[lo, hi], ...]}. Groups
+    are sorted by member count descending, then by smallest member id, so the
+    noisiest families surface first. Pure; high recall preserved (nothing dropped).
+    """
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:  # path compression
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for c in candidates:
+        union(c["a"], c["b"])
+
+    members: dict[int, set[int]] = defaultdict(set)
+    pairs: dict[int, list[list[int]]] = defaultdict(list)
+    for c in candidates:
+        root = find(c["a"])
+        members[root].update((c["a"], c["b"]))
+        pairs[root].append(sorted((c["a"], c["b"])))
+
+    groups = [{"members": sorted(members[r]), "pairs": pairs[r]} for r in members]
+    groups.sort(key=lambda g: (-len(g["members"]), g["members"][0]))
+    return groups
+
+
 # Status progression rank (higher = further along). "100" is a completion tier.
 _STATUS_RANK = {
     "completed": 6, "100": 6, "playing": 5, "dropped": 4,

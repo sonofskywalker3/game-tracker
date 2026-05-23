@@ -1,6 +1,9 @@
 import sqlite3
 
-from dedup import base_key, compute_merged_curation, find_duplicate_groups, merge_games, refresh_normalized_titles, strip_edition_key
+from dedup import (
+    base_key, compute_merged_curation, find_duplicate_groups, group_candidates,
+    merge_games, refresh_normalized_titles, strip_edition_key,
+)
 from models import normalize_title
 
 
@@ -213,3 +216,28 @@ def test_refresh_dry_run_writes_nothing():
                  "(1, 'Brotato', 'stale')")
     refresh_normalized_titles(conn, dry_run=True)
     assert conn.execute("SELECT normalized_title FROM games WHERE id = 1").fetchone()[0] == "stale"
+
+
+def _c(a, b, reason="similar", score=0.9):
+    return {"a": a, "b": b, "reason": reason, "score": score}
+
+
+def test_group_candidates_clusters_connected_pairs():
+    # 1-2 and 2-3 are one family (transitive); 10-11 is a separate family.
+    groups = group_candidates([_c(1, 2), _c(2, 3), _c(10, 11)])
+    assert [g["members"] for g in groups] == [[1, 2, 3], [10, 11]]
+
+
+def test_group_candidates_orders_members_and_pairs():
+    groups = group_candidates([_c(5, 2)])
+    assert groups[0]["members"] == [2, 5]
+    assert groups[0]["pairs"] == [[2, 5]]
+
+
+def test_group_candidates_sorts_by_size_descending():
+    groups = group_candidates([_c(1, 2), _c(10, 11), _c(11, 12)])
+    assert [len(g["members"]) for g in groups] == [3, 2]
+
+
+def test_group_candidates_empty():
+    assert group_candidates([]) == []
