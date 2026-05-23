@@ -158,12 +158,15 @@ def test_dismiss_endpoint_records_not_duplicate(client):
 
 
 def test_duplicates_endpoint_groups_related_candidates(client):
+    # A real family clusters via edition + contains (numeral-independent, so it
+    # survives the "differ only by a number" rule); Celeste/Celest is a separate
+    # similar pair.
     conn = models.get_db()
     conn.executemany(
         "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
-        [("Final Fantasy", "final fantasy"),
-         ("Final Fantasy VII", "final fantasy vii"),
-         ("Final Fantasy X", "final fantasy x"),
+        [("Don't Starve", "dont starve"),
+         ("Don't Starve: Console Edition", "dont starve console edition"),
+         ("Don't Starve Together", "dont starve together"),
          ("Celeste", "celeste"),
          ("Celest", "celest")],
     )
@@ -173,7 +176,7 @@ def test_duplicates_endpoint_groups_related_candidates(client):
     body = client.get("/api/duplicates").get_json()
     assert "groups" in body
     sizes = sorted(len(g["members"]) for g in body["groups"])
-    # the three Final Fantasy rows form one family; Celeste/Celest a pair
+    # the three Don't Starve rows form one family; Celeste/Celest a pair
     assert sizes == [2, 3]
     big = max(body["groups"], key=lambda g: len(g["members"]))
     assert big["pairs"]  # internal pairs are exposed for bulk dismiss
