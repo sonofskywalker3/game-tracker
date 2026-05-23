@@ -196,6 +196,7 @@
         // ---- Dedup ----
         let dedupData = null;
         let removedFromGroup = {};   // group index -> Set of member ids removed from the group
+        let dedupBusy = false;   // guard against double-submit of dedup mutations
 
         function escapeHtml(s) {
             return String(s == null ? '' : s)
@@ -319,24 +320,41 @@
         }
 
         async function markAllSafe(idx) {
-            const active = new Set(activeMembers(idx));
-            const pairs = dedupData.groups[idx].pairs.filter(([a, b]) => active.has(a) && active.has(b));
-            if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
-            const el = document.getElementById(`grp-${idx}`);
-            if (el) el.remove();
+            if (dedupBusy) return;
+            dedupBusy = true;
+            try {
+                const active = new Set(activeMembers(idx));
+                const pairs = dedupData.groups[idx].pairs.filter(([a, b]) => active.has(a) && active.has(b));
+                if (pairs.length) {
+                    const res = await api.post('/api/duplicates/dismiss', { pairs });
+                    if (!res.ok) { alert(res.data?.error || 'Dismiss failed'); return; }
+                }
+                document.getElementById(`grp-${idx}`)?.remove();
+            } finally {
+                dedupBusy = false;
+            }
         }
 
         async function removeFromGroup(idx, id) {
-            const active = new Set(activeMembers(idx));
-            const pairs = dedupData.groups[idx].pairs.filter(([a, b]) =>
-                (a === id && active.has(b)) || (b === id && active.has(a)));
-            if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
-            (removedFromGroup[idx] = removedFromGroup[idx] || new Set()).add(id);
-            if (activeMembers(idx).length < 2) {
-                document.getElementById(`grp-${idx}`).remove();
-            } else {
-                document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
-                renderGroupBody(idx);
+            if (dedupBusy) return;
+            dedupBusy = true;
+            try {
+                const active = new Set(activeMembers(idx));
+                const pairs = dedupData.groups[idx].pairs.filter(([a, b]) =>
+                    (a === id && active.has(b)) || (b === id && active.has(a)));
+                if (pairs.length) {
+                    const res = await api.post('/api/duplicates/dismiss', { pairs });
+                    if (!res.ok) { alert(res.data?.error || 'Dismiss failed'); return; }
+                }
+                (removedFromGroup[idx] = removedFromGroup[idx] || new Set()).add(id);
+                if (activeMembers(idx).length < 2) {
+                    document.getElementById(`grp-${idx}`)?.remove();
+                } else {
+                    document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                    renderGroupBody(idx);
+                }
+            } finally {
+                dedupBusy = false;
             }
         }
 
@@ -362,21 +380,27 @@
         }
 
         async function confirmMergeSelected(idx) {
-            const ids = selectedInGroup(idx);
-            const survivor = parseInt(document.getElementById(`grp-surv-${idx}`).value);
-            const drops = ids.filter(id => id !== survivor);
-            const title = document.getElementById(`grp-title-${idx}`).value.trim();
-            const res = await api.post('/api/games/merge',
-                { survivor_id: survivor, drop_ids: drops, title });
-            if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
-            const removed = (removedFromGroup[idx] = removedFromGroup[idx] || new Set());
-            drops.forEach(id => removed.add(id));
-            if (typeof refreshGameList === 'function') refreshGameList();
-            if (activeMembers(idx).length < 2) {
-                document.getElementById(`grp-${idx}`).remove();
-            } else {
-                document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
-                renderGroupBody(idx);
+            if (dedupBusy) return;
+            dedupBusy = true;
+            try {
+                const ids = selectedInGroup(idx);
+                const survivor = parseInt(document.getElementById(`grp-surv-${idx}`).value);
+                const drops = ids.filter(id => id !== survivor);
+                const title = document.getElementById(`grp-title-${idx}`).value.trim();
+                const res = await api.post('/api/games/merge',
+                    { survivor_id: survivor, drop_ids: drops, title });
+                if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
+                const removed = (removedFromGroup[idx] = removedFromGroup[idx] || new Set());
+                drops.forEach(id => removed.add(id));
+                if (typeof refreshGameList === 'function') refreshGameList();
+                if (activeMembers(idx).length < 2) {
+                    document.getElementById(`grp-${idx}`)?.remove();
+                } else {
+                    document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                    renderGroupBody(idx);
+                }
+            } finally {
+                dedupBusy = false;
             }
         }
 
