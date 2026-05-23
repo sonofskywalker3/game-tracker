@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 FUZZY_MATCH_THRESHOLD = 0.85
 DEFAULT_STATUS = "backlog"
 
+# Per-user "not a game" exclusions (gitignored). The committed NON_GAME_APPS /
+# NON_GAME_PATTERN below are the shared seed; this file is the manual layer.
+EXCLUDED_GAMES_PATH = Path(__file__).parent / "excluded_games.json"
+
 # Non-game library entries (PSN lists apps + add-ons alongside games). DLC is
 # skipped for now; a future feature will attach it to its parent game.
 NON_GAME_APPS = frozenset({
@@ -67,6 +71,57 @@ PLATFORM_DISPLAY_NAMES = {
 def match_key(title: str) -> str:
     """Title normalization for matching (mirrors how migrate_db stores it)."""
     return models.normalize_title(models.clean_title(title))
+
+
+def load_excluded_games() -> list[dict]:
+    """Load the per-user 'not a game' exclusion list (gitignored). [] if absent."""
+    try:
+        with open(EXCLUDED_GAMES_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def add_excluded_games(entries: list[dict]) -> int:
+    """Append exclusion entries, deduped on (source, external_id, normalized_title).
+
+    Each entry: {source, external_id, normalized_title, title}. Returns how many
+    new entries were written (0 leaves the file untouched).
+    """
+    existing = load_excluded_games()
+    seen = {(e.get("source"), e.get("external_id"), e.get("normalized_title")) for e in existing}
+    added = 0
+    for entry in entries:
+        key = (entry.get("source"), entry.get("external_id"), entry.get("normalized_title"))
+        if key in seen:
+            continue
+        seen.add(key)
+        existing.append(entry)
+        added += 1
+    if added:
+        with open(EXCLUDED_GAMES_PATH, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+    return added
+
+
+def is_excluded(source: Optional[str], external_id: Optional[str], title: str) -> bool:
+    """True if a scraped row was manually marked 'not a game'.
+
+    Matches by exact (source, external_id) when the row carries an external id,
+    and always by exact normalized title — so the same non-game is skipped even if
+    its store id changes or it has none. Keys are exact, so a real game is never
+    caught unless it was explicitly excluded.
+    """
+    entries = load_excluded_games()
+    if not entries:
+        return False
+    if external_id and any(
+        e.get("external_id") == external_id and e.get("source") == source for e in entries
+    ):
+        return True
+    key = match_key(title)
+    return any(e.get("normalized_title") == key for e in entries)
 
 
 @dataclass
@@ -114,6 +169,7 @@ class ImportStats:
     external_ids_added: int = 0
     ratings_created: int = 0
     skipped_non_games: int = 0
+    skipped_excluded: int = 0
     platforms_created: list[tuple[str, str]] = field(default_factory=list)
     fuzzy_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
@@ -127,6 +183,7 @@ class ImportStats:
         self.external_ids_added += other.external_ids_added
         self.ratings_created += other.ratings_created
         self.skipped_non_games += other.skipped_non_games
+        self.skipped_excluded += other.skipped_excluded
         self.platforms_created += other.platforms_created
         self.fuzzy_candidates += other.fuzzy_candidates
 
@@ -233,6 +290,9 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
         if skip_non_games and is_non_game(game["title"]):
             stats.skipped_non_games += 1
             continue
+        if is_excluded(source, game.get("external_id"), game["title"]):
+            stats.skipped_excluded += 1
+            continue
         m = resolve_game(conn, source, game.get("external_id"), game["title"])
         is_new = False
 
@@ -290,6 +350,8 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
     logger.info("default ratings:    +%d", total.ratings_created)
     if total.skipped_non_games:
         logger.info("skipped non-games:  %d", total.skipped_non_games)
+    if total.skipped_excluded:
+        logger.info("skipped excluded:   %d", total.skipped_excluded)
     if total.fuzzy_confirmed or total.fuzzy_rejected:
         logger.info("fuzzy merged/new:   %d / %d", total.fuzzy_confirmed, total.fuzzy_rejected)
     if total.platforms_created:

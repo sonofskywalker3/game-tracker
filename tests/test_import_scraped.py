@@ -1,3 +1,5 @@
+import json
+
 import models
 import import_scraped as imp
 
@@ -215,3 +217,69 @@ def test_safe_auto_confirm_merges_punctuation_not_real_differences():
     assert imp._safe_auto_confirm("NieR:Automata", "Nier: Automata", 0.96)
     assert not imp._safe_auto_confirm("Final Fantasy XV", "Final Fantasy XIV", 0.97)
     assert not imp._safe_auto_confirm("Life is Strange 2", "Life is Strange", 0.94)
+
+
+# --- Thread C: manual "not a game" durable exclusions ---
+
+def _write_excluded(monkeypatch, tmp_path, entries):
+    path = tmp_path / "excluded_games.json"
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    monkeypatch.setattr(imp, "EXCLUDED_GAMES_PATH", path)
+    return path
+
+
+def test_load_excluded_games_empty_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(imp, "EXCLUDED_GAMES_PATH", tmp_path / "nope.json")
+    assert imp.load_excluded_games() == []
+
+
+def test_add_excluded_games_writes_and_dedups(tmp_path, monkeypatch):
+    monkeypatch.setattr(imp, "EXCLUDED_GAMES_PATH", tmp_path / "excluded_games.json")
+    entry = {"source": "nintendo", "external_id": "70010000123",
+             "normalized_title": "island transfer tool", "title": "Island Transfer Tool"}
+    assert imp.add_excluded_games([entry]) == 1
+    assert imp.add_excluded_games([entry]) == 0  # already present, no duplicate
+    assert imp.load_excluded_games() == [entry]
+
+
+def test_is_excluded_by_source_and_external_id(tmp_path, monkeypatch):
+    _write_excluded(monkeypatch, tmp_path, [
+        {"source": "nintendo", "external_id": "ID1",
+         "normalized_title": "transfer tool", "title": "Transfer Tool"}])
+    # id match holds even if the title was later renamed.
+    assert imp.is_excluded("nintendo", "ID1", "Whatever Renamed") is True
+    # same id, different source -> not a match.
+    assert imp.is_excluded("playstation", "ID1", "x") is False
+
+
+def test_is_excluded_by_normalized_title(tmp_path, monkeypatch):
+    _write_excluded(monkeypatch, tmp_path, [
+        {"source": None, "external_id": None,
+         "normalized_title": imp.match_key("Batman"), "title": "Batman"}])
+    assert imp.is_excluded(None, None, "Batman") is True
+    # title match applies regardless of whether the scraped row carries a source.
+    assert imp.is_excluded("playstation", None, "Batman") is True
+
+
+def test_is_excluded_false_for_unrelated(tmp_path, monkeypatch):
+    _write_excluded(monkeypatch, tmp_path, [
+        {"source": "nintendo", "external_id": "ID1",
+         "normalized_title": "transfer tool", "title": "Transfer Tool"}])
+    assert imp.is_excluded("nintendo", "OTHER", "A Real Game") is False
+
+
+def test_import_skips_excluded_row(temp_db, tmp_path, monkeypatch):
+    _write_excluded(monkeypatch, tmp_path, [
+        {"source": "playstation", "external_id": "EXC1",
+         "normalized_title": imp.match_key("Some Tool"), "title": "Some Tool"}])
+    conn = models.get_db()
+    stats = imp.import_games(conn, [
+        _g("Some Tool", "PS4", external_id="EXC1"),
+        _g("Real Game", "PS4", external_id="OK1"),
+    ], "playstation")
+    conn.commit()
+    assert stats.new_games == 1            # only Real Game
+    assert stats.skipped_excluded == 1
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Some Tool" not in titles and "Real Game" in titles
+    conn.close()

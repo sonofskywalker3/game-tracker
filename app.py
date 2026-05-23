@@ -4,6 +4,7 @@ Game Tracker - Flask Application
 import sqlite3
 from collections import Counter
 import dedup
+import import_scraped
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
@@ -381,6 +382,36 @@ def api_delete_game(game_id):
         conn.commit()
 
         return jsonify({'success': True})
+    finally:
+        conn.close()
+
+
+@app.route('/api/games/<int:game_id>/not-a-game', methods=['POST'])
+def api_not_a_game(game_id):
+    """Mark a game 'not a game': record a durable exclusion, then delete the row.
+
+    Records every (source, external_id) the game carries plus its normalized title
+    to the per-user excluded_games.json, so a future re-import skips it forever.
+    """
+    conn = get_db()
+    try:
+        g = conn.execute("SELECT id, title FROM games WHERE id = ?", (game_id,)).fetchone()
+        if not g:
+            return jsonify({'error': 'Game not found'}), 404
+        normalized = import_scraped.match_key(g['title'])
+        ext_rows = conn.execute(
+            "SELECT source, external_id FROM game_external_ids WHERE game_id = ?",
+            (game_id,)).fetchall()
+        if ext_rows:
+            entries = [{'source': r['source'], 'external_id': r['external_id'],
+                        'normalized_title': normalized, 'title': g['title']} for r in ext_rows]
+        else:
+            entries = [{'source': None, 'external_id': None,
+                        'normalized_title': normalized, 'title': g['title']}]
+        import_scraped.add_excluded_games(entries)
+        conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+        conn.commit()
+        return jsonify({'success': True, 'excluded': len(entries)})
     finally:
         conn.close()
 
