@@ -101,3 +101,27 @@ def test_duplicates_endpoint_lists_definite_and_candidates(client):
     # each referenced game is described for the modal
     some_id = body["definite"][0][0]
     assert "title" in keys[some_id] and "platforms" in keys[some_id]
+
+
+def test_merge_endpoint_merges_and_refreshes(client):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Disco Elysium", "disco elysium"),
+         ("Disco Elysium: The Final Cut", "disco elysium the final cut")],
+    )
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    survivor = rows["Disco Elysium"]
+    drop = rows["Disco Elysium: The Final Cut"]
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (survivor,))
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (drop,))
+    conn.commit()
+    conn.close()
+
+    resp = client.post("/api/games/merge", json={
+        "survivor_id": survivor, "drop_ids": [drop], "title": "Disco Elysium"})
+    assert resp.status_code == 200
+    conn = models.get_db()
+    titles = [r["title"] for r in conn.execute("SELECT title FROM games")]
+    conn.close()
+    assert titles == ["Disco Elysium"]
