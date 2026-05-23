@@ -2,6 +2,7 @@
 Game Tracker - Flask Application
 """
 import sqlite3
+from collections import Counter
 import dedup
 from flask import Flask, render_template, request, jsonify
 from models import (
@@ -431,11 +432,21 @@ def api_duplicates():
             "platforms": platforms,
             "curation": dict(ur) if ur else {"status": "backlog"},
         })
+    grouped = dedup.group_candidates(groups["candidates"])
+    for g in grouped:
+        placeholders = ",".join("?" * len(g["members"]))
+        rows = conn.execute(
+            f"SELECT s.id, s.name FROM user_ratings ur JOIN series s ON s.id = ur.series_id "
+            f"WHERE ur.game_id IN ({placeholders})", g["members"]).fetchall()
+        if rows:
+            (sid, sname), _ = Counter((r["id"], r["name"]) for r in rows).most_common(1)[0]
+            g["existing_series_id"], g["existing_series_name"] = sid, sname
+        else:
+            g["existing_series_id"], g["existing_series_name"] = None, None
     conn.close()
     return jsonify({"definite": groups["definite"],
                     "candidates": groups["candidates"],
-                    "groups": dedup.group_candidates(groups["candidates"]),
-                    "games": games})
+                    "groups": grouped, "games": games})
 
 
 @app.route('/api/games/merge', methods=['POST'])

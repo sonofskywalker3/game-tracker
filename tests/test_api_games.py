@@ -199,3 +199,28 @@ def test_dismiss_endpoint_bulk_pairs(client):
     cnt = conn.execute("SELECT COUNT(*) FROM not_duplicates").fetchone()[0]
     conn.close()
     assert cnt == 3
+
+
+def test_duplicates_groups_expose_existing_series(client):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Don't Starve", "dont starve"),
+         ("Don't Starve: Console Edition", "dont starve console edition"),
+         ("SteamWorld Heist", "steamworld heist"),
+         ("SteamWorld Heist: Ultimate Edition", "steamworld heist ultimate edition")],
+    )
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    conn.execute("INSERT INTO series (name) VALUES ('Don''t Starve')")
+    sid = conn.execute("SELECT id FROM series WHERE name = 'Don''t Starve'").fetchone()["id"]
+    conn.execute("INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 0)",
+                 (rows["Don't Starve"], sid))
+    conn.commit()
+    conn.close()
+
+    groups = client.get("/api/duplicates").get_json()["groups"]
+    ds = next(g for g in groups if rows["Don't Starve"] in g["members"])
+    sw = next(g for g in groups if rows["SteamWorld Heist"] in g["members"])
+    assert ds["existing_series_id"] == sid
+    assert ds["existing_series_name"] == "Don't Starve"
+    assert sw["existing_series_id"] is None and sw["existing_series_name"] is None
