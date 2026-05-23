@@ -458,6 +458,22 @@ def api_merge_games():
         conn.close()
 
 
+@app.route('/api/duplicates/dismiss', methods=['POST'])
+def api_dismiss_duplicate():
+    """Record a pair as confirmed-distinct so dedup never re-asks."""
+    data = request.json or {}
+    a, b = data.get('game_id_a'), data.get('game_id_b')
+    if not a or not b or a == b:
+        return jsonify({'error': 'two distinct game ids are required'}), 400
+    lo, hi = min(a, b), max(a, b)
+    conn = get_db()
+    conn.execute("INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
+                 (lo, hi))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
 @app.route('/api/games/reorder', methods=['POST'])
 def api_reorder_games():
     """Update the sort order of games based on drag-and-drop reordering."""
