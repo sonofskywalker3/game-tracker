@@ -1,6 +1,6 @@
 import sqlite3
 
-from dedup import base_key, find_duplicate_groups, strip_edition_key
+from dedup import base_key, compute_merged_curation, find_duplicate_groups, strip_edition_key
 
 
 def test_base_key_normalizes_via_clean_title():
@@ -79,3 +79,39 @@ def test_dismissed_pair_excluded():
                         (2, "/Connection Haunted <SERVER ERROR>")],
                        dismissed=[(1, 2)])
     assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_merged_curation_takes_furthest_status_and_max_values():
+    rows = [
+        {"status": "playing", "rating": 3, "hours_played": 5.0, "priority": 5,
+         "notes": "on PS4", "series_id": None, "series_order": None,
+         "started_at": "2025-01-01", "completed_at": None, "sort_order": 12},
+        {"status": "completed", "rating": 4, "hours_played": 20.0, "priority": 7,
+         "notes": "100%'d on Switch", "series_id": 3, "series_order": 1,
+         "started_at": "2025-02-01", "completed_at": "2025-03-01", "sort_order": None},
+    ]
+    merged = compute_merged_curation(rows)
+    assert merged["status"] == "completed"
+    assert merged["rating"] == 4
+    assert merged["hours_played"] == 20.0
+    assert merged["priority"] == 7
+    assert merged["series_id"] == 3
+    assert merged["started_at"] == "2025-01-01"   # earliest
+    assert merged["completed_at"] == "2025-03-01"  # latest
+    assert merged["sort_order"] == 12              # survivor (first row) wins
+    assert "on PS4" in merged["notes"] and "100%'d on Switch" in merged["notes"]
+
+
+def test_merged_curation_all_defaults():
+    rows = [
+        {"status": "backlog", "rating": None, "hours_played": 0, "priority": 5,
+         "notes": None, "series_id": None, "series_order": None,
+         "started_at": None, "completed_at": None, "sort_order": None},
+        {"status": "backlog", "rating": None, "hours_played": 0, "priority": 5,
+         "notes": None, "series_id": None, "series_order": None,
+         "started_at": None, "completed_at": None, "sort_order": None},
+    ]
+    merged = compute_merged_curation(rows)
+    assert merged["status"] == "backlog"
+    assert merged["rating"] is None
+    assert merged["notes"] is None

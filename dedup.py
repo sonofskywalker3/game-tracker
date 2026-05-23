@@ -115,3 +115,43 @@ def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
             candidates.append({"a": a, "b": b, "reason": reason, "score": score})
 
     return {"definite": definite, "candidates": candidates}
+
+
+# Status progression rank (higher = further along). "100" is a completion tier.
+_STATUS_RANK = {
+    "completed": 6, "100": 6, "playing": 5, "dropped": 4,
+    "backlog": 3, "wishlist": 2, "": 0, None: 0,
+}
+
+
+def compute_merged_curation(rows: list[dict]) -> dict:
+    """Combine curation from rows (survivor first) into one preferred set."""
+    def _max(field):
+        vals = [r.get(field) for r in rows if r.get(field) not in (None, "")]
+        return max(vals) if vals else None
+
+    def _first(field):  # survivor first; first set value wins
+        for r in rows:
+            if r.get(field) not in (None, ""):
+                return r.get(field)
+        return None
+
+    status = max((r.get("status") for r in rows), key=lambda s: _STATUS_RANK.get(s, 0))
+    notes = "\n\n".join(dict.fromkeys(
+        r["notes"].strip() for r in rows if r.get("notes") and r["notes"].strip()
+    )) or None
+    started = min((r["started_at"] for r in rows if r.get("started_at")), default=None)
+    completed = max((r["completed_at"] for r in rows if r.get("completed_at")), default=None)
+
+    return {
+        "status": status or "backlog",
+        "rating": _max("rating"),
+        "hours_played": _max("hours_played") or 0,
+        "priority": _max("priority") or 5,
+        "notes": notes,
+        "series_id": _first("series_id"),
+        "series_order": _first("series_order"),
+        "started_at": started,
+        "completed_at": completed,
+        "sort_order": rows[0].get("sort_order"),
+    }
