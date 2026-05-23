@@ -125,6 +125,22 @@
               }
             ],
             "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-8",
+            "contentName": "Nintendo GameCube Controller",
+            "items": [
+              {
+                "id": "120833",
+                "product": {
+                  "name": "Nintendo GameCube Controller",
+                  "platform": {"code": "NINTENDO_SWITCH_2", "label": "Nintendo Switch 2", "__typename": "Platform"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
           }
         ],
         "__typename": "OrderHistory"

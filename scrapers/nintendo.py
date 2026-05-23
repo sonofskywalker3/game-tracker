@@ -49,6 +49,21 @@ PLATFORM = "Switch"
 # backstop for anything the prefix misses.
 SKIP_NSUID_PREFIXES = frozenset({"7005"})
 NSUID_PREFIX_LEN = 4
+# Real software NSUIDs are 14-digit ids starting "700". Physical hardware/merch
+# (GameCube controller, dock, Virtual Boy headset, etc.) use short non-NSUID
+# product ids (e.g. 6-digit), so requiring a real NSUID skips them.
+NSUID_LEN = 14
+NSUID_GAME_PREFIX = "700"
+
+
+def is_game_nsuid(nsuid: str | None) -> bool:
+    """True for a base-game/bundle NSUID; False for DLC (7005) and non-game
+    hardware/merch (short non-NSUID product ids)."""
+    if not nsuid or len(nsuid) != NSUID_LEN or not nsuid.isdigit():
+        return False
+    if not nsuid.startswith(NSUID_GAME_PREFIX):
+        return False
+    return nsuid[:NSUID_PREFIX_LEN] not in SKIP_NSUID_PREFIXES
 
 
 def _orders(body: dict) -> list[dict]:
@@ -71,9 +86,7 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                 nsuid = item.get("id")
                 product = item.get("product") or {}
                 name = product.get("name")
-                if not nsuid or not name:
-                    continue
-                if nsuid[:NSUID_PREFIX_LEN] in SKIP_NSUID_PREFIXES:
+                if not name or not is_game_nsuid(nsuid):
                     continue
                 if nsuid in seen:
                     continue
