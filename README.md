@@ -3,6 +3,18 @@
 A self-hosted personal game library tracker. Flask + SQLite backend, server-rendered
 templates, plus a companion Chrome extension for one-click adding games from store pages.
 
+## What this is / isn't
+
+Game Tracker tracks the games you own and your progress through them so you can
+decide **what to play or buy next**. It models **one row per playable game** —
+the thing you launch and play.
+
+It is **not** a wishlist, a purchase log, or a catalog of every edition/version
+you own. Editions, regional variants, and the same game across platforms collapse
+into a single entry (use the **Dedup** tool). You can bend it toward
+version-tracking, but you'll be fighting the grain — it's **MIT-licensed**, so
+fork it freely.
+
 ## Features
 
 - **Library management** — track games across PlayStation, Xbox, Nintendo Switch, and PC, with
