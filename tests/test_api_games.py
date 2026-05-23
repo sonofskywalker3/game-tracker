@@ -224,3 +224,59 @@ def test_duplicates_groups_expose_existing_series(client):
     assert ds["existing_series_id"] == sid
     assert ds["existing_series_name"] == "Don't Starve"
     assert sw["existing_series_id"] is None and sw["existing_series_name"] is None
+
+
+def test_from_group_creates_series_and_assigns(client):
+    conn = models.get_db()
+    conn.executemany("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                     [("SteamWorld Heist", "steamworld heist"),
+                      ("SteamWorld Dig", "steamworld dig")])
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    conn.commit()
+    conn.close()
+    resp = client.post("/api/series/from-group", json={
+        "name": "SteamWorld",
+        "game_ids": [rows["SteamWorld Heist"], rows["SteamWorld Dig"]], "remember": False})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["created"] is True and body["assigned"] == 2
+    conn = models.get_db()
+    sid = conn.execute("SELECT id FROM series WHERE name = 'SteamWorld'").fetchone()["id"]
+    n = conn.execute("SELECT COUNT(*) FROM user_ratings WHERE series_id = ?", (sid,)).fetchone()[0]
+    conn.close()
+    assert n == 2
+
+
+def test_from_group_finds_existing_and_skips_already_assigned(client):
+    conn = models.get_db()
+    conn.executemany("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                     [("Halo", "halo"), ("Halo 2", "halo 2")])
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    conn.execute("INSERT INTO series (name) VALUES ('Halo')")
+    sid = conn.execute("SELECT id FROM series WHERE name = 'Halo'").fetchone()["id"]
+    conn.execute("INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 0)",
+                 (rows["Halo"], sid))
+    conn.commit()
+    conn.close()
+    resp = client.post("/api/series/from-group", json={
+        "name": "halo", "game_ids": [rows["Halo"], rows["Halo 2"]], "remember": False})
+    body = resp.get_json()
+    assert body["created"] is False and body["series_id"] == sid
+    assert body["assigned"] == 1
+
+
+def test_from_group_remember_writes_pattern(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "SERIES_PATTERNS_PATH", tmp_path / "series_patterns.json")
+    monkeypatch.setattr(models, "SERIES_PATTERNS_DEFAULT_PATH", tmp_path / "missing.json")
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('Ori', 'ori')")
+    gid = conn.execute("SELECT id FROM games").fetchone()["id"]
+    conn.commit()
+    conn.close()
+    client.post("/api/series/from-group", json={"name": "Ori", "game_ids": [gid], "remember": True})
+    assert models.load_series_patterns().get("Ori") == "Ori"
+
+
+def test_from_group_requires_name_and_games(client):
+    assert client.post("/api/series/from-group", json={"name": "", "game_ids": [1]}).status_code == 400
+    assert client.post("/api/series/from-group", json={"name": "X", "game_ids": []}).status_code == 400

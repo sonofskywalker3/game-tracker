@@ -7,7 +7,7 @@ import dedup
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
-    reclean_display_titles, DB_PATH,
+    reclean_display_titles, DB_PATH, add_series_pattern,
 )
 from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials
@@ -587,6 +587,58 @@ def api_create_series():
     conn.close()
 
     return jsonify({'success': True, 'series_id': series_id}), 201
+
+
+@app.route('/api/series/from-group', methods=['POST'])
+def api_series_from_group():
+    """Create-or-find a series by name and assign the given games to it (in order).
+
+    {name, game_ids, remember} -> {success, series_id, created, assigned}. When
+    `remember`, the name is added to the durable per-user series-pattern table.
+    """
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    game_ids = data.get('game_ids') or []
+    if not name or not game_ids:
+        return jsonify({'error': 'name and game_ids are required'}), 400
+
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT id FROM series WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
+        if row:
+            series_id, created = row['id'], False
+        else:
+            conn.execute("INSERT INTO series (name) VALUES (?)", (name,))
+            series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            created = True
+
+        order = conn.execute(
+            "SELECT MAX(series_order) FROM user_ratings WHERE series_id = ?", (series_id,)
+        ).fetchone()[0] or 0
+        assigned = 0
+        for gid in game_ids:
+            cur = conn.execute("SELECT series_id FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
+            if cur and cur['series_id'] == series_id:
+                continue
+            order += 1
+            conn.execute(
+                "INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, ?) "
+                "ON CONFLICT(game_id) DO UPDATE SET series_id = excluded.series_id, "
+                "series_order = excluded.series_order, updated_at = CURRENT_TIMESTAMP",
+                (gid, series_id, order))
+            assigned += 1
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+    if data.get('remember'):
+        add_series_pattern(name, name)
+
+    return jsonify({'success': True, 'series_id': series_id,
+                    'created': created, 'assigned': assigned})
 
 
 @app.route('/api/series/<int:series_id>', methods=['DELETE'])
