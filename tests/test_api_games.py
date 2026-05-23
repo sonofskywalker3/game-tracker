@@ -280,3 +280,27 @@ def test_from_group_remember_writes_pattern(client, tmp_path, monkeypatch):
 def test_from_group_requires_name_and_games(client):
     assert client.post("/api/series/from-group", json={"name": "", "game_ids": [1]}).status_code == 400
     assert client.post("/api/series/from-group", json={"name": "X", "game_ids": []}).status_code == 400
+
+
+def test_not_a_game_records_exclusion_and_deletes(client, tmp_path, monkeypatch):
+    import import_scraped as imp
+    monkeypatch.setattr(imp, "EXCLUDED_GAMES_PATH", tmp_path / "excluded_games.json")
+    _ensure_platform("PlayStation 4", "PS4", "modern_console")
+    gid = _insert_game("Animal Crossing Island Transfer Tool", "PS4")
+    conn = models.get_db()
+    conn.execute("INSERT INTO game_external_ids (game_id, source, external_id) "
+                 "VALUES (?, 'playstation', 'TOOL1')", (gid,))
+    conn.commit()
+    conn.close()
+
+    resp = client.post(f"/api/games/{gid}/not-a-game")
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    assert conn.execute("SELECT COUNT(*) FROM games WHERE id = ?", (gid,)).fetchone()[0] == 0
+    conn.close()
+    assert imp.is_excluded("playstation", "TOOL1", "Animal Crossing Island Transfer Tool") is True
+
+
+def test_not_a_game_404_for_missing(client):
+    assert client.post("/api/games/999999/not-a-game").status_code == 404

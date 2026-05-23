@@ -335,9 +335,32 @@
             return `<div class="flex items-center gap-2" id="grp-${idx}-row-${id}">
                 <input type="checkbox" value="${id}" class="grp-check-${idx}">
                 <div class="flex-1">${gameLine(dedupGame(id))}</div>
+                <button onclick="notAGameFromGroup(${idx}, ${id})" title="Not a game (delete + skip on re-import)"
+                    class="text-gray-500 hover:text-red-400 text-sm px-1">🚫</button>
                 <button onclick="removeFromGroup(${idx}, ${id})" title="Not part of this group"
                     class="text-gray-500 hover:text-red-400 text-sm px-1">✕</button>
             </div>`;
+        }
+
+        async function notAGameFromGroup(idx, id) {
+            if (dedupBusy) return;
+            const title = dedupGame(id).title;
+            if (!confirm(`Mark "${title}" as NOT a game?\n\nThis deletes it and skips it on every future import.`)) return;
+            dedupBusy = true;
+            try {
+                const res = await api.post(`/api/games/${id}/not-a-game`, {});
+                if (!res.ok) { alert(res.data?.error || 'Failed to exclude'); return; }
+                (removedFromGroup[idx] = removedFromGroup[idx] || new Set()).add(id);
+                if (typeof refreshGameList === 'function') refreshGameList();
+                if (activeMembers(idx).length < 2) {
+                    document.getElementById(`grp-${idx}`)?.remove();
+                } else {
+                    updateGroupHeader(idx);
+                    renderGroupBody(idx);
+                }
+            } finally {
+                dedupBusy = false;
+            }
         }
 
         async function mergeWholeGroup(idx) {
@@ -827,12 +850,17 @@
                                       onblur="saveNotes(${game.id}, this.value)">${game.notes || ''}</textarea>
                         </div>
 
-                        <!-- Delete -->
-                        <div class="pt-3 border-t border-gray-700">
+                        <!-- Delete / Not a game -->
+                        <div class="pt-3 border-t border-gray-700 flex gap-2">
                             <button id="delete-btn-${game.id}"
                                     onclick="handleDeleteClick(${game.id})"
                                     class="px-4 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 rounded text-red-400 text-sm transition-colors">
                                 Delete
+                            </button>
+                            <button onclick="notAGameDetail(${game.id})"
+                                    title="Delete and skip it on every future import"
+                                    class="px-4 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded text-gray-300 text-sm transition-colors">
+                                🚫 Not a game
                             </button>
                         </div>
                     </div>
@@ -933,6 +961,16 @@
         async function deleteGame(gameId) {
             await api.delete(`/api/games/${gameId}`);
             deleteConfirmPending = null;
+            closeModal();
+            if (typeof refreshGameList === 'function') refreshGameList();
+            loadNavStats();
+        }
+
+        async function notAGameDetail(gameId) {
+            const game = await api.get(`/api/games/${gameId}`);
+            if (!confirm(`Mark "${game.title}" as NOT a game?\n\nThis deletes it and skips it on every future import.`)) return;
+            const res = await api.post(`/api/games/${gameId}/not-a-game`, {});
+            if (!res.ok) { alert(res.data?.error || 'Failed to exclude'); return; }
             closeModal();
             if (typeof refreshGameList === 'function') refreshGameList();
             loadNavStats();
