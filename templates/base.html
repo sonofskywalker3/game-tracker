@@ -107,7 +107,7 @@
     </main>
 
     <!-- Game Detail Modal -->
-    <div id="game-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+    <div id="game-modal" class="fixed inset-0 bg-black/70 z-[70] hidden items-center justify-center p-4">
         <div class="bg-surface-light rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div id="game-modal-content">
                 <!-- Filled by JS -->
@@ -243,7 +243,7 @@
             return `<div class="flex items-center gap-2">
                 <img src="${g.cover_url || ''}" onerror="this.style.display='none'"
                      class="w-8 h-10 object-cover rounded bg-surface">
-                <div><div class="text-white text-sm">${escapeHtml(g.title)}</div>
+                <div><button type="button" onclick="openModal(${g.id})" class="text-white text-sm text-left hover:text-accent hover:underline">${escapeHtml(g.title)}</button>
                 <div class="text-gray-500 text-xs">${plats} · ${bits.join(' · ')}</div></div></div>`;
         }
 
@@ -434,11 +434,9 @@
                 <label class="block text-xs text-gray-400 mb-1">Series name</label>
                 <input id="series-name" type="text" value="${escapeHtml(name)}"
                        class="w-full bg-surface border border-gray-600 rounded px-2 py-1.5 text-white text-sm mb-3">
-                <label class="block text-xs text-gray-400 mb-1">Include games</label>
+                <label class="block text-xs text-gray-400 mb-1">These ${members.length} games will be added — remove any that don't belong from the group first with ✕</label>
                 <div class="space-y-1 max-h-64 overflow-y-auto">
-                    ${members.map(id => `<label class="flex items-center gap-2 text-sm text-white">
-                        <input type="checkbox" class="series-member" value="${id}" checked>
-                        ${escapeHtml(dedupGame(id).title)}</label>`).join('')}
+                    ${members.map(id => `<div class="text-sm text-white">${escapeHtml(dedupGame(id).title)}</div>`).join('')}
                 </div>
                 ${rememberRow}
                 <div class="flex gap-2 pt-4">
@@ -455,8 +453,8 @@
             if (dedupBusy) return;
             const name = document.getElementById('series-name').value.trim();
             if (!name) { alert('Series name is required.'); return; }
-            const gameIds = [...document.querySelectorAll('.series-member:checked')].map(c => parseInt(c.value));
-            if (!gameIds.length) { alert('Select at least one game.'); return; }
+            const gameIds = activeMembers(idx);  // whole (cleaned) group; ✕ to exclude
+            if (!gameIds.length) { alert('No games left in this group.'); return; }
             const rememberEl = document.getElementById('series-remember');
             const remember = rememberEl ? rememberEl.checked : false;
             dedupBusy = true;
@@ -472,7 +470,10 @@
                 if (card) card.outerHTML = groupCard(idx);  // flips button to "Add to series"
                 if (wasExpanded) toggleGroup(idx);  // preserve expanded state
                 if (typeof refreshGameList === 'function') refreshGameList();
-                alert(`Saved "${name}" — ${res.data.assigned} game${res.data.assigned === 1 ? '' : 's'} ${res.data.created ? 'in a new series' : 'added'}.`);
+                const total = gameIds.length, added = res.data.assigned;
+                alert(added
+                    ? `Saved "${name}" — added ${added} of ${total} game${total === 1 ? '' : 's'}${res.data.created ? ' (new series)' : ''}.`
+                    : `All ${total} games were already in "${name}".`);
             } finally {
                 dedupBusy = false;
             }
