@@ -469,7 +469,7 @@ def api_dismiss_duplicate():
     are rejected with 400.
     """
     data = request.json or {}
-    raw_pairs = data['pairs'] if data.get('pairs') is not None \
+    raw_pairs = data['pairs'] if data.get('pairs') \
         else [[data.get('game_id_a'), data.get('game_id_b')]]
 
     pairs = []
@@ -486,6 +486,7 @@ def api_dismiss_duplicate():
         conn.commit()
         return jsonify({'success': True, 'count': len(pairs)})
     except sqlite3.IntegrityError as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 400
     finally:
         conn.close()
