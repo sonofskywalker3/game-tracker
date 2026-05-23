@@ -1,6 +1,6 @@
 import sqlite3
 
-from dedup import base_key, compute_merged_curation, find_duplicate_groups, merge_games, strip_edition_key
+from dedup import base_key, compute_merged_curation, find_duplicate_groups, merge_games, refresh_normalized_titles, strip_edition_key
 from models import normalize_title
 
 
@@ -195,3 +195,21 @@ def test_merge_dry_run_writes_nothing():
     plan = merge_games(conn, survivor_id=1, drop_ids=[2], title="Disco Elysium", dry_run=True)
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
     assert plan["survivor_id"] == 1 and plan["drop_ids"] == [2]
+
+
+def test_refresh_updates_keys_to_fresh_clean_title():
+    conn = _full_conn()
+    # stale normalized_title (old key with edition suffix still present)
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES "
+                 "(1, 'Brotato', 'brotato nintendo switch 2 edition')")
+    changed = refresh_normalized_titles(conn)
+    assert conn.execute("SELECT normalized_title FROM games WHERE id = 1").fetchone()[0] == "brotato"
+    assert {c["id"] for c in changed} == {1}
+
+
+def test_refresh_dry_run_writes_nothing():
+    conn = _full_conn()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES "
+                 "(1, 'Brotato', 'stale')")
+    refresh_normalized_titles(conn, dry_run=True)
+    assert conn.execute("SELECT normalized_title FROM games WHERE id = 1").fetchone()[0] == "stale"
