@@ -164,6 +164,13 @@
         </div>
     </div>
 
+    <!-- Create / Add Series dialog -->
+    <div id="series-dialog" class="fixed inset-0 bg-black/70 z-[60] hidden items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
+            <div class="p-6" id="series-dialog-body"></div>
+        </div>
+    </div>
+
     <script>
         // Global utilities
         const api = {
@@ -272,16 +279,21 @@
         }
 
         function groupCard(idx) {
+            const g = dedupData.groups[idx];
             const members = activeMembers(idx);
-            const label = baseTitle(members);   // shortest member title = family label
+            const label = baseTitle(members);
+            const seriesLabel = g.existing_series_id ? 'Add to series' : 'Create series';
             return `<div class="bg-surface rounded-lg" id="grp-${idx}">
-                <div class="flex items-center justify-between p-3">
-                    <button onclick="toggleGroup(${idx})" class="flex items-center gap-2 text-left text-white text-sm font-medium">
+                <div class="flex items-center justify-between p-3 gap-2">
+                    <button onclick="toggleGroup(${idx})" class="flex items-center gap-2 text-left text-white text-sm font-medium min-w-0">
                         <span id="grp-caret-${idx}">▸</span>
-                        <span>${escapeHtml(label)}</span>
-                        <span class="text-gray-500">· <span id="grp-count-${idx}">${members.length}</span> games</span>
+                        <span class="truncate">${escapeHtml(label)}</span>
+                        <span class="text-gray-500 whitespace-nowrap">· <span id="grp-count-${idx}">${members.length}</span> games</span>
                     </button>
-                    <button onclick="markAllSafe(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Mark all safe</button>
+                    <div class="flex gap-2 shrink-0">
+                        <button onclick="openSeriesDialog(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">${seriesLabel}</button>
+                        <button onclick="markAllSafe(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Mark all safe</button>
+                    </div>
                 </div>
                 <div id="grp-body-${idx}" class="hidden px-3 pb-3 space-y-2"></div>
             </div>`;
@@ -399,6 +411,64 @@
                     document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
                     renderGroupBody(idx);
                 }
+            } finally {
+                dedupBusy = false;
+            }
+        }
+
+        function openSeriesDialog(idx) {
+            const g = dedupData.groups[idx];
+            const members = activeMembers(idx);
+            const existing = g.existing_series_id;
+            const name = existing ? (g.existing_series_name || '') : baseTitle(members);
+            const heading = existing ? 'Add to series' : 'Create series';
+            const rememberRow = existing ? '' : `
+                <label class="flex items-center gap-2 text-sm text-gray-300 mt-3">
+                    <input type="checkbox" id="series-remember" checked> Remember for future imports
+                </label>`;
+            document.getElementById('series-dialog-body').innerHTML = `
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">${heading}</h2>
+                    <button onclick="closeSeriesDialog()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                </div>
+                <label class="block text-xs text-gray-400 mb-1">Series name</label>
+                <input id="series-name" type="text" value="${escapeHtml(name)}"
+                       class="w-full bg-surface border border-gray-600 rounded px-2 py-1.5 text-white text-sm mb-3">
+                <label class="block text-xs text-gray-400 mb-1">Include games</label>
+                <div class="space-y-1 max-h-64 overflow-y-auto">
+                    ${members.map(id => `<label class="flex items-center gap-2 text-sm text-white">
+                        <input type="checkbox" class="series-member" value="${id}" checked>
+                        ${escapeHtml(dedupGame(id).title)}</label>`).join('')}
+                </div>
+                ${rememberRow}
+                <div class="flex gap-2 pt-4">
+                    <button onclick="confirmSeriesFromGroup(${idx})" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">${existing ? 'Add' : 'Create'}</button>
+                    <button onclick="closeSeriesDialog()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Cancel</button>
+                </div>`;
+            showModalEl('series-dialog');
+        }
+
+        function closeSeriesDialog() { hideModalEl('series-dialog'); }
+
+        async function confirmSeriesFromGroup(idx) {
+            if (dedupBusy) return;
+            const name = document.getElementById('series-name').value.trim();
+            if (!name) { alert('Series name is required.'); return; }
+            const gameIds = [...document.querySelectorAll('.series-member:checked')].map(c => parseInt(c.value));
+            if (!gameIds.length) { alert('Select at least one game.'); return; }
+            const rememberEl = document.getElementById('series-remember');
+            const remember = rememberEl ? rememberEl.checked : false;
+            dedupBusy = true;
+            try {
+                const res = await api.post('/api/series/from-group', { name, game_ids: gameIds, remember });
+                if (!res.ok) { alert(res.data.error || 'Could not save series'); return; }
+                closeSeriesDialog();
+                dedupData.groups[idx].existing_series_id = res.data.series_id;
+                dedupData.groups[idx].existing_series_name = name;
+                const card = document.getElementById(`grp-${idx}`);
+                if (card) card.outerHTML = groupCard(idx);  // flips button to "Add to series"
+                if (typeof refreshGameList === 'function') refreshGameList();
+                alert(`Saved "${name}" — ${res.data.assigned} game${res.data.assigned === 1 ? '' : 's'} ${res.data.created ? 'in a new series' : 'added'}.`);
             } finally {
                 dedupBusy = false;
             }
