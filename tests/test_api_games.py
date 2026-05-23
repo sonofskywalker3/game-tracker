@@ -34,6 +34,36 @@ def _insert_game(title, short_name, physical=False):
     return gid
 
 
+def test_normalize_endpoint_is_display_only_and_collision_safe(client):
+    # Two rows whose cleaned display titles collide. The endpoint must re-clean
+    # the display title without recomputing normalized_title, so the
+    # UNIQUE(normalized_title) constraint can't fire (no 500).
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [
+            ("Fantasy Life i", "fantasy life i"),
+            ("Fantasy Life i - Nintendo Switch 2 Edition",
+             "fantasy life i nintendo switch 2 edition"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    resp = client.post("/api/games/normalize", json={})
+    assert resp.status_code == 200
+    assert resp.get_json()["cleaned_count"] == 1  # only the edition row's display changes
+
+    conn = models.get_db()
+    rows = {r["normalized_title"]: r["title"]
+            for r in conn.execute("SELECT normalized_title, title FROM games")}
+    conn.close()
+    assert rows == {
+        "fantasy life i": "Fantasy Life i",
+        "fantasy life i nintendo switch 2 edition": "Fantasy Life i",
+    }
+
+
 def test_api_games_exposes_categories_and_physical(client):
     _ensure_platform("PlayStation 4", "PS4", "modern_console")
     _ensure_platform("PlayStation 3", "PS3", "legacy_console")

@@ -211,18 +211,96 @@ def smart_title_case(title):
     return ' '.join(result)
 
 
+# Leading region/language parentheticals that are not part of a game's name,
+# e.g. "(English) Pokémon FireRed Version". Extensible; matched case-insensitively
+# as a parenthetical at the very start. (Trailing platform parens are handled
+# separately by the regex inside clean_title.)
+LEADING_TAGS = frozenset({
+    "english", "japanese", "french", "german", "spanish", "italian",
+    "usa", "us", "na", "europe", "eu", "pal", "ntsc",
+    "japan", "jp", "world", "asia", "korea", "china",
+})
+
+# Platform-edition suffixes that are not part of a game's name, e.g.
+# "Fantasy Life i - Nintendo Switch 2 Edition". Extensible; stripped from the end
+# along with any joining " - ", ": ", or space. Longer suffixes are tried first so
+# the more specific one wins.
+KNOWN_EDITION_SUFFIXES = (
+    "Nintendo Switch 2 Edition",
+    "Nintendo Switch Edition",
+)
+
+
+def strip_leading_tag(title):
+    """Strip a leading region/language parenthetical like '(English) '."""
+    import re
+    m = re.match(r"\s*\(([^)]*)\)\s*", title)
+    if m and m.group(1).strip().lower() in LEADING_TAGS:
+        return title[m.end():]
+    return title
+
+
+def strip_edition_suffix(title):
+    """Strip a known platform-edition suffix (and its joining separator)."""
+    import re
+    for suffix in sorted(KNOWN_EDITION_SUFFIXES, key=len, reverse=True):
+        pattern = r"\s*[-–:]?\s*" + re.escape(suffix) + r"\s*$"
+        stripped = re.sub(pattern, "", title, flags=re.IGNORECASE)
+        if stripped != title:
+            return stripped.rstrip()
+    return title
+
+
 def clean_title(title):
-    """Clean up a title by removing platform indicators, trademark symbols, and fixing ALL CAPS."""
+    """Clean a display title: strip vendor junk that is not part of the name.
+
+    Removes trademark symbols, a leading region/language tag, stray straight
+    double quotes, a trailing platform parenthetical, and known platform-edition
+    suffixes; ALL-CAPS titles are smart-title-cased. Does NOT guess the casing of
+    normal-case titles — authoritative casing comes from the IGDB canonical pass.
+    """
     import re
     # Remove trademark symbols
     title = title.replace('™', '').replace('®', '').replace('©', '')
+    # Strip a leading region/language tag, e.g. "(English) Pokémon FireRed"
+    title = strip_leading_tag(title)
+    # Strip stray straight double quotes, e.g. '"Edna & Harvey" Bundle'
+    title = title.replace('"', '')
     # Remove platform indicators like (PS4), (PS5), (Xbox One), etc. at the end
     title = re.sub(r'\s*\((PS[45]?|Xbox[^)]*|Switch|PC|Nintendo[^)]*)\)\s*$', '', title, flags=re.IGNORECASE)
+    # Strip known platform-edition suffixes like "Nintendo Switch 2 Edition"
+    title = strip_edition_suffix(title)
     # Clean up any double spaces and strip
     title = re.sub(r'\s+', ' ', title).strip()
     # Fix ALL CAPS titles (smart_title_case checks internally if title is mostly caps)
     title = smart_title_case(title)
     return title
+
+
+def reclean_display_titles(conn, dry_run=False):
+    """Recompute every game's display title with the current clean_title rules.
+
+    Display-only: updates games.title but NEVER normalized_title. Recomputing the
+    match key (and merging the duplicates it surfaces) is the dedup workstream;
+    leaving normalized_title alone here means an improved clean_title can never
+    trip UNIQUE(normalized_title) and crash on startup.
+
+    Idempotent (clean_title is a fixed point) and --dry-run-able. Does not commit;
+    the caller owns the transaction. Returns the list of changed rows as
+    ``{"id", "original", "cleaned"}`` dicts.
+    """
+    changes = []
+    for row in conn.execute("SELECT id, title FROM games").fetchall():
+        original = row["title"]
+        cleaned = clean_title(original)
+        if cleaned != original:
+            changes.append({"id": row["id"], "original": original, "cleaned": cleaned})
+            if not dry_run:
+                conn.execute(
+                    "UPDATE games SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (cleaned, row["id"]),
+                )
+    return changes
 
 
 def migrate_platform_category(conn):
@@ -308,22 +386,14 @@ def migrate_db():
     # Add the external-ids identity table
     migrate_external_ids(conn)
 
-    # Clean up titles - remove (PS4), trademark symbols, etc.
-    games = conn.execute("SELECT id, title FROM games").fetchall()
-    cleaned_count = 0
-    for game in games:
-        original = game['title']
-        cleaned = clean_title(original)
-        if cleaned != original:
-            conn.execute(
-                "UPDATE games SET title = ?, normalized_title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (cleaned, normalize_title(cleaned), game['id'])
-            )
-            cleaned_count += 1
-
-    if cleaned_count > 0:
+    # Re-clean display titles with the current rules (remove (PS4), trademark
+    # symbols, leading region tags, edition suffixes, etc.). Display-only:
+    # normalized_title is intentionally left untouched — recomputing the match key
+    # and merging the duplicates it surfaces is the dedup workstream.
+    changes = reclean_display_titles(conn)
+    if changes:
         conn.commit()
-        print(f"Cleaned up {cleaned_count} game titles")
+        print(f"Cleaned up {len(changes)} game titles")
 
     conn.close()
 

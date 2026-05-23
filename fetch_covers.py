@@ -9,13 +9,17 @@ Setup:
 """
 import argparse
 import json
+import logging
 import re
 import time
 from pathlib import Path
 
 import requests
 
-from models import get_db, normalize_title
+import config
+from models import clean_title, get_db, normalize_title
+
+logger = logging.getLogger(__name__)
 
 # IGDB API endpoints
 TWITCH_AUTH_URL = "https://id.twitch.tv/oauth2/token"
@@ -106,6 +110,33 @@ def get_access_token(client_id, client_secret, force_refresh=False):
     return data['access_token']
 
 
+def _igdb_search(clean_title, client_id, access_token):
+    """POST a `search "<clean_title>"` query to IGDB; return the results list.
+
+    Retries once on HTTP 429. `clean_title` must already be cleaned by the caller.
+    Shared by the cover search and the canonical-name lookup.
+    """
+    headers = {
+        'Client-ID': client_id,
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'text/plain'
+    }
+    query = f'''
+        search "{clean_title}";
+        fields name, cover.url;
+        limit 5;
+    '''
+    response = requests.post(f"{IGDB_API_URL}/games", headers=headers, data=query)
+
+    if response.status_code == 429:
+        # Rate limited, wait and retry
+        time.sleep(1)
+        return _igdb_search(clean_title, client_id, access_token)
+
+    response.raise_for_status()
+    return response.json()
+
+
 def search_game(title, client_id, access_token, strict=False):
     """Search IGDB for a game and return cover URL if found.
 
@@ -117,32 +148,7 @@ def search_game(title, client_id, access_token, strict=False):
     # Clean up title for better matching (and to avoid query-breaking quotes)
     clean_title = clean_search_title(title)
 
-    headers = {
-        'Client-ID': client_id,
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'text/plain'
-    }
-
-    # Search for the game
-    query = f'''
-        search "{clean_title}";
-        fields name, cover.url;
-        limit 5;
-    '''
-
-    response = requests.post(
-        f"{IGDB_API_URL}/games",
-        headers=headers,
-        data=query
-    )
-
-    if response.status_code == 429:
-        # Rate limited, wait and retry
-        time.sleep(1)
-        return search_game(title, client_id, access_token, strict)
-
-    response.raise_for_status()
-    results = response.json()
+    results = _igdb_search(clean_title, client_id, access_token)
 
     if not results:
         return None
@@ -177,6 +183,34 @@ def search_game(title, client_id, access_token, strict=False):
                 return url
 
     return None
+
+
+def pick_canonical_name(search_title, results):
+    """Return IGDB's official game name on a strict match, else None.
+
+    Strict = the normalized IGDB name equals (preferred) or contains / is
+    contained by the normalized search title — the same confident-match rule used
+    for covers, with exact matches preferred so e.g. "Portal" is never renamed to
+    "Portal 2". Pure: operates on already-fetched results. Returns None on no
+    confident match so a title is never renamed to a wrong game.
+    """
+    normalized_search = normalize_title(clean_search_title(search_title))
+    if not normalized_search:
+        return None
+    names = [(g.get("name", ""), normalize_title(g.get("name", ""))) for g in results]
+    for name, normalized in names:
+        if normalized and normalized == normalized_search:
+            return name
+    for name, normalized in names:
+        if normalized and (normalized_search in normalized or normalized in normalized_search):
+            return name
+    return None
+
+
+def search_canonical_name(title, client_id, access_token):
+    """Query IGDB and return the official game name on a strict match, else None."""
+    results = _igdb_search(clean_search_title(title), client_id, access_token)
+    return pick_canonical_name(title, results)
 
 
 def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=True,
@@ -293,20 +327,89 @@ def fetch_all_covers(client_id, client_secret, limit=None, skip_existing=True,
             print(f"[{progress['current']}/{progress['total']}] {progress['title'][:50]}... {status_str}")
 
 
+def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False):
+    """Adopt IGDB's official game name as the display title on a strict match.
+
+    Display-only: updates games.title, never normalized_title (recomputing the
+    match key and merging the duplicates it surfaces is the dedup workstream). A
+    miss keeps the existing (Part-A-cleaned) title — we never guess. Idempotent: a
+    title already equal to its canonical name is skipped. Re-runnable; honors
+    dry_run. Needs Twitch/IGDB creds (same as covers).
+    """
+    access_token = get_access_token(client_id, client_secret)
+    conn = get_db()
+    rows = conn.execute("SELECT id, title FROM games ORDER BY title").fetchall()
+    if limit:
+        rows = rows[:limit]
+
+    renamed = 0
+    for row in rows:
+        title = row["title"]
+        try:
+            canonical = search_canonical_name(title, client_id, access_token)
+        except requests.RequestException as e:
+            logger.warning("lookup failed for %s: %s", title, e)
+            continue
+
+        # Run the adopted name back through clean_title so the stored value is a
+        # fixed point — otherwise the startup reclean (migrate_db) would re-case an
+        # ALL-CAPS official name (e.g. "DOOM" -> "Doom") and the next pass would
+        # flip it back. clean_title leaves normal-case IGDB casing fixes intact.
+        new_title = clean_title(canonical) if canonical else None
+        if new_title and new_title != title:
+            renamed += 1
+            logger.info("rename: %s  ->  %s", title, new_title)
+            if not dry_run:
+                conn.execute(
+                    "UPDATE games SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (new_title, row["id"]),
+                )
+                conn.commit()
+        time.sleep(0.3)  # IGDB rate limit (~4 req/s)
+
+    conn.close()
+    label = "would rename" if dry_run else "renamed"
+    logger.info("--- canonical titles: %s %d of %d ---", label, renamed, len(rows))
+
+
+def _resolve_credentials(args):
+    """Twitch creds from CLI args, falling back to config.json."""
+    client_id, client_secret = args.client_id, args.client_secret
+    if not client_id or not client_secret:
+        cfg_id, cfg_secret = config.get_twitch_credentials()
+        client_id = client_id or cfg_id
+        client_secret = client_secret or cfg_secret
+    return client_id, client_secret
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Fetch cover art from IGDB')
-    parser.add_argument('--client-id', required=True, help='Twitch Client ID')
-    parser.add_argument('--client-secret', required=True, help='Twitch Client Secret')
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    parser = argparse.ArgumentParser(description='Fetch cover art / canonical titles from IGDB')
+    parser.add_argument('--client-id', help='Twitch Client ID (default: config.json)')
+    parser.add_argument('--client-secret', help='Twitch Client Secret (default: config.json)')
     parser.add_argument('--limit', type=int, help='Limit number of games to process')
     parser.add_argument('--all', action='store_true', help='Re-fetch all covers, not just missing ones')
     parser.add_argument('--upgrade-non-igdb', action='store_true',
                         help='Also replace covers from non-IGDB hosts (vendor art) with IGDB art')
+    parser.add_argument('--canonical-titles', action='store_true',
+                        help="Adopt IGDB's official game name as the display title on a strict match")
+    parser.add_argument('--dry-run', action='store_true',
+                        help='With --canonical-titles, preview renames without writing')
 
     args = parser.parse_args()
 
+    client_id, client_secret = _resolve_credentials(args)
+    if not client_id or not client_secret:
+        parser.error("Twitch credentials required: pass --client-id/--client-secret "
+                     "or set them in config.json")
+
+    if args.canonical_titles:
+        update_canonical_titles(client_id, client_secret, limit=args.limit, dry_run=args.dry_run)
+        return
+
     fetch_all_covers(
-        args.client_id,
-        args.client_secret,
+        client_id,
+        client_secret,
         limit=args.limit,
         skip_existing=not args.all,
         upgrade_non_igdb=args.upgrade_non_igdb,
