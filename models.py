@@ -490,9 +490,11 @@ def auto_populate_series():
         game_id = game['id']
         title = game['title']
 
-        # Check against known series patterns
+        # Check against known series patterns, longest prefix first so a specific
+        # prefix wins over a shorter one regardless of file order
+        # ("Cyberpunk 2077" must beat "Cyberpunk").
         matched_series = None
-        for prefix, series_name in known_series.items():
+        for prefix, series_name in sorted(known_series.items(), key=lambda kv: -len(kv[0])):
             if title.upper().startswith(prefix.upper()):
                 matched_series = series_name
                 break
