@@ -127,6 +127,16 @@ def test_merge_endpoint_merges_and_refreshes(client):
     assert titles == ["Disco Elysium"]
 
 
+def test_dismiss_endpoint_rejects_unknown_game(client):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('Solo', 'solo')")
+    gid = conn.execute("SELECT id FROM games").fetchone()["id"]
+    conn.commit()
+    conn.close()
+    resp = client.post("/api/duplicates/dismiss", json={"game_id_a": gid, "game_id_b": 999999})
+    assert resp.status_code == 400
+
+
 def test_dismiss_endpoint_records_not_duplicate(client):
     conn = models.get_db()
     conn.executemany("INSERT INTO games (title, normalized_title) VALUES (?, ?)",

@@ -467,11 +467,15 @@ def api_dismiss_duplicate():
         return jsonify({'error': 'two distinct game ids are required'}), 400
     lo, hi = min(a, b), max(a, b)
     conn = get_db()
-    conn.execute("INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
-                 (lo, hi))
-    conn.commit()
-    conn.close()
-    return jsonify({'success': True})
+    try:
+        conn.execute("INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
+                     (lo, hi))
+        conn.commit()
+        return jsonify({'success': True})
+    except sqlite3.IntegrityError as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
 
 
 @app.route('/api/games/reorder', methods=['POST'])
