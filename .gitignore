@@ -8,6 +8,7 @@ config.json
 *.pem
 
 # ---- Personal library data (kept local-only) ----
+series_patterns.json
 games.db
 games.db.bak*
 *.bak

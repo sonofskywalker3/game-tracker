@@ -1,7 +1,35 @@
+import json
 import sqlite3
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "games.db"
+SERIES_PATTERNS_PATH = Path(__file__).parent / "series_patterns.json"           # per-user (gitignored)
+SERIES_PATTERNS_DEFAULT_PATH = Path(__file__).parent / "series_patterns.default.json"  # committed seed
+
+
+def load_series_patterns() -> dict:
+    """Load the prefix->series-name table (per-user file, else committed seed)."""
+    path = SERIES_PATTERNS_PATH if SERIES_PATTERNS_PATH.exists() else SERIES_PATTERNS_DEFAULT_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def add_series_pattern(prefix: str, name: str) -> bool:
+    """Add prefix->name to the per-user patterns file (seeding from the default on
+    first write). Returns True if added, False if blank or already present."""
+    prefix, name = prefix.strip(), name.strip()
+    if not prefix or not name:
+        return False
+    patterns = dict(load_series_patterns())
+    if patterns.get(prefix) == name:
+        return False
+    patterns[prefix] = name
+    with open(SERIES_PATTERNS_PATH, "w", encoding="utf-8") as f:
+        json.dump(patterns, f, indent=2, ensure_ascii=False, sort_keys=True)
+    return True
 
 # Platform era classification (module-level, immutable).
 PC_PLATFORMS = frozenset({"PC", "Steam", "GOG", "Epic", "EGS"})
@@ -450,125 +478,7 @@ def auto_populate_series():
     """Automatically create series based on common game title prefixes."""
     conn = get_db()
 
-    # Known series patterns (prefix -> series name)
-    known_series = {
-        "Assassin's Creed": "Assassin's Creed",
-        "Assassins Creed": "Assassin's Creed",
-        "FINAL FANTASY": "Final Fantasy",
-        "Final Fantasy": "Final Fantasy",
-        "DRAGON QUEST": "Dragon Quest",
-        "Dragon Quest": "Dragon Quest",
-        "Castlevania": "Castlevania",
-        "Danganronpa": "Danganronpa",
-        "Darksiders": "Darksiders",
-        "Batman": "Batman",
-        "Borderlands": "Borderlands",
-        "Bloodstained": "Bloodstained",
-        "Blaster Master Zero": "Blaster Master Zero",
-        "Kingdom Hearts": "Kingdom Hearts",
-        "The Legend of Zelda": "The Legend of Zelda",
-        "Legend of Zelda": "The Legend of Zelda",
-        "Zelda": "The Legend of Zelda",
-        "Super Mario": "Super Mario",
-        "Mario": "Mario",
-        "Metroid": "Metroid",
-        "Resident Evil": "Resident Evil",
-        "Metal Gear": "Metal Gear",
-        "Devil May Cry": "Devil May Cry",
-        "Mega Man": "Mega Man",
-        "Axiom Verge": "Axiom Verge",
-        "Diablo": "Diablo",
-        "Fallout": "Fallout",
-        "Halo": "Halo",
-        "Grand Theft Auto": "Grand Theft Auto",
-        "God of War": "God of War",
-        "Dark Souls": "Dark Souls",
-        "Souls": "Souls",
-        "Elden Ring": "Elden Ring",
-        "Pokemon": "Pokemon",
-        "Pok\u00e9mon": "Pokemon",
-        "Monster Hunter": "Monster Hunter",
-        "Ratchet & Clank": "Ratchet & Clank",
-        "Ratchet and Clank": "Ratchet & Clank",
-        "Uncharted": "Uncharted",
-        "The Last of Us": "The Last of Us",
-        "Last of Us": "The Last of Us",
-        "Horizon": "Horizon",
-        "Spider-Man": "Spider-Man",
-        "Spiderman": "Spider-Man",
-        "Mass Effect": "Mass Effect",
-        "Persona": "Persona",
-        "Shin Megami Tensei": "Shin Megami Tensei",
-        "Fire Emblem": "Fire Emblem",
-        "Xenoblade": "Xenoblade",
-        "Tales of": "Tales of",
-        "Ys": "Ys",
-        "Atelier": "Atelier",
-        "Disgaea": "Disgaea",
-        "NieR": "NieR",
-        "Nier": "NieR",
-        "Yakuza": "Yakuza",
-        "Like a Dragon": "Like a Dragon",
-        "Sonic": "Sonic",
-        "Kirby": "Kirby",
-        "Shovel Knight": "Shovel Knight",
-        "Ori": "Ori",
-        "Hollow Knight": "Hollow Knight",
-        "Cat Quest": "Cat Quest",
-        "Cozy Grove": "Cozy Grove",
-        "Dadish": "Dadish",
-        "Deponia": "Deponia",
-        "Deus Ex": "Deus Ex",
-        "Dishonored": "Dishonored",
-        "Ghost of Tsushima": "Ghost of Tsushima",
-        "Guacamelee": "Guacamelee",
-        "Hello Neighbor": "Hello Neighbor",
-        "AI: THE SOMNIUM FILES": "AI: The Somnium Files",
-        "Alwa's": "Alwa's",
-        "Blossom Tales": "Blossom Tales",
-        "Bubble Trouble": "Bubble Trouble",
-        "Cyberpunk 2077": "Cyberpunk 2077",
-        "DOOM": "DOOM",
-        "Doom": "DOOM",
-        "Wolfenstein": "Wolfenstein",
-        "BioShock": "BioShock",
-        "Bioshock": "BioShock",
-        "Dead Space": "Dead Space",
-        "Tomb Raider": "Tomb Raider",
-        "Hitman": "Hitman",
-        "Just Cause": "Just Cause",
-        "Far Cry": "Far Cry",
-        "Watch Dogs": "Watch Dogs",
-        "The Witcher": "The Witcher",
-        "Witcher": "The Witcher",
-        "Cyberpunk": "Cyberpunk",
-        "Call of Duty": "Call of Duty",
-        "Battlefield": "Battlefield",
-        "Crysis": "Crysis",
-        "Saints Row": "Saints Row",
-        "Sleeping Dogs": "Sleeping Dogs",
-        "Dead Rising": "Dead Rising",
-        "Left 4 Dead": "Left 4 Dead",
-        "Portal": "Portal",
-        "Half-Life": "Half-Life",
-        "Half Life": "Half-Life",
-        "Quake": "Quake",
-        "Mortal Kombat": "Mortal Kombat",
-        "Street Fighter": "Street Fighter",
-        "Tekken": "Tekken",
-        "SoulCalibur": "SoulCalibur",
-        "Soul Calibur": "SoulCalibur",
-        "Guilty Gear": "Guilty Gear",
-        "BlazBlue": "BlazBlue",
-        "Dragon Ball": "Dragon Ball",
-        "DRAGON BALL": "Dragon Ball",
-        "Naruto": "Naruto",
-        "One Piece": "One Piece",
-        "CODE VEIN": "Code Vein",
-        "Control": "Control",
-        "Disco Elysium": "Disco Elysium",
-        "Don't Starve": "Don't Starve",
-    }
+    known_series = load_series_patterns()
 
     # Get all games
     games = conn.execute("SELECT id, title FROM games ORDER BY title").fetchall()
