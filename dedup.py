@@ -13,7 +13,14 @@ app.py is a thin wrapper.
 """
 from __future__ import annotations
 
+import difflib
+import logging
+import sqlite3
+from collections import defaultdict
+
 from models import clean_title, normalize_title
+
+log = logging.getLogger(__name__)
 
 FUZZY_THRESHOLD = 0.85
 
@@ -47,3 +54,64 @@ def strip_edition_key(key: str) -> str:
         if key.endswith(suffix):
             return key[: -len(suffix)].strip()
     return key
+
+
+def _dismissed_pairs(conn: sqlite3.Connection) -> set[frozenset[int]]:
+    try:
+        rows = conn.execute(
+            "SELECT game_id_lo, game_id_hi FROM not_duplicates"
+        ).fetchall()
+    except sqlite3.OperationalError:  # table not migrated yet
+        return set()
+    return {frozenset((r[0], r[1])) for r in rows}
+
+
+def _contains(a: str, b: str) -> bool:
+    """True if one key word-contains the other (different lengths)."""
+    if a == b:
+        return False
+    short, long = (a, b) if len(a) < len(b) else (b, a)
+    return f" {short} " in f" {long} " or long.startswith(short + " ") or long.endswith(" " + short)
+
+
+def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
+    """Detect duplicate games. Returns {"definite": [[id,...]], "candidates": [...]}.
+
+    definite  = identical base_key (auto-mergeable).
+    candidates = pairs flagged for yes/no, each {"a", "b", "reason", "score"};
+                 reason in {"edition", "contains", "similar"}. Pairs already in
+                 not_duplicates are excluded. Pure read; computes fresh keys in
+                 memory so stored normalized_title staleness does not matter.
+    """
+    games = [(r["id"], r["title"]) for r in
+             conn.execute("SELECT id, title FROM games ORDER BY id").fetchall()]
+    dismissed = _dismissed_pairs(conn)
+    keys = {gid: base_key(title) for gid, title in games}
+
+    by_key: dict[str, list[int]] = defaultdict(list)
+    for gid, _ in games:
+        by_key[keys[gid]].append(gid)
+    definite = [sorted(ids) for ids in by_key.values() if len(ids) > 1]
+
+    candidates: list[dict] = []
+    ids = [gid for gid, _ in games]
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a, b = ids[i], ids[j]
+            if frozenset((a, b)) in dismissed:
+                continue
+            ka, kb = keys[a], keys[b]
+            if ka == kb:
+                continue  # already definite
+            if strip_edition_key(ka) == strip_edition_key(kb):
+                reason, score = "edition", 1.0
+            elif _contains(ka, kb):
+                reason, score = "contains", 0.95
+            else:
+                ratio = difflib.SequenceMatcher(None, ka, kb).ratio()
+                if ratio < FUZZY_THRESHOLD:
+                    continue
+                reason, score = "similar", round(ratio, 3)
+            candidates.append({"a": a, "b": b, "reason": reason, "score": score})
+
+    return {"definite": definite, "candidates": candidates}
