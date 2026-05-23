@@ -1,7 +1,8 @@
 # Title normalization — design
 
 **Date:** 2026-05-22
-**Status:** approach approved (pending spec review); ready for implementation
+**Status:** IMPLEMENTED + tested (commits `b7d78bd`, `2b2ddfa`). Part B matching
+corrected to equality-only on 2026-05-23 after a live run; see Part B below.
 **Workstream:** 2 of 4 (normalization) — see [[post-import-cleanup-workstreams]]
 
 ## Goal
@@ -45,11 +46,20 @@ Reuse the IGDB pipeline (`fetch_covers.get_access_token` + `search_game`). On a
 → IGDB's official casing). `search_game` already requests `name`; extend it to
 return the canonical name alongside the cover, or add a parallel lookup.
 
-- **Strict match only** (normalized equality/containment, no loose fallback) so a
-  title is never renamed to a wrong game.
+- **Exact normalized equality only** (NOT containment), compared against the
+  title *as-is* (not the edition-stripped search string), so a title is never
+  renamed to a wrong game. **Correction (2026-05-23):** the first implementation
+  allowed containment; a live run renamed `.cat` → "Hungry Cat", "Assassin's
+  Creed" → a Valhalla/Odyssey/Origins *bundle*, and stripped editions
+  ("… - Ultimate Edition" → base game). Equality-only still delivers the
+  casing/punctuation fix (the whole point) while never changing which game or
+  edition a title is. Adding an official subtitle ("The Witcher 3" → "… : Wild
+  Hunt") is the same risky mechanism and is intentionally rejected.
 - **Miss → keep** the Part-A-cleaned existing title (do not guess).
-- Opt-in flag (e.g. `fetch_covers.py --canonical-titles`); needs Twitch/IGDB
-  creds (same as covers); re-runnable and idempotent.
+- Opt-in flag (`fetch_covers.py --canonical-titles [--dry-run]`); needs
+  Twitch/IGDB creds (CLI args or `config.json`); re-runnable and idempotent
+  (adopted name is run back through `clean_title` so the startup reclean is a
+  fixed point).
 
 Most canonical-name changes are casing/punctuation, which `normalize_title`
 already strips — so adopting them rarely changes the match key. The big match-key
