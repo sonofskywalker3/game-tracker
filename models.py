@@ -82,6 +82,16 @@ def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
         );
 
+        -- Confirmed non-duplicates (dedup: pairs the user marked distinct)
+        CREATE TABLE IF NOT EXISTS not_duplicates (
+            game_id_lo INTEGER NOT NULL,
+            game_id_hi INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (game_id_lo, game_id_hi),
+            FOREIGN KEY (game_id_lo) REFERENCES games(id) ON DELETE CASCADE,
+            FOREIGN KEY (game_id_hi) REFERENCES games(id) ON DELETE CASCADE
+        );
+
         -- Tags table (genres, themes, custom tags)
         CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
