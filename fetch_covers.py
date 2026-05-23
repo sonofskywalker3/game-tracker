@@ -34,6 +34,20 @@ IGDB_HOST = "images.igdb.com"
 # are nulled rather than kept; other vendor covers are left alone. Extensible.
 WIDE_ART_HOSTS = frozenset({"assets.nintendo.com"})
 
+# Symbols whose presence/count is meaningful (not casing or separators). A change
+# in any of these between the old and new title signals a content change, not just
+# a styling fix — so the canonical pass holds it for review.
+_CONTENT_SYMBOLS = "+!?*#"
+
+# Titles (by normalized key) whose IGDB name we never auto-adopt — human judgment
+# overrides IGDB. Only for cases is_questionable_rename can't classify on its own:
+# pure-casing losses and added trailing junk. Extensible curated table.
+_CANONICAL_SKIP_TITLES = (
+    "moon",          # IGDB "Moon" loses the intentional all-lowercase styling
+    "Chocobo Gp",    # IGDB "Chocobo GP'" carries a stray trailing apostrophe
+)
+CANONICAL_SKIP = frozenset(normalize_title(t) for t in _CANONICAL_SKIP_TITLES)
+
 
 def cover_host(url):
     """Return the host of an http(s) cover URL, or None if empty/non-URL."""
@@ -215,6 +229,47 @@ def search_canonical_name(title, client_id, access_token):
     return pick_canonical_name(title, results)
 
 
+def _alnum_key(s):
+    """Lowercase alphanumerics only (drops case, separators, and all symbols)."""
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _apostrophe_count(s):
+    return sum(s.count(c) for c in "'’")
+
+
+def is_questionable_rename(old, new):
+    """True when an IGDB rename changes more than casing/separators/added apostrophe.
+
+    Surfaces the renames that quietly change a title's *meaning* rather than its
+    styling: a different word or clause (alphanumerics differ), a content symbol
+    added or removed (+ ! ? * #), or a dropped apostrophe. Casing, separator
+    punctuation (: - – space), and *adding* a correct apostrophe
+    ("Assassins" -> "Assassin's") are not questionable. Pure.
+    """
+    if _alnum_key(old) != _alnum_key(new):
+        return True
+    if any(old.count(sym) != new.count(sym) for sym in _CONTENT_SYMBOLS):
+        return True
+    if _apostrophe_count(new) < _apostrophe_count(old):
+        return True
+    return False
+
+
+def classify_rename(old, new):
+    """Decide what to do with a proposed canonical rename.
+
+    "skip"   -> a curated judgment call (CANONICAL_SKIP); never auto-applied.
+    "review" -> questionable (is_questionable_rename); held for the user to OK.
+    "apply"  -> a clean casing/separator fix; safe to apply.
+    """
+    if normalize_title(old) in CANONICAL_SKIP:
+        return "skip"
+    if is_questionable_rename(old, new):
+        return "review"
+    return "apply"
+
+
 def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=True,
                            upgrade_non_igdb=False):
     """
@@ -329,7 +384,8 @@ def fetch_all_covers(client_id, client_secret, limit=None, skip_existing=True,
             print(f"[{progress['current']}/{progress['total']}] {progress['title'][:50]}... {status_str}")
 
 
-def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False):
+def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False,
+                            include_flagged=False):
     """Adopt IGDB's official game name as the display title on a strict match.
 
     Display-only: updates games.title, never normalized_title (recomputing the
@@ -337,6 +393,11 @@ def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False)
     miss keeps the existing (Part-A-cleaned) title — we never guess. Idempotent: a
     title already equal to its canonical name is skipped. Re-runnable; honors
     dry_run. Needs Twitch/IGDB creds (same as covers).
+
+    Renames are classified (see classify_rename): clean casing/separator fixes are
+    applied, questionable ones (content symbol or word/clause changes) are HELD and
+    reported unless include_flagged, and curated CANONICAL_SKIP titles are never
+    applied.
     """
     access_token = get_access_token(client_id, client_secret)
     conn = get_db()
@@ -345,20 +406,31 @@ def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False)
         rows = rows[:limit]
 
     renamed = 0
+    held = []
+    skipped = []
     for row in rows:
         title = row["title"]
+        canonical = None
         try:
             canonical = search_canonical_name(title, client_id, access_token)
         except requests.RequestException as e:
             logger.warning("lookup failed for %s: %s", title, e)
-            continue
+        time.sleep(0.3)  # IGDB rate limit (~4 req/s), every iteration
 
         # Run the adopted name back through clean_title so the stored value is a
         # fixed point — otherwise the startup reclean (migrate_db) would re-case an
         # ALL-CAPS official name (e.g. "DOOM" -> "Doom") and the next pass would
         # flip it back. clean_title leaves normal-case IGDB casing fixes intact.
         new_title = clean_title(canonical) if canonical else None
-        if new_title and new_title != title:
+        if not new_title or new_title == title:
+            continue
+
+        decision = classify_rename(title, new_title)
+        if decision == "skip":
+            skipped.append((title, new_title))
+        elif decision == "review" and not include_flagged:
+            held.append((title, new_title))
+        else:
             renamed += 1
             logger.info("rename: %s  ->  %s", title, new_title)
             if not dry_run:
@@ -367,11 +439,19 @@ def update_canonical_titles(client_id, client_secret, limit=None, dry_run=False)
                     (new_title, row["id"]),
                 )
                 conn.commit()
-        time.sleep(0.3)  # IGDB rate limit (~4 req/s)
 
     conn.close()
     label = "would rename" if dry_run else "renamed"
     logger.info("--- canonical titles: %s %d of %d ---", label, renamed, len(rows))
+    if held:
+        logger.info("HELD %d questionable rename(s) — re-run with --include-flagged "
+                    "to apply (or add to CANONICAL_SKIP to suppress):", len(held))
+        for old, new in held:
+            logger.info("  REVIEW: %s  ->  %s", old, new)
+    if skipped:
+        logger.info("SKIPPED %d curated rename(s) (CANONICAL_SKIP):", len(skipped))
+        for old, new in skipped:
+            logger.info("  skip: %s  ->  %s", old, new)
 
 
 def _resolve_credentials(args):
@@ -395,6 +475,9 @@ def main():
                         help='Also replace covers from non-IGDB hosts (vendor art) with IGDB art')
     parser.add_argument('--canonical-titles', action='store_true',
                         help="Adopt IGDB's official game name as the display title on a strict match")
+    parser.add_argument('--include-flagged', action='store_true',
+                        help='With --canonical-titles, also apply questionable renames that are '
+                             'normally held for review')
     parser.add_argument('--dry-run', action='store_true',
                         help='With --canonical-titles, preview renames without writing')
 
@@ -406,7 +489,8 @@ def main():
                      "or set them in config.json")
 
     if args.canonical_titles:
-        update_canonical_titles(client_id, client_secret, limit=args.limit, dry_run=args.dry_run)
+        update_canonical_titles(client_id, client_secret, limit=args.limit,
+                                dry_run=args.dry_run, include_flagged=args.include_flagged)
         return
 
     fetch_all_covers(

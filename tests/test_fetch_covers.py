@@ -1,6 +1,8 @@
 from fetch_covers import (
+    classify_rename,
     clean_search_title,
     cover_host,
+    is_questionable_rename,
     needs_cover,
     pick_canonical_name,
     should_null_on_miss,
@@ -114,3 +116,49 @@ def test_pick_canonical_name_none_on_empty_results():
 
 def test_pick_canonical_name_none_when_search_normalizes_empty():
     assert pick_canonical_name("---", [{"name": "Real Game"}]) is None
+
+
+# --- is_questionable_rename / classify_rename: surface dubious renames -------
+
+def test_questionable_false_for_casing_only():
+    assert is_questionable_rename("Bioshock", "BioShock") is False
+
+
+def test_questionable_false_for_separator_insertion():
+    assert is_questionable_rename("Akuto Showdown", "Akuto: Showdown") is False
+
+
+def test_questionable_false_for_added_apostrophe():
+    # Adding the correct apostrophe is a good fix, not questionable.
+    assert is_questionable_rename("Assassins Creed III", "Assassin's Creed III") is False
+
+
+def test_questionable_true_for_added_content_symbol():
+    assert is_questionable_rename("Dicey Dungeons", "Dicey Dungeons+") is True
+    assert is_questionable_rename("Rekt", "Rekt!") is True
+
+
+def test_questionable_true_for_removed_content_symbol():
+    assert is_questionable_rename("Jamjam!", "Jamjam") is True
+
+
+def test_questionable_true_for_dropped_apostrophe():
+    assert is_questionable_rename("Wreckin' Ball Adventure", "Wreckin Ball Adventure") is True
+
+
+def test_questionable_true_for_dropped_clause():
+    assert is_questionable_rename("Doom II (classic)", "Doom II") is True
+
+
+def test_classify_rename_skips_curated_judgment_calls():
+    # The heuristic can't see these as questionable, so they live in the table.
+    assert classify_rename("moon", "Moon") == "skip"
+    assert classify_rename("Chocobo Gp", "Chocobo GP'") == "skip"
+
+
+def test_classify_rename_reviews_questionable():
+    assert classify_rename("Dicey Dungeons", "Dicey Dungeons+") == "review"
+
+
+def test_classify_rename_applies_clean_casing_fix():
+    assert classify_rename("Bioshock", "BioShock") == "apply"
