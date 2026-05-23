@@ -80,3 +80,24 @@ def test_api_games_exposes_categories_and_physical(client):
     assert by_title["Retro Game"]["categories"] == ["legacy_console"]
     assert by_title["Retro Game"]["physical"] is False
     assert by_title["Desktop Game"]["categories"] == ["pc"]
+
+
+def test_duplicates_endpoint_lists_definite_and_candidates(client):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Brotato", "brotato"),
+         ("Brotato - Nintendo Switch 2 Edition", "brotato nsw2"),
+         ("The Outer Worlds", "the outer worlds"),
+         ("The Outer Worlds: Spacer's Choice Edition", "the outer worlds spacers choice edition")],
+    )
+    conn.commit()
+    conn.close()
+
+    body = client.get("/api/duplicates").get_json()
+    keys = {g["id"]: g for g in body["games"]}
+    assert any(sorted(group) for group in body["definite"])      # Brotato pair
+    assert any(c["reason"] == "edition" for c in body["candidates"])
+    # each referenced game is described for the modal
+    some_id = body["definite"][0][0]
+    assert "title" in keys[some_id] and "platforms" in keys[some_id]
