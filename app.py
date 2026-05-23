@@ -4,7 +4,10 @@ Game Tracker - Flask Application
 import json
 import sqlite3
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, stream_with_context
-from models import get_db, init_db, migrate_db, normalize_title, clean_title, DB_PATH
+from models import (
+    get_db, init_db, migrate_db, normalize_title, clean_title,
+    reclean_display_titles, DB_PATH,
+)
 from recommendation import get_recommendations, get_quick_picks, calculate_tag_affinity
 from config import load_config, save_config, get_twitch_credentials
 from background_tasks import run_cover_fetch_background, get_cover_fetch_status
@@ -383,42 +386,23 @@ def api_delete_game(game_id):
 
 @app.route('/api/games/normalize', methods=['POST'])
 def api_normalize_titles():
-    """Normalize all game titles by removing platform indicators and trademark symbols.
+    """Re-clean all display titles with the current clean_title rules.
 
-    Pass {"force": true} to re-apply title casing to all titles.
+    Display-only: never recomputes normalized_title. Recomputing the match key and
+    merging the duplicates it surfaces is the dedup workstream; leaving it alone
+    means an improved clean_title can't trip UNIQUE(normalized_title). The legacy
+    {"force": true} flag is accepted for compatibility but no longer changes the
+    result — clean_title already smart-title-cases ALL-CAPS titles.
     """
-    from models import smart_title_case
     conn = get_db()
-    data = request.json or {}
-    force = data.get('force', False)
-
-    games = conn.execute("SELECT id, title FROM games").fetchall()
-    cleaned_count = 0
-    cleaned_titles = []
-
-    for game in games:
-        original = game['title']
-        if force:
-            # Force mode: apply smart_title_case to all titles
-            cleaned = clean_title(original)
-            # Also apply title case even if clean_title didn't change it
-            cleaned = smart_title_case(cleaned)
-        else:
-            cleaned = clean_title(original)
-
-        if cleaned != original:
-            conn.execute(
-                "UPDATE games SET title = ?, normalized_title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (cleaned, normalize_title(cleaned), game['id'])
-            )
-            cleaned_titles.append({'original': original, 'cleaned': cleaned})
-            cleaned_count += 1
-
-    if cleaned_count > 0:
+    changes = reclean_display_titles(conn)
+    if changes:
         conn.commit()
-
     conn.close()
-    return jsonify({'cleaned_count': cleaned_count, 'titles': cleaned_titles})
+    return jsonify({
+        'cleaned_count': len(changes),
+        'titles': [{'original': c['original'], 'cleaned': c['cleaned']} for c in changes],
+    })
 
 
 @app.route('/api/games/reorder', methods=['POST'])

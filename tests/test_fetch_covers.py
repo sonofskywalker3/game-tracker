@@ -1,4 +1,10 @@
-from fetch_covers import clean_search_title, cover_host, needs_cover, should_null_on_miss
+from fetch_covers import (
+    clean_search_title,
+    cover_host,
+    needs_cover,
+    pick_canonical_name,
+    should_null_on_miss,
+)
 
 
 def test_clean_search_title_strips_quotes_that_break_igdb():
@@ -47,3 +53,40 @@ def test_should_null_on_miss_only_for_wide_art():
     assert should_null_on_miss(NINTENDO) is True   # broken wide art -> null it
     assert should_null_on_miss(PSN) is False        # acceptable -> keep on miss
     assert should_null_on_miss(IGDB) is False
+
+
+# --- pick_canonical_name: strict IGDB-name adoption (Part B, pure) ----------
+
+def test_pick_canonical_name_adopts_official_casing_on_exact_match():
+    results = [{"name": "AI: The Somnium Files"}]
+    assert pick_canonical_name("Ai: the Somnium Files", results) == "AI: The Somnium Files"
+
+
+def test_pick_canonical_name_none_when_no_confident_match():
+    # Never rename to a wrong game.
+    assert pick_canonical_name("Hollow Knight", [{"name": "Celeste"}]) is None
+
+
+def test_pick_canonical_name_prefers_exact_over_containment():
+    # "Portal" must never be renamed to "Portal 2".
+    results = [{"name": "Portal 2"}, {"name": "Portal"}]
+    assert pick_canonical_name("Portal", results) == "Portal"
+
+
+def test_pick_canonical_name_accepts_official_subtitle_via_containment():
+    results = [{"name": "The Witcher 3: Wild Hunt"}]
+    assert pick_canonical_name("The Witcher 3", results) == "The Witcher 3: Wild Hunt"
+
+
+def test_pick_canonical_name_skips_results_without_name():
+    results = [{"cover": {"url": "x"}}, {"name": "Celeste"}]
+    assert pick_canonical_name("Celeste", results) == "Celeste"
+
+
+def test_pick_canonical_name_none_on_empty_results():
+    assert pick_canonical_name("Anything", []) is None
+
+
+def test_pick_canonical_name_none_when_search_normalizes_empty():
+    # A title that normalizes to "" must not containment-match every result.
+    assert pick_canonical_name("---", [{"name": "Real Game"}]) is None
