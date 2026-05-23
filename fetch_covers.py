@@ -186,23 +186,25 @@ def search_game(title, client_id, access_token, strict=False):
 
 
 def pick_canonical_name(search_title, results):
-    """Return IGDB's official game name on a strict match, else None.
+    """Return IGDB's official name only when it is the SAME title as search_title
+    up to casing/punctuation, else None.
 
-    Strict = the normalized IGDB name equals (preferred) or contains / is
-    contained by the normalized search title — the same confident-match rule used
-    for covers, with exact matches preferred so e.g. "Portal" is never renamed to
-    "Portal 2". Pure: operates on already-fetched results. Returns None on no
-    confident match so a title is never renamed to a wrong game.
+    Match = exact normalized equality against the title as-is. Containment is
+    deliberately rejected: a live run showed it renamed short or base titles to
+    unrelated or bundle games (".cat" -> "Hungry Cat"; "Assassin's Creed" -> a
+    Valhalla/Odyssey/Origins bundle) and stripped editions off the user's titles.
+    Equality-only still delivers the casing/punctuation fix that is the whole
+    point ("Ai: the Somnium Files" -> "AI: The Somnium Files") while never
+    changing which game or edition a title is. Compared against the title as-is
+    (not the edition-stripped search string) so editions are kept. Pure; returns
+    None on no match so a title is never renamed to a wrong game.
     """
-    normalized_search = normalize_title(clean_search_title(search_title))
+    normalized_search = normalize_title(search_title)
     if not normalized_search:
         return None
-    names = [(g.get("name", ""), normalize_title(g.get("name", ""))) for g in results]
-    for name, normalized in names:
-        if normalized and normalized == normalized_search:
-            return name
-    for name, normalized in names:
-        if normalized and (normalized_search in normalized or normalized in normalized_search):
+    for game in results:
+        name = game.get("name", "")
+        if name and normalize_title(name) == normalized_search:
             return name
     return None
 
