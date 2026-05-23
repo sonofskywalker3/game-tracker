@@ -2,6 +2,7 @@
 Game Tracker - Flask Application
 """
 import sqlite3
+import dedup
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
@@ -402,6 +403,37 @@ def api_normalize_titles():
         'cleaned_count': len(changes),
         'titles': [{'original': c['original'], 'cleaned': c['cleaned']} for c in changes],
     })
+
+
+@app.route('/api/duplicates')
+def api_duplicates():
+    """Detect duplicate games for the dedup modal."""
+    conn = get_db()
+    groups = dedup.find_duplicate_groups(conn)
+    referenced = {gid for group in groups["definite"] for gid in group}
+    referenced |= {c["a"] for c in groups["candidates"]}
+    referenced |= {c["b"] for c in groups["candidates"]}
+
+    games = []
+    for gid in referenced:
+        g = conn.execute("SELECT id, title, cover_url FROM games WHERE id = ?", (gid,)).fetchone()
+        if not g:
+            continue
+        platforms = [r["short_name"] for r in conn.execute(
+            "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
+            "ON p.id = gp.platform_id WHERE gp.game_id = ?", (gid,))]
+        ur = conn.execute(
+            "SELECT status, rating, notes, priority, hours_played, started_at, "
+            "completed_at, sort_order, series_id, series_order "
+            "FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
+        games.append({
+            "id": g["id"], "title": g["title"], "cover_url": g["cover_url"],
+            "platforms": platforms,
+            "curation": dict(ur) if ur else {"status": "backlog"},
+        })
+    conn.close()
+    return jsonify({"definite": groups["definite"],
+                    "candidates": groups["candidates"], "games": games})
 
 
 @app.route('/api/games/reorder', methods=['POST'])
