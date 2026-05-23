@@ -74,14 +74,48 @@ def _contains(a: str, b: str) -> bool:
     return f" {short} " in f" {long} " or long.startswith(short + " ") or long.endswith(" " + short)
 
 
+# Arabic/roman number tokens mark a series position, not a different game.
+# Roman numerals 1–30 (extensible curated set); single letters beyond this range
+# (l, c, d, m) are intentionally excluded so real one-letter title words are kept.
+_ROMAN_NUMERALS = frozenset(
+    "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx "
+    "xxi xxii xxiii xxiv xxv xxvi xxvii xxviii xxix xxx".split()
+)
+
+
+def _is_number_token(token: str) -> bool:
+    """True for an arabic integer or a roman numeral (series-position) token."""
+    return token.isdigit() or token in _ROMAN_NUMERALS
+
+
+def _numberless(key: str) -> str:
+    """The key with arabic/roman number tokens removed (whitespace collapsed)."""
+    return " ".join(t for t in key.split() if not _is_number_token(t))
+
+
+def _differ_only_by_number(a: str, b: str) -> bool:
+    """True if two keys are identical once numbers/roman numerals are removed.
+
+    Titles that match except for a number are distinct series entries (Final
+    Fantasy VII vs XIII; Axiom Verge vs Axiom Verge 2) or a base name vs a
+    numbered entry (Final Fantasy vs Final Fantasy XIII) — never the same
+    playable game. A key that is *only* numbers (e.g. "XIII") has an empty name
+    part, so it never matches a longer title here.
+    """
+    na, nb = _numberless(a), _numberless(b)
+    return not na or not nb or na == nb
+
+
 def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
     """Detect duplicate games. Returns {"definite": [[id,...]], "candidates": [...]}.
 
     definite  = identical base_key (auto-mergeable).
     candidates = pairs flagged for yes/no, each {"a", "b", "reason", "score"};
                  reason in {"edition", "contains", "similar"}. Pairs already in
-                 not_duplicates are excluded. Pure read; computes fresh keys in
-                 memory so stored normalized_title staleness does not matter.
+                 not_duplicates are excluded, as are pairs that differ only by a
+                 number/roman numeral (distinct series entries — see
+                 _differ_only_by_number). Pure read; computes fresh keys in memory
+                 so stored normalized_title staleness does not matter.
     """
     games = [(r["id"], r["title"]) for r in
              conn.execute("SELECT id, title FROM games ORDER BY id").fetchall()]
@@ -105,6 +139,8 @@ def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
                 continue  # already definite
             if strip_edition_key(ka) == strip_edition_key(kb):
                 reason, score = "edition", 1.0
+            elif _differ_only_by_number(ka, kb):
+                continue  # distinct series entries (sequels), not duplicates
             elif _contains(ka, kb):
                 reason, score = "contains", 0.95
             else:

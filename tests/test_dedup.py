@@ -1,8 +1,9 @@
 import sqlite3
 
 from dedup import (
-    base_key, compute_merged_curation, find_duplicate_groups, group_candidates,
-    merge_games, refresh_normalized_titles, strip_edition_key,
+    _is_number_token, _numberless, base_key, compute_merged_curation,
+    find_duplicate_groups, group_candidates, merge_games,
+    refresh_normalized_titles, strip_edition_key,
 )
 from models import normalize_title
 
@@ -241,3 +242,53 @@ def test_group_candidates_sorts_by_size_descending():
 
 def test_group_candidates_empty():
     assert group_candidates([]) == []
+
+
+def test_numberless_strips_arabic_and_roman():
+    assert _numberless("final fantasy vii") == "final fantasy"
+    assert _numberless("axiom verge 2") == "axiom verge"
+    assert _numberless("xiii") == ""
+
+
+def test_is_number_token_keeps_words_resembling_numerals():
+    # Real words that look roman-ish are NOT in the curated set.
+    assert _is_number_token("mix") is False
+    assert _is_number_token("civ") is False
+    assert _is_number_token("vii") is True
+    assert _is_number_token("2") is True
+    assert _is_number_token("xv") is True
+
+
+def test_no_candidate_when_only_roman_numeral_differs():
+    # Series entries differing only by a roman numeral are distinct games.
+    conn = _games_conn([(1, "Final Fantasy VII"), (2, "Final Fantasy XIII")])
+    assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_no_candidate_base_name_vs_numbered_entry():
+    conn = _games_conn([(1, "Final Fantasy"), (2, "Final Fantasy XIII")])
+    assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_no_candidate_for_bare_numeral_title_substring():
+    # "XIII" must not glom onto every title that contains "xiii".
+    conn = _games_conn([(1, "XIII"), (2, "Final Fantasy XIII")])
+    assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_no_candidate_when_only_arabic_number_differs():
+    conn = _games_conn([(1, "Axiom Verge"), (2, "Axiom Verge 2")])
+    assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_edition_of_numeral_title_still_matches():
+    # The edition rule outranks the numeral guard: a true edition still pairs.
+    conn = _games_conn([(1, "XIII"), (2, "XIII Ultimate Edition")])
+    cands = find_duplicate_groups(conn)["candidates"]
+    assert len(cands) == 1 and cands[0]["reason"] == "edition"
+
+
+def test_word_difference_still_a_candidate():
+    # "Together" is a word, not a number — the pair stays a candidate.
+    conn = _games_conn([(1, "Don't Starve"), (2, "Don't Starve Together")])
+    assert len(find_duplicate_groups(conn)["candidates"]) == 1
