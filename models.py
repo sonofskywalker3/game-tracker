@@ -1,5 +1,4 @@
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "games.db"
@@ -416,7 +415,6 @@ def normalize_title(title):
 
 def auto_populate_series():
     """Automatically create series based on common game title prefixes."""
-    import re
     conn = get_db()
 
     # Known series patterns (prefix -> series name)
@@ -563,10 +561,6 @@ def auto_populate_series():
             # Create a sort key - try to extract numbers for ordering
             # This helps sort "Final Fantasy VII" before "Final Fantasy X"
             sort_key = title.lower()
-            # Convert roman numerals for sorting
-            roman_map = {'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'v': 5, 'vi': 6, 'vii': 7, 'viii': 8, 'ix': 9, 'x': 10,
-                        'xi': 11, 'xii': 12, 'xiii': 13, 'xiv': 14, 'xv': 15, 'xvi': 16, 'xvii': 17, 'xviii': 18, 'xix': 19, 'xx': 20}
-
             series_games[matched_series].append((game_id, title, sort_key))
 
     # Create series and assign games

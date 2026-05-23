@@ -1,14 +1,13 @@
 """
 Game Tracker - Flask Application
 """
-import json
 import sqlite3
-from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
     reclean_display_titles, DB_PATH,
 )
-from recommendation import get_recommendations, get_quick_picks, calculate_tag_affinity
+from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials
 from background_tasks import run_cover_fetch_background, get_cover_fetch_status
 
@@ -129,7 +128,7 @@ def api_games():
         query += f" ORDER BY {sort_col} IS NULL, {sort_col} {sort_order}"
     elif sort == 'manual':
         # For manual sort, put NULL sort_order last, then sort by sort_order ASC
-        query += f" ORDER BY ur.sort_order IS NULL, ur.sort_order ASC, g.title ASC"
+        query += " ORDER BY ur.sort_order IS NULL, ur.sort_order ASC, g.title ASC"
     elif sort == 'title':
         # For title sort, use series name if in a series, then series_order within series
         # Games not in a series sort by their own title
@@ -358,7 +357,7 @@ def api_update_game(game_id):
 
         conn.commit()
         return jsonify({'success': True})
-    except sqlite3.IntegrityError as e:
+    except sqlite3.IntegrityError:
         return jsonify({'error': 'A game with that name already exists'}), 400
     finally:
         conn.close()

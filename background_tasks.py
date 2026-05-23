@@ -2,7 +2,6 @@
 Background task manager for long-running operations.
 """
 import threading
-import time
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime

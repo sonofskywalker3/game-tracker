@@ -2,8 +2,6 @@
 Import game data from CSV files and psprices HTML backup.
 """
 import csv
-import re
-import sqlite3
 from pathlib import Path
 from html.parser import HTMLParser
 
