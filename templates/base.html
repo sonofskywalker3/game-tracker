@@ -195,7 +195,7 @@
 
         // ---- Dedup ----
         let dedupData = null;
-        let candidateIndex = 0;
+        let removedFromGroup = {};   // group index -> Set of member ids removed from the group
 
         function escapeHtml(s) {
             return String(s == null ? '' : s)
@@ -219,6 +219,7 @@
             document.getElementById('dedup-body').innerHTML =
                 '<div class="text-gray-400 text-sm">Scanning your library…</div>';
             dedupData = await api.get('/api/duplicates');
+            removedFromGroup = {};
             renderDedup();
         }
         function closeDedupModal() { hideModalEl('dedup-modal'); }
@@ -241,8 +242,8 @@
         function renderDedup() {
             const body = document.getElementById('dedup-body');
             const def = dedupData.definite || [];
-            const cands = dedupData.candidates || [];
-            if (!def.length && !cands.length) {
+            const groups = dedupData.groups || [];
+            if (!def.length && !groups.length) {
                 body.innerHTML = '<div class="text-gray-400 text-sm">No duplicates found. 🎉</div>';
                 return;
             }
@@ -256,12 +257,65 @@
                         ${group.map(id => gameLine(dedupGame(id))).join('')}</div>`).join('') +
                     `</div></div>`;
             }
-            if (cands.length) {
-                html += `<div><h3 class="text-white font-semibold mb-2">Review (${cands.length})</h3>
-                    <div id="candidate-host"></div></div>`;
+            if (groups.length) {
+                const total = groups.reduce((n, g) => n + g.members.length, 0);
+                html += `<div><h3 class="text-white font-semibold mb-2">Review — ${groups.length} groups (${total} games)</h3>
+                    <div class="space-y-2">${groups.map((g, i) => groupCard(i)).join('')}</div></div>`;
             }
             body.innerHTML = html;
-            if (cands.length) renderCandidate(0);
+        }
+
+        function activeMembers(idx) {
+            const removed = removedFromGroup[idx] || new Set();
+            return dedupData.groups[idx].members.filter(id => !removed.has(id));
+        }
+
+        function groupCard(idx) {
+            const members = activeMembers(idx);
+            const label = baseTitle(members);   // shortest member title = family label
+            return `<div class="bg-surface rounded-lg" id="grp-${idx}">
+                <div class="flex items-center justify-between p-3">
+                    <button onclick="toggleGroup(${idx})" class="flex items-center gap-2 text-left text-white text-sm font-medium">
+                        <span id="grp-caret-${idx}">▸</span>
+                        <span>${escapeHtml(label)}</span>
+                        <span class="text-gray-500">· <span id="grp-count-${idx}">${members.length}</span> games</span>
+                    </button>
+                    <button onclick="markAllSafe(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Mark all safe</button>
+                </div>
+                <div id="grp-body-${idx}" class="hidden px-3 pb-3 space-y-2"></div>
+            </div>`;
+        }
+
+        function toggleGroup(idx) {
+            const bodyEl = document.getElementById(`grp-body-${idx}`);
+            const caret = document.getElementById(`grp-caret-${idx}`);
+            if (bodyEl.classList.contains('hidden')) {
+                renderGroupBody(idx);
+                bodyEl.classList.remove('hidden');
+                caret.textContent = '▾';
+            } else {
+                bodyEl.classList.add('hidden');
+                caret.textContent = '▸';
+            }
+        }
+
+        function renderGroupBody(idx) {
+            const bodyEl = document.getElementById(`grp-body-${idx}`);
+            const members = activeMembers(idx);
+            bodyEl.innerHTML = members.map(id => memberRow(idx, id)).join('') + `
+                <div class="flex items-center gap-2 pt-1">
+                    <button onclick="mergeSelected(${idx})" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Merge selected</button>
+                    <span id="grp-merge-bar-${idx}"></span>
+                </div>`;
+        }
+
+        function memberRow(idx, id) {
+            return `<div class="flex items-center gap-2" id="grp-${idx}-row-${id}">
+                <input type="checkbox" value="${id}" class="grp-check-${idx}">
+                <div class="flex-1">${gameLine(dedupGame(id))}</div>
+                <button onclick="removeFromGroup(${idx}, ${id})" title="Not part of this group"
+                    class="text-gray-500 hover:text-red-400 text-sm px-1">✕</button>
+            </div>`;
         }
 
         async function mergeAllDefinite() {
@@ -294,67 +348,6 @@
         function baseTitle(ids) {
             // Shortest title in the group is the base/playable name default.
             return ids.map(id => dedupGame(id).title).sort((a, b) => a.length - b.length)[0];
-        }
-
-        function renderCandidate(idx) {
-            candidateIndex = idx;
-            const host = document.getElementById('candidate-host');
-            const cands = dedupData.candidates || [];
-            if (!host) return;
-            if (idx >= cands.length) {
-                host.innerHTML = '<div class="text-gray-400 text-sm">All candidates reviewed.</div>';
-                return;
-            }
-            const c = cands[idx];
-            const a = dedupGame(c.a), b = dedupGame(c.b);
-            const reason = { edition: 'Edition variant', contains: 'One name contains the other',
-                             similar: `Similar (${c.score})` }[c.reason] || c.reason;
-            const names = [a.title, b.title].sort((x, y) => x.length - y.length);
-            host.innerHTML = `
-              <div class="bg-surface rounded-lg p-4 space-y-3">
-                <div class="text-xs text-accent">${reason} · ${idx + 1} of ${cands.length}</div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="bg-surface-light rounded p-2">${gameLine(a)}</div>
-                  <div class="bg-surface-light rounded p-2">${gameLine(b)}</div>
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-1">Keep which?</label>
-                  <select id="cand-survivor" class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
-                    <option value="${a.id}">${escapeHtml(a.title)}</option>
-                    <option value="${b.id}">${escapeHtml(b.title)}</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-1">Name</label>
-                  <input id="cand-title" type="text" value="${escapeHtml(names[0])}"
-                         class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
-                  <div class="flex gap-2 mt-1">
-                    ${[...new Set(names)].map(n => `<button type="button" onclick="document.getElementById('cand-title').value=this.dataset.n" data-n="${escapeHtml(n)}" class="text-xs text-gray-400 hover:text-white underline">${escapeHtml(n)}</button>`).join('')}
-                  </div>
-                </div>
-                <div class="flex gap-2 pt-1">
-                  <button onclick="confirmMerge()" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Merge</button>
-                  <button onclick="keepSeparate()" class="px-3 py-1.5 bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Keep separate</button>
-                </div>
-              </div>`;
-        }
-
-        async function confirmMerge() {
-            const c = dedupData.candidates[candidateIndex];
-            const survivor = parseInt(document.getElementById('cand-survivor').value);
-            const drop = (survivor === c.a) ? c.b : c.a;
-            const title = document.getElementById('cand-title').value.trim();
-            const res = await api.post('/api/games/merge',
-                { survivor_id: survivor, drop_ids: [drop], title });
-            if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
-            if (typeof refreshGameList === 'function') refreshGameList();
-            renderCandidate(candidateIndex + 1);
-        }
-
-        async function keepSeparate() {
-            const c = dedupData.candidates[candidateIndex];
-            await api.post('/api/duplicates/dismiss', { game_id_a: c.a, game_id_b: c.b });
-            renderCandidate(candidateIndex + 1);
         }
 
         const ratingOptions = [
