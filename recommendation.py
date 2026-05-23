@@ -8,7 +8,6 @@ Factors considered:
 4. How long the game has been in backlog
 5. Tag affinity (genres the user rates highly)
 """
-from collections import defaultdict
 from datetime import datetime
 
 from models import get_db
