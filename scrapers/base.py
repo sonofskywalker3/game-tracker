@@ -33,6 +33,11 @@ VALID_SOURCES = frozenset({"playstation", "xbox", "nintendo"})
 BROWSER_CHANNELS = ("chrome", "msedge")
 # Hides the navigator.webdriver / AutomationControlled signal many logins check.
 LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled",)
+# Default switches Playwright adds that we suppress. "--enable-automation" drives
+# the "browser is controlled by automated software" banner and is a common login
+# bot-check trigger (Nintendo's authorize step returns 400 "invalid params" with
+# it present); removing it is safe for the working PS/Xbox flows.
+IGNORE_DEFAULT_ARGS = ("--enable-automation",)
 
 
 def _launch_context(p, headless: bool):
@@ -42,12 +47,14 @@ def _launch_context(p, headless: bool):
             return p.chromium.launch_persistent_context(
                 user_data_dir=str(PROFILE_DIR), headless=headless,
                 channel=channel, args=list(LAUNCH_ARGS),
+                ignore_default_args=list(IGNORE_DEFAULT_ARGS),
             )
         except Exception as exc:  # channel not installed on this machine
             logger.debug("browser channel %s unavailable: %s", channel, exc)
     logger.info("falling back to bundled Chromium (no installed Chrome/Edge found)")
     return p.chromium.launch_persistent_context(
         user_data_dir=str(PROFILE_DIR), headless=headless, args=list(LAUNCH_ARGS),
+        ignore_default_args=list(IGNORE_DEFAULT_ARGS),
     )
 
 

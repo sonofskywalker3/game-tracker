@@ -1,0 +1,135 @@
+{
+  "data": {
+    "customer": {
+      "account": {
+        "id": "0000sampleaccount",
+        "email": "sample@example.com",
+        "__typename": "Account"
+      },
+      "orderHistory": {
+        "totals": {"digital": 4, "physical": 1, "__typename": "OrderTypeTotals"},
+        "orders": [
+          {
+            "id": "order-1",
+            "contentName": "Sample Switch Game",
+            "items": [
+              {
+                "id": "70010000000001",
+                "product": {
+                  "name": "Sample Switch Game",
+                  "platform": {"code": "NINTENDO_SWITCH", "label": "Nintendo Switch", "__typename": "Platform"},
+                  "productImage": {"publicId": "store/software/switch/70010000000001/abc123cover", "type": "upload", "__typename": "CloudinaryAsset"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-2",
+            "contentName": "Sample Switch 2 Game",
+            "items": [
+              {
+                "id": "70010000000002",
+                "product": {
+                  "name": "Sample Switch 2 Game",
+                  "platform": {"code": "NINTENDO_SWITCH_2", "label": "Nintendo Switch 2", "__typename": "Platform"},
+                  "productImage": {"publicId": "store/software/switch2/70010000000002/def456cover", "type": "upload", "__typename": "CloudinaryAsset"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-3",
+            "contentName": "Sample Game - Nintendo Switch 2 Edition Upgrade Pack",
+            "items": [
+              {
+                "id": "70050000000003",
+                "product": {
+                  "name": "Sample Game - Nintendo Switch 2 Edition Upgrade Pack",
+                  "platform": {"code": "NINTENDO_SWITCH_2", "label": "Nintendo Switch 2", "__typename": "Platform"},
+                  "productImage": {"publicId": "store/software/switch2/70050000000003/ghi789cover", "type": "upload", "__typename": "CloudinaryAsset"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-4",
+            "contentName": "Sample Collection",
+            "items": [
+              {
+                "id": "70070000000004",
+                "product": {
+                  "name": "Sample Collection",
+                  "platform": {"code": "NINTENDO_SWITCH", "label": "Nintendo Switch", "__typename": "Platform"},
+                  "productImage": null,
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-5",
+            "contentName": "Nameless Item",
+            "items": [
+              {
+                "id": "70010000000005",
+                "product": {
+                  "name": null,
+                  "platform": {"code": "NINTENDO_SWITCH", "label": "Nintendo Switch", "__typename": "Platform"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-6",
+            "contentName": "Idless Item",
+            "items": [
+              {
+                "id": null,
+                "product": {
+                  "name": "Idless Item",
+                  "platform": {"code": "NINTENDO_SWITCH", "label": "Nintendo Switch", "__typename": "Platform"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          },
+          {
+            "id": "order-7",
+            "contentName": "Sample Switch Game",
+            "items": [
+              {
+                "id": "70010000000001",
+                "product": {
+                  "name": "Sample Switch Game",
+                  "platform": {"code": "NINTENDO_SWITCH", "label": "Nintendo Switch", "__typename": "Platform"},
+                  "productImage": {"publicId": "store/software/switch/70010000000001/abc123cover", "type": "upload", "__typename": "CloudinaryAsset"},
+                  "__typename": "Product"
+                },
+                "__typename": "OrderItem"
+              }
+            ],
+            "__typename": "EshopOrder"
+          }
+        ],
+        "__typename": "OrderHistory"
+      },
+      "__typename": "Customer"
+    }
+  }
+}
