@@ -291,6 +291,7 @@
                         <span class="text-gray-500 whitespace-nowrap">· <span id="grp-count-${idx}">${members.length}</span> games</span>
                     </button>
                     <div class="flex gap-2 shrink-0">
+                        <button onclick="mergeWholeGroup(${idx})" class="px-2 py-1 text-xs bg-accent hover:bg-accent-hover rounded text-white whitespace-nowrap">Merge all</button>
                         <button onclick="openSeriesDialog(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">${seriesLabel}</button>
                         <button onclick="markAllSafe(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Mark all safe</button>
                     </div>
@@ -329,6 +330,26 @@
                 <button onclick="removeFromGroup(${idx}, ${id})" title="Not part of this group"
                     class="text-gray-500 hover:text-red-400 text-sm px-1">✕</button>
             </div>`;
+        }
+
+        async function mergeWholeGroup(idx) {
+            if (dedupBusy) return;
+            const ids = activeMembers(idx);
+            if (ids.length < 2) { alert('Need at least two games to merge.'); return; }
+            const [survivor] = chooseSurvivor(ids);
+            const title = baseTitle(ids);
+            const names = ids.map(id => dedupGame(id).title);
+            if (!confirm(`Merge these ${ids.length} into ONE game, kept as "${title}"?\n\n` + names.join('\n'))) return;
+            dedupBusy = true;
+            try {
+                const drops = ids.filter(id => id !== survivor);
+                const res = await api.post('/api/games/merge', { survivor_id: survivor, drop_ids: drops, title });
+                if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
+                if (typeof refreshGameList === 'function') refreshGameList();
+                document.getElementById(`grp-${idx}`)?.remove();
+            } finally {
+                dedupBusy = false;
+            }
         }
 
         async function markAllSafe(idx) {
