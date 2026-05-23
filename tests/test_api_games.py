@@ -154,3 +154,44 @@ def test_dismiss_endpoint_records_not_duplicate(client):
                        (min(a, b), max(a, b))).fetchone()[0]
     conn.close()
     assert cnt == 1
+
+
+def test_duplicates_endpoint_groups_related_candidates(client):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Final Fantasy", "final fantasy"),
+         ("Final Fantasy VII", "final fantasy vii"),
+         ("Final Fantasy X", "final fantasy x"),
+         ("Celeste", "celeste"),
+         ("Celest", "celest")],
+    )
+    conn.commit()
+    conn.close()
+
+    body = client.get("/api/duplicates").get_json()
+    assert "groups" in body
+    sizes = sorted(len(g["members"]) for g in body["groups"])
+    # the three Final Fantasy rows form one family; Celeste/Celest a pair
+    assert sizes == [2, 3]
+    big = max(body["groups"], key=lambda g: len(g["members"]))
+    assert big["pairs"]  # internal pairs are exposed for bulk dismiss
+
+
+def test_dismiss_endpoint_bulk_pairs(client):
+    conn = models.get_db()
+    conn.executemany("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                     [("A", "a"), ("B", "b"), ("C", "c")])
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    a, b, c = rows["A"], rows["B"], rows["C"]
+    conn.commit()
+    conn.close()
+
+    resp = client.post("/api/duplicates/dismiss",
+                       json={"pairs": [[a, b], [a, c], [b, c]]})
+    assert resp.status_code == 200
+    assert resp.get_json()["count"] == 3
+    conn = models.get_db()
+    cnt = conn.execute("SELECT COUNT(*) FROM not_duplicates").fetchone()[0]
+    conn.close()
+    assert cnt == 3

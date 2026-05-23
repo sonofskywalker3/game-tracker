@@ -433,7 +433,9 @@ def api_duplicates():
         })
     conn.close()
     return jsonify({"definite": groups["definite"],
-                    "candidates": groups["candidates"], "games": games})
+                    "candidates": groups["candidates"],
+                    "groups": dedup.group_candidates(groups["candidates"]),
+                    "games": games})
 
 
 @app.route('/api/games/merge', methods=['POST'])
