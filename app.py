@@ -462,18 +462,29 @@ def api_merge_games():
 
 @app.route('/api/duplicates/dismiss', methods=['POST'])
 def api_dismiss_duplicate():
-    """Record a pair as confirmed-distinct so dedup never re-asks."""
+    """Record pair(s) as confirmed-distinct so dedup never re-asks.
+
+    Accepts a single pair {game_id_a, game_id_b} or bulk {pairs: [[a, b], ...]}
+    (used by Mark-all-safe and Remove-from-group). Unknown ids fail the FK and
+    are rejected with 400.
+    """
     data = request.json or {}
-    a, b = data.get('game_id_a'), data.get('game_id_b')
-    if not a or not b or a == b:
-        return jsonify({'error': 'two distinct game ids are required'}), 400
-    lo, hi = min(a, b), max(a, b)
+    raw_pairs = data['pairs'] if data.get('pairs') is not None \
+        else [[data.get('game_id_a'), data.get('game_id_b')]]
+
+    pairs = []
+    for p in raw_pairs:
+        if not p or len(p) != 2 or not p[0] or not p[1] or p[0] == p[1]:
+            return jsonify({'error': 'each pair needs two distinct game ids'}), 400
+        pairs.append((min(p[0], p[1]), max(p[0], p[1])))
+
     conn = get_db()
     try:
-        conn.execute("INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
-                     (lo, hi))
+        conn.executemany(
+            "INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
+            pairs)
         conn.commit()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'count': len(pairs)})
     except sqlite3.IntegrityError as e:
         return jsonify({'error': str(e)}), 400
     finally:
