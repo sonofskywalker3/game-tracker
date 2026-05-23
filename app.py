@@ -604,6 +604,8 @@ def api_series_from_group():
 
     conn = get_db()
     try:
+        # Intentional: case-insensitive find-or-create is the contract here (no 409
+        # like api_create_series) — the dedup modal wants idempotent assignment.
         row = conn.execute("SELECT id FROM series WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
         if row:
             series_id, created = row['id'], False
