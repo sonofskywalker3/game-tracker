@@ -1,6 +1,7 @@
 import sqlite3
 
-from dedup import base_key, compute_merged_curation, find_duplicate_groups, strip_edition_key
+from dedup import base_key, compute_merged_curation, find_duplicate_groups, merge_games, strip_edition_key
+from models import normalize_title
 
 
 def test_base_key_normalizes_via_clean_title():
@@ -115,3 +116,82 @@ def test_merged_curation_all_defaults():
     assert merged["status"] == "backlog"
     assert merged["rating"] is None
     assert merged["notes"] is None
+
+
+def _full_conn():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript("""
+        CREATE TABLE games (id INTEGER PRIMARY KEY, title TEXT NOT NULL,
+            normalized_title TEXT NOT NULL UNIQUE, cover_url TEXT,
+            updated_at TIMESTAMP);
+        CREATE TABLE platforms (id INTEGER PRIMARY KEY, short_name TEXT UNIQUE);
+        CREATE TABLE game_platforms (game_id INTEGER, platform_id INTEGER,
+            owned BOOLEAN DEFAULT 1, psprices_id TEXT,
+            PRIMARY KEY (game_id, platform_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
+        CREATE TABLE game_external_ids (game_id INTEGER, source TEXT, external_id TEXT,
+            source_title TEXT, PRIMARY KEY (source, external_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
+        CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+        CREATE TABLE game_tags (game_id INTEGER, tag_id INTEGER,
+            PRIMARY KEY (game_id, tag_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
+        CREATE TABLE user_ratings (game_id INTEGER PRIMARY KEY, status TEXT DEFAULT 'backlog',
+            rating INTEGER, notes TEXT, priority INTEGER DEFAULT 5,
+            hours_played REAL DEFAULT 0, started_at DATE, completed_at DATE,
+            sort_order INTEGER, series_id INTEGER, series_order INTEGER,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
+        INSERT INTO platforms (id, short_name) VALUES (1, 'Switch'), (2, 'PS4');
+    """)
+    return conn
+
+
+def _add_game(conn, gid, title, platform_ids=(), ext=None, rating=None):
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (?, ?, ?)",
+                 (gid, title, normalize_title(title)))
+    for pid in platform_ids:
+        conn.execute("INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)", (gid, pid))
+    if ext:
+        conn.execute("INSERT INTO game_external_ids (game_id, source, external_id) VALUES (?, ?, ?)",
+                     (gid, ext[0], ext[1]))
+    r = rating or {}
+    conn.execute("INSERT INTO user_ratings (game_id, status, rating, hours_played) "
+                 "VALUES (?, ?, ?, ?)", (gid, r.get("status", "backlog"),
+                                         r.get("rating"), r.get("hours_played", 0)))
+
+
+def test_merge_moves_external_ids_platforms_and_deletes_drop():
+    conn = _full_conn()
+    _add_game(conn, 1, "Don't Starve", platform_ids=[1],
+              rating={"status": "completed", "hours_played": 12})
+    _add_game(conn, 2, "Don't Starve - Nintendo Switch Edition", platform_ids=[1],
+              ext=("nintendo", "N1"))
+    _add_game(conn, 3, "Don't Starve: Console Edition", platform_ids=[2],
+              ext=("playstation", "P1"))
+
+    merge_games(conn, survivor_id=1, drop_ids=[2, 3], title="Don't Starve")
+
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+    plats = {r[0] for r in conn.execute(
+        "SELECT platform_id FROM game_platforms WHERE game_id = 1")}
+    assert plats == {1, 2}
+    exts = {(r["source"], r["external_id"]) for r in conn.execute(
+        "SELECT source, external_id FROM game_external_ids WHERE game_id = 1")}
+    assert exts == {("nintendo", "N1"), ("playstation", "P1")}
+    surv = conn.execute("SELECT title, normalized_title FROM games WHERE id = 1").fetchone()
+    assert surv["title"] == "Don't Starve"
+    assert surv["normalized_title"] == "dont starve"
+    ur = conn.execute("SELECT status, hours_played FROM user_ratings WHERE game_id = 1").fetchone()
+    assert ur["status"] == "completed"
+    assert ur["hours_played"] == 12
+
+
+def test_merge_dry_run_writes_nothing():
+    conn = _full_conn()
+    _add_game(conn, 1, "Disco Elysium", platform_ids=[2], ext=("playstation", "P9"))
+    _add_game(conn, 2, "Disco Elysium: The Final Cut", platform_ids=[2])
+    plan = merge_games(conn, survivor_id=1, drop_ids=[2], title="Disco Elysium", dry_run=True)
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
+    assert plan["survivor_id"] == 1 and plan["drop_ids"] == [2]

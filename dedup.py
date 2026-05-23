@@ -155,3 +155,67 @@ def compute_merged_curation(rows: list[dict]) -> dict:
         "completed_at": completed,
         "sort_order": rows[0].get("sort_order"),
     }
+
+
+_CURATION_FIELDS = (
+    "status", "rating", "notes", "priority", "hours_played",
+    "started_at", "completed_at", "sort_order", "series_id", "series_order",
+)
+
+
+def _rating_row(conn: sqlite3.Connection, game_id: int) -> dict:
+    row = conn.execute(
+        "SELECT status, rating, notes, priority, hours_played, started_at, "
+        "completed_at, sort_order, series_id, series_order "
+        "FROM user_ratings WHERE game_id = ?", (game_id,)
+    ).fetchone()
+    return dict(row) if row else {"status": "backlog"}
+
+
+def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int], *,
+                title: str | None = None, curation: dict | None = None,
+                dry_run: bool = False) -> dict:
+    """Merge drop_ids into survivor_id: one row per playable game.
+
+    Moves external ids onto the survivor, unions platform links and tags,
+    combines curation (or applies the supplied `curation` override), sets the
+    survivor's title (+ recomputed normalized_title), and deletes the drops
+    (ON DELETE CASCADE removes their leftover children). dry_run writes nothing.
+    Returns a plan/result dict.
+    """
+    all_ids = [survivor_id] + list(drop_ids)
+    rows = [_rating_row(conn, gid) for gid in all_ids]
+    merged_curation = curation or compute_merged_curation(rows)
+    new_title = title if title is not None else conn.execute(
+        "SELECT title FROM games WHERE id = ?", (survivor_id,)).fetchone()["title"]
+
+    plan = {"survivor_id": survivor_id, "drop_ids": list(drop_ids),
+            "title": new_title, "curation": merged_curation}
+    if dry_run:
+        return plan
+
+    for drop_id in drop_ids:
+        conn.execute("UPDATE game_external_ids SET game_id = ? WHERE game_id = ?",
+                     (survivor_id, drop_id))
+        conn.execute(
+            "INSERT OR IGNORE INTO game_platforms (game_id, platform_id, owned, psprices_id) "
+            "SELECT ?, platform_id, owned, psprices_id FROM game_platforms WHERE game_id = ?",
+            (survivor_id, drop_id))
+        conn.execute(
+            "INSERT OR IGNORE INTO game_tags (game_id, tag_id) "
+            "SELECT ?, tag_id FROM game_tags WHERE game_id = ?", (survivor_id, drop_id))
+        conn.execute("DELETE FROM games WHERE id = ?", (drop_id,))
+
+    conn.execute("UPDATE games SET title = ?, normalized_title = ?, "
+                 "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                 (new_title, base_key(new_title), survivor_id))
+
+    sets = ", ".join(f"{f} = ?" for f in _CURATION_FIELDS)
+    conn.execute(
+        f"INSERT INTO user_ratings (game_id, {', '.join(_CURATION_FIELDS)}) "
+        f"VALUES (?, {', '.join('?' * len(_CURATION_FIELDS))}) "
+        f"ON CONFLICT(game_id) DO UPDATE SET {sets}",
+        [survivor_id] + [merged_curation.get(f) for f in _CURATION_FIELDS]
+        + [merged_curation.get(f) for f in _CURATION_FIELDS])
+    conn.commit()
+    return plan
