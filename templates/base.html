@@ -318,6 +318,28 @@
             </div>`;
         }
 
+        async function markAllSafe(idx) {
+            const active = new Set(activeMembers(idx));
+            const pairs = dedupData.groups[idx].pairs.filter(([a, b]) => active.has(a) && active.has(b));
+            if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
+            const el = document.getElementById(`grp-${idx}`);
+            if (el) el.remove();
+        }
+
+        async function removeFromGroup(idx, id) {
+            const active = new Set(activeMembers(idx));
+            const pairs = dedupData.groups[idx].pairs.filter(([a, b]) =>
+                (a === id && active.has(b)) || (b === id && active.has(a)));
+            if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
+            (removedFromGroup[idx] = removedFromGroup[idx] || new Set()).add(id);
+            if (activeMembers(idx).length < 2) {
+                document.getElementById(`grp-${idx}`).remove();
+            } else {
+                document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                renderGroupBody(idx);
+            }
+        }
+
         async function mergeAllDefinite() {
             for (const group of (dedupData.definite || [])) {
                 const [survivor, ...drops] = chooseSurvivor(group);
