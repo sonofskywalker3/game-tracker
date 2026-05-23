@@ -436,6 +436,28 @@ def api_duplicates():
                     "candidates": groups["candidates"], "games": games})
 
 
+@app.route('/api/games/merge', methods=['POST'])
+def api_merge_games():
+    """Merge drop games into a survivor (dedup)."""
+    data = request.json or {}
+    survivor_id = data.get('survivor_id')
+    drop_ids = data.get('drop_ids') or []
+    if not survivor_id or not drop_ids:
+        return jsonify({'error': 'survivor_id and drop_ids are required'}), 400
+
+    conn = get_db()
+    try:
+        result = dedup.merge_games(
+            conn, survivor_id, drop_ids,
+            title=data.get('title'), curation=data.get('curation'))
+        dedup.refresh_normalized_titles(conn)
+        return jsonify({'success': True, 'survivor_id': result['survivor_id']})
+    except sqlite3.IntegrityError as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+
 @app.route('/api/games/reorder', methods=['POST'])
 def api_reorder_games():
     """Update the sort order of games based on drag-and-drop reordering."""
