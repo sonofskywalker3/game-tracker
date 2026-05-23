@@ -149,6 +149,7 @@ def test_dismiss_endpoint_records_not_duplicate(client):
 
     resp = client.post("/api/duplicates/dismiss", json={"game_id_a": a, "game_id_b": b})
     assert resp.status_code == 200
+    assert resp.get_json()["count"] == 1
     conn = models.get_db()
     cnt = conn.execute("SELECT COUNT(*) FROM not_duplicates WHERE game_id_lo = ? AND game_id_hi = ?",
                        (min(a, b), max(a, b))).fetchone()[0]

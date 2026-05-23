@@ -146,7 +146,7 @@ def group_candidates(candidates: list[dict]) -> list[dict]:
     members: dict[int, set[int]] = defaultdict(set)
     pairs: dict[int, list[list[int]]] = defaultdict(list)
     for c in candidates:
-        root = find(c["a"])
+        root = find(c["a"])  # find(c["b"]) returns the same root post-union
         members[root].update((c["a"], c["b"]))
         pairs[root].append(sorted((c["a"], c["b"])))
 
