@@ -432,6 +432,7 @@ def api_duplicates():
             "platforms": platforms,
             "curation": dict(ur) if ur else {"status": "backlog"},
         })
+    titles_by_id = {game["id"]: game["title"] for game in games}
     grouped = dedup.group_candidates(groups["candidates"])
     for g in grouped:
         placeholders = ",".join("?" * len(g["members"]))
@@ -443,6 +444,8 @@ def api_duplicates():
             g["existing_series_id"], g["existing_series_name"] = sid, sname
         else:
             g["existing_series_id"], g["existing_series_name"] = None, None
+        g["inferred_name"] = dedup.infer_series_name(
+            [titles_by_id[m] for m in g["members"] if m in titles_by_id])
     conn.close()
     return jsonify({"definite": groups["definite"],
                     "candidates": groups["candidates"],

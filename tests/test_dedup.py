@@ -1,9 +1,9 @@
 import sqlite3
 
 from dedup import (
-    _is_number_token, _numberless, base_key, compute_merged_curation,
-    find_duplicate_groups, group_candidates, merge_games,
-    refresh_normalized_titles, strip_edition_key,
+    _is_number_token, _numberless, _word_prefix_of, base_key,
+    compute_merged_curation, find_duplicate_groups, group_candidates,
+    infer_series_name, merge_games, refresh_normalized_titles, strip_edition_key,
 )
 from models import normalize_title
 
@@ -292,3 +292,66 @@ def test_word_difference_still_a_candidate():
     # "Together" is a word, not a number — the pair stays a candidate.
     conn = _games_conn([(1, "Don't Starve"), (2, "Don't Starve Together")])
     assert len(find_duplicate_groups(conn)["candidates"]) == 1
+
+
+def test_infer_series_name_picks_member_that_prefixes_most():
+    # The bare franchise title is a word-prefix of every numbered entry.
+    titles = ["Final Fantasy XV", "Final Fantasy", "Final Fantasy VII", "Final Fantasy XIII"]
+    assert infer_series_name(titles) == "Final Fantasy"
+
+
+def test_infer_series_name_member_prefix_crosses_colon_subtitle():
+    # ": Crystal Chronicles" starts at a non-word char, so it's still a prefix.
+    titles = ["Final Fantasy", "Final Fantasy: Crystal Chronicles", "Final Fantasy VII"]
+    assert infer_series_name(titles) == "Final Fantasy"
+
+
+def test_word_prefix_of_respects_boundaries():
+    assert _word_prefix_of("Final Fantasy", "Final Fantasy VII") is True
+    assert _word_prefix_of("Final Fantasy", "Final Fantasy: Crystal") is True
+    assert _word_prefix_of("Final Fantasy", "Final Fantasyland") is False
+
+
+def test_infer_series_name_requires_word_boundary():
+    # "Hollow Knight" is NOT a prefix of "Hollow Knighthood" (no boundary), so it
+    # can't claim the group; it falls back to the shared leading word.
+    assert infer_series_name(["Hollow Knight", "Hollow Knighthood"]) == "Hollow"
+
+
+def test_infer_series_name_longest_common_word_prefix():
+    # No member is a prefix of another -> fall to common leading words.
+    titles = ["SteamWorld Dig", "SteamWorld Heist", "SteamWorld Build"]
+    assert infer_series_name(titles) == "SteamWorld"
+
+
+def test_infer_series_name_member_prefix_needs_majority():
+    # "SteamWorld Heist" prefixes only a minority (3 of 6) of the franchise, so it
+    # must NOT win — the common prefix "SteamWorld" names the whole group.
+    titles = ["SteamWorld Heist", "SteamWorld Build", "SteamWorld Heist II",
+              "SteamWorld Heist: Ultimate Edition", "SteamWorld Quest",
+              "SteamWorld Heist II & SteamWorld Build Bundle",
+              "SteamWorld Quest: Hand of Gilgamech"]
+    assert infer_series_name(titles) == "SteamWorld"
+
+
+def test_infer_series_name_common_prefix_multiple_words():
+    titles = ["Mass Effect 2", "Mass Effect 3"]
+    assert infer_series_name(titles) == "Mass Effect"
+
+
+def test_infer_series_name_common_prefix_strips_trailing_separator():
+    titles = ["Hitman: Absolution", "Hitman: Blood Money"]
+    assert infer_series_name(titles) == "Hitman"
+
+
+def test_infer_series_name_falls_back_to_shortest():
+    titles = ["Portal", "Half-Life", "Dota"]
+    assert infer_series_name(titles) == "Dota"
+
+
+def test_infer_series_name_single_title():
+    assert infer_series_name(["Hollow Knight"]) == "Hollow Knight"
+
+
+def test_infer_series_name_empty():
+    assert infer_series_name([]) == ""
