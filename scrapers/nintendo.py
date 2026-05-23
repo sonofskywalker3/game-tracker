@@ -50,9 +50,6 @@ PLATFORM = "Switch"
 SKIP_NSUID_PREFIXES = frozenset({"7005"})
 NSUID_PREFIX_LEN = 4
 
-# Nintendo serves cover art from Cloudinary; the API returns only the publicId.
-CLOUDINARY_BASE = "https://assets.nintendo.com/image/upload/"
-
 
 def _orders(body: dict) -> list[dict]:
     """Pull the orders list out of a CustomerOrderHistory response payload."""
@@ -81,14 +78,15 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                 if nsuid in seen:
                     continue
                 seen.add(nsuid)
-                image = product.get("productImage") or {}
-                public_id = image.get("publicId") if isinstance(image, dict) else None
+                # cover_url is left None: Nintendo's productImage is wide hero art
+                # (~1920x1080), the wrong aspect for box art. The IGDB pipeline
+                # (fetch_covers.py) supplies covers; see docs cover-art-igdb spec.
                 games.append(ScrapedGame(
                     title=name,
                     platform=PLATFORM,
                     source=SOURCE,
                     external_id=nsuid,
-                    cover_url=CLOUDINARY_BASE + public_id if public_id else None,
+                    cover_url=None,
                     source_title=name,
                 ))
     return games

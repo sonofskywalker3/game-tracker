@@ -24,6 +24,56 @@ IGDB_API_URL = "https://api.igdb.com/v4"
 # Cache file for auth token
 TOKEN_CACHE = Path(__file__).parent / ".igdb_token.json"
 
+# IGDB is the cover source of record (portrait box art ~264x352).
+IGDB_HOST = "images.igdb.com"
+# Cover hosts whose art is the wrong shape (wide hero art). On an IGDB miss these
+# are nulled rather than kept; other vendor covers are left alone. Extensible.
+WIDE_ART_HOSTS = frozenset({"assets.nintendo.com"})
+
+
+def cover_host(url):
+    """Return the host of an http(s) cover URL, or None if empty/non-URL."""
+    if not url or not str(url).startswith("http"):
+        return None
+    return url.split("/")[2]
+
+
+def needs_cover(url, *, upgrade):
+    """True if a game needs a cover fetched.
+
+    Always true when the cover is missing. In upgrade mode, also true when the
+    cover is from a non-IGDB host (vendor art we want to replace with IGDB).
+    """
+    host = cover_host(url)
+    if host is None:
+        return True
+    return upgrade and host != IGDB_HOST
+
+
+def should_null_on_miss(url):
+    """When IGDB has no match, null only known-bad wide art; keep other covers."""
+    return cover_host(url) in WIDE_ART_HOSTS
+
+
+def clean_search_title(title):
+    """Normalize a title for IGDB search.
+
+    Drops quotes (which break IGDB's `search "..."` query -> HTTP 400), a trailing
+    platform parenthetical, common edition suffixes, and trademark symbols.
+    """
+    t = (title or "").replace('"', '').replace('“', '').replace('”', '')
+    # Remove platform indicators like "(Switch)" at the end
+    t = re.sub(r'\s*\([^)]*\)\s*$', '', t)
+    # Remove common edition suffixes
+    t = re.sub(
+        r'\s*[-–:]\s*(Deluxe|Ultimate|Complete|Gold|Game of the Year|GOTY|'
+        r'Remastered|HD|Definitive|Anniversary|Enhanced|Special)\s*'
+        r'(Edition|Bundle|Collection)?.*$',
+        '', t, flags=re.IGNORECASE)
+    # Remove trademark symbols
+    t = t.replace('™', '').replace('®', '').replace('©', '')
+    return t.strip()
+
 
 def get_access_token(client_id, client_secret, force_refresh=False):
     """Get OAuth access token from Twitch, with caching."""
@@ -56,18 +106,16 @@ def get_access_token(client_id, client_secret, force_refresh=False):
     return data['access_token']
 
 
-def search_game(title, client_id, access_token):
-    """Search IGDB for a game and return cover URL if found."""
+def search_game(title, client_id, access_token, strict=False):
+    """Search IGDB for a game and return cover URL if found.
 
-    # Clean up title for better matching
-    clean_title = title
-    # Remove platform indicators
-    clean_title = re.sub(r'\s*\([^)]*\)\s*$', '', clean_title)
-    # Remove common suffixes
-    clean_title = re.sub(r'\s*[-–:]\s*(Deluxe|Ultimate|Complete|Gold|Game of the Year|GOTY|Remastered|HD|Definitive|Anniversary|Enhanced|Special)\s*(Edition|Bundle|Collection)?.*$', '', clean_title, flags=re.IGNORECASE)
-    # Remove trademark symbols
-    clean_title = clean_title.replace('™', '').replace('®', '').replace('©', '')
-    clean_title = clean_title.strip()
+    When strict, only a confident (normalized exact/containment) match is
+    accepted; the loose "first result with any cover" fallback is skipped so an
+    existing correct cover is never replaced by a wrong game's art.
+    """
+
+    # Clean up title for better matching (and to avoid query-breaking quotes)
+    clean_title = clean_search_title(title)
 
     headers = {
         'Client-ID': client_id,
@@ -91,7 +139,7 @@ def search_game(title, client_id, access_token):
     if response.status_code == 429:
         # Rate limited, wait and retry
         time.sleep(1)
-        return search_game(title, client_id, access_token)
+        return search_game(title, client_id, access_token, strict)
 
     response.raise_for_status()
     results = response.json()
@@ -117,23 +165,28 @@ def search_game(title, client_id, access_token):
                     url = 'https:' + url
                 return url
 
-    # If no exact match, take first result with cover
-    for game in results:
-        cover = game.get('cover', {})
-        if cover and cover.get('url'):
-            url = cover['url']
-            url = url.replace('t_thumb', 't_cover_big')
-            if not url.startswith('http'):
-                url = 'https:' + url
-            return url
+    # If no confident match, take first result with cover — unless strict.
+    if not strict:
+        for game in results:
+            cover = game.get('cover', {})
+            if cover and cover.get('url'):
+                url = cover['url']
+                url = url.replace('t_thumb', 't_cover_big')
+                if not url.startswith('http'):
+                    url = 'https:' + url
+                return url
 
     return None
 
 
-def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=True):
+def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=True,
+                           upgrade_non_igdb=False):
     """
     Generator that fetches covers and yields progress updates.
     Yields dicts with: {current, total, title, status, found, not_found}
+
+    upgrade_non_igdb: also (re)fetch games whose cover is from a non-IGDB host,
+    replacing it on a confident match; wide vendor art is nulled on a miss.
     """
     try:
         access_token = get_access_token(client_id, client_secret)
@@ -143,17 +196,11 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
 
     conn = get_db()
 
-    # Get games missing covers
+    rows = conn.execute("SELECT id, title, cover_url FROM games ORDER BY title").fetchall()
     if skip_existing:
-        query = """
-            SELECT id, title FROM games
-            WHERE cover_url IS NULL OR cover_url = ''
-            ORDER BY title
-        """
+        games = [g for g in rows if needs_cover(g['cover_url'], upgrade=upgrade_non_igdb)]
     else:
-        query = "SELECT id, title FROM games ORDER BY title"
-
-    games = conn.execute(query).fetchall()
+        games = list(rows)  # --all: re-fetch everything
 
     if limit:
         games = games[:limit]
@@ -170,7 +217,7 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
         title = game['title']
 
         try:
-            cover_url = search_game(title, client_id, access_token)
+            cover_url = search_game(title, client_id, access_token, strict=upgrade_non_igdb)
 
             if cover_url:
                 conn.execute(
@@ -180,6 +227,15 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
                 conn.commit()
                 found += 1
                 status = 'found'
+            elif should_null_on_miss(game['cover_url']):
+                # IGDB has no match and the existing art is wrong-shape: drop it.
+                conn.execute(
+                    "UPDATE games SET cover_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (game['id'],)
+                )
+                conn.commit()
+                not_found_list.append(title)
+                status = 'nulled'
             else:
                 not_found_list.append(title)
                 status = 'not_found'
@@ -211,12 +267,14 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
     }
 
 
-def fetch_all_covers(client_id, client_secret, limit=None, skip_existing=True):
+def fetch_all_covers(client_id, client_secret, limit=None, skip_existing=True,
+                     upgrade_non_igdb=False):
     """Fetch covers for all games missing them (CLI version with print output)."""
 
     print("Authenticating with Twitch/IGDB...")
 
-    for progress in fetch_covers_generator(client_id, client_secret, limit, skip_existing):
+    for progress in fetch_covers_generator(client_id, client_secret, limit, skip_existing,
+                                           upgrade_non_igdb):
         if 'error' in progress:
             print(f"Error: {progress['error']}")
             return
@@ -241,6 +299,8 @@ def main():
     parser.add_argument('--client-secret', required=True, help='Twitch Client Secret')
     parser.add_argument('--limit', type=int, help='Limit number of games to process')
     parser.add_argument('--all', action='store_true', help='Re-fetch all covers, not just missing ones')
+    parser.add_argument('--upgrade-non-igdb', action='store_true',
+                        help='Also replace covers from non-IGDB hosts (vendor art) with IGDB art')
 
     args = parser.parse_args()
 
@@ -248,7 +308,8 @@ def main():
         args.client_id,
         args.client_secret,
         limit=args.limit,
-        skip_existing=not args.all
+        skip_existing=not args.all,
+        upgrade_non_igdb=args.upgrade_non_igdb,
     )
 
 
