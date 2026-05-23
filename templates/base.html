@@ -278,16 +278,24 @@
             return dedupData.groups[idx].members.filter(id => !removed.has(id));
         }
 
+        // Keep the card header's count AND label in sync after members change.
+        function updateGroupHeader(idx) {
+            const members = activeMembers(idx);
+            document.getElementById(`grp-count-${idx}`).textContent = members.length;
+            const labelEl = document.getElementById(`grp-label-${idx}`);
+            if (labelEl) labelEl.textContent = inferSeriesName(members);
+        }
+
         function groupCard(idx) {
             const g = dedupData.groups[idx];
             const members = activeMembers(idx);
-            const label = baseTitle(members);
+            const label = inferSeriesName(members);
             const seriesLabel = g.existing_series_id ? 'Add to series' : 'Create series';
             return `<div class="bg-surface rounded-lg" id="grp-${idx}">
                 <div class="flex items-center justify-between p-3 gap-2">
                     <button onclick="toggleGroup(${idx})" class="flex items-center gap-2 text-left text-white text-sm font-medium min-w-0">
                         <span id="grp-caret-${idx}">▸</span>
-                        <span class="truncate">${escapeHtml(label)}</span>
+                        <span id="grp-label-${idx}" class="truncate">${escapeHtml(label)}</span>
                         <span class="text-gray-500 whitespace-nowrap">· <span id="grp-count-${idx}">${members.length}</span> games</span>
                     </button>
                     <div class="flex gap-2 shrink-0">
@@ -383,7 +391,7 @@
                 if (activeMembers(idx).length < 2) {
                     document.getElementById(`grp-${idx}`)?.remove();
                 } else {
-                    document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                    updateGroupHeader(idx);
                     renderGroupBody(idx);
                 }
             } finally {
@@ -429,7 +437,7 @@
                 if (activeMembers(idx).length < 2) {
                     document.getElementById(`grp-${idx}`)?.remove();
                 } else {
-                    document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                    updateGroupHeader(idx);
                     renderGroupBody(idx);
                 }
             } finally {
@@ -441,7 +449,7 @@
             const g = dedupData.groups[idx];
             const members = activeMembers(idx);
             const existing = g.existing_series_id;
-            const name = existing ? (g.existing_series_name || '') : baseTitle(members);
+            const name = existing ? (g.existing_series_name || '') : inferSeriesName(members);
             const heading = existing ? 'Add to series' : 'Create series';
             const rememberRow = existing ? '' : `
                 <label class="flex items-center gap-2 text-sm text-gray-300 mt-3">
@@ -483,13 +491,12 @@
                 const res = await api.post('/api/series/from-group', { name, game_ids: gameIds, remember });
                 if (!res.ok) { alert(res.data.error || 'Could not save series'); return; }
                 closeSeriesDialog();
-                dedupData.groups[idx].existing_series_id = res.data.series_id;
-                dedupData.groups[idx].existing_series_name = name;
-                const bodyEl = document.getElementById(`grp-body-${idx}`);
-                const wasExpanded = bodyEl && !bodyEl.classList.contains('hidden');
-                const card = document.getElementById(`grp-${idx}`);
-                if (card) card.outerHTML = groupCard(idx);  // flips button to "Add to series"
-                if (wasExpanded) toggleGroup(idx);  // preserve expanded state
+                // A series = confirmed-distinct games; dismiss the group's internal
+                // pairs so they never resurface as candidates, then drop the card.
+                const active = new Set(gameIds);
+                const pairs = dedupData.groups[idx].pairs.filter(([a, b]) => active.has(a) && active.has(b));
+                if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
+                document.getElementById(`grp-${idx}`)?.remove();
                 if (typeof refreshGameList === 'function') refreshGameList();
                 const total = gameIds.length, added = res.data.assigned;
                 alert(added
@@ -530,6 +537,40 @@
         function baseTitle(ids) {
             // Shortest title in the group is the base/playable name default.
             return ids.map(id => dedupGame(id).title).sort((a, b) => a.length - b.length)[0];
+        }
+        // Mirror of dedup.infer_series_name (keep in sync): best series-name guess
+        // for a group — the member that word-prefixes the most others, else the
+        // longest shared leading words, else the shortest title.
+        function inferSeriesName(ids) {
+            const names = ids.map(id => (dedupGame(id).title || '').trim()).filter(Boolean);
+            if (!names.length) return '';
+            if (names.length === 1) return names[0];
+            const wordPrefixOf = (prefix, title) => {
+                const p = prefix.toLowerCase(), t = title.toLowerCase();
+                if (t === p) return true;
+                return t.startsWith(p) && !/[\p{L}\p{N}]/u.test(t.charAt(p.length));
+            };
+            const byShortThenAlpha = (a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
+            // 1. Member that word-prefixes a majority of the others (ties: shortest, alpha).
+            const scored = names.map((cand, i) => [
+                names.reduce((n, other, j) => n + (j !== i && wordPrefixOf(cand, other) ? 1 : 0), 0),
+                cand]);
+            const bestCount = Math.max(...scored.map(s => s[0]));
+            if (bestCount * 2 > names.length - 1) {
+                return scored.filter(s => s[0] === bestCount).map(s => s[1]).sort(byShortThenAlpha)[0];
+            }
+            // 2. Longest run of shared leading words.
+            const wordLists = names.map(n => n.split(/\s+/));
+            const minLen = Math.min(...wordLists.map(w => w.length));
+            const common = [];
+            for (let c = 0; c < minLen; c++) {
+                const w0 = wordLists[0][c];
+                if (wordLists.every(w => w[c].toLowerCase() === w0.toLowerCase())) common.push(w0);
+                else break;
+            }
+            if (common.length) return common.join(' ').replace(/[\s:–-]+$/, '');
+            // 3. Shortest title (ties alphabetically).
+            return names.slice().sort(byShortThenAlpha)[0];
         }
 
         const ratingOptions = [
