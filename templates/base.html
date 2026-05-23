@@ -340,6 +340,46 @@
             }
         }
 
+        function selectedInGroup(idx) {
+            return [...document.querySelectorAll(`.grp-check-${idx}:checked`)].map(c => parseInt(c.value));
+        }
+
+        function mergeSelected(idx) {
+            const ids = selectedInGroup(idx);
+            if (ids.length < 2) { alert('Check at least two games to merge.'); return; }
+            const [survivor] = chooseSurvivor(ids);
+            const names = ids.map(id => dedupGame(id).title).sort((a, b) => a.length - b.length);
+            document.getElementById(`grp-merge-bar-${idx}`).innerHTML = `
+                <span class="inline-flex items-center gap-2 flex-wrap">
+                  <select id="grp-surv-${idx}" class="bg-surface-light border border-gray-600 rounded px-2 py-1 text-white text-sm">
+                    ${ids.map(id => `<option value="${id}" ${id === survivor ? 'selected' : ''}>${escapeHtml(dedupGame(id).title)}</option>`).join('')}
+                  </select>
+                  <input id="grp-title-${idx}" type="text" value="${escapeHtml(names[0])}"
+                         class="bg-surface-light border border-gray-600 rounded px-2 py-1 text-white text-sm">
+                  <button onclick="confirmMergeSelected(${idx})" class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-sm">Confirm</button>
+                  <button onclick="document.getElementById('grp-merge-bar-${idx}').innerHTML=''" class="px-2 py-1 text-gray-400 hover:text-white text-sm">Cancel</button>
+                </span>`;
+        }
+
+        async function confirmMergeSelected(idx) {
+            const ids = selectedInGroup(idx);
+            const survivor = parseInt(document.getElementById(`grp-surv-${idx}`).value);
+            const drops = ids.filter(id => id !== survivor);
+            const title = document.getElementById(`grp-title-${idx}`).value.trim();
+            const res = await api.post('/api/games/merge',
+                { survivor_id: survivor, drop_ids: drops, title });
+            if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
+            const removed = (removedFromGroup[idx] = removedFromGroup[idx] || new Set());
+            drops.forEach(id => removed.add(id));
+            if (typeof refreshGameList === 'function') refreshGameList();
+            if (activeMembers(idx).length < 2) {
+                document.getElementById(`grp-${idx}`).remove();
+            } else {
+                document.getElementById(`grp-count-${idx}`).textContent = activeMembers(idx).length;
+                renderGroupBody(idx);
+            }
+        }
+
         async function mergeAllDefinite() {
             for (const group of (dedupData.definite || [])) {
                 const [survivor, ...drops] = chooseSurvivor(group);
