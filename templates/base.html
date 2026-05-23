@@ -197,6 +197,12 @@
         let dedupData = null;
         let candidateIndex = 0;
 
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         function showModalEl(id) {
             const el = document.getElementById(id);
             el.classList.remove('hidden');
@@ -228,7 +234,7 @@
             return `<div class="flex items-center gap-2">
                 <img src="${g.cover_url || ''}" onerror="this.style.display='none'"
                      class="w-8 h-10 object-cover rounded bg-surface">
-                <div><div class="text-white text-sm">${g.title}</div>
+                <div><div class="text-white text-sm">${escapeHtml(g.title)}</div>
                 <div class="text-gray-500 text-xs">${plats} · ${bits.join(' · ')}</div></div></div>`;
         }
 
@@ -314,16 +320,16 @@
                 <div>
                   <label class="block text-xs text-gray-400 mb-1">Keep which?</label>
                   <select id="cand-survivor" class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
-                    <option value="${a.id}">${a.title}</option>
-                    <option value="${b.id}">${b.title}</option>
+                    <option value="${a.id}">${escapeHtml(a.title)}</option>
+                    <option value="${b.id}">${escapeHtml(b.title)}</option>
                   </select>
                 </div>
                 <div>
                   <label class="block text-xs text-gray-400 mb-1">Name</label>
-                  <input id="cand-title" type="text" value="${names[0].replace(/"/g, '&quot;')}"
+                  <input id="cand-title" type="text" value="${escapeHtml(names[0])}"
                          class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
                   <div class="flex gap-2 mt-1">
-                    ${[...new Set(names)].map(n => `<button type="button" onclick="document.getElementById('cand-title').value=this.dataset.n" data-n="${n.replace(/"/g, '&quot;')}" class="text-xs text-gray-400 hover:text-white underline">${n}</button>`).join('')}
+                    ${[...new Set(names)].map(n => `<button type="button" onclick="document.getElementById('cand-title').value=this.dataset.n" data-n="${escapeHtml(n)}" class="text-xs text-gray-400 hover:text-white underline">${escapeHtml(n)}</button>`).join('')}
                   </div>
                 </div>
                 <div class="flex gap-2 pt-1">
