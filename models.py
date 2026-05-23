@@ -345,6 +345,26 @@ def migrate_external_ids(conn):
     conn.commit()
 
 
+def migrate_not_duplicates(conn):
+    """Create the not_duplicates table if missing. Idempotent.
+
+    Records pairs the user confirmed are NOT the same game (stored ordered,
+    lo < hi) so the dedup tool never re-asks. Cascade-cleaned when either game
+    is deleted (e.g. by a merge).
+    """
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS not_duplicates (
+            game_id_lo INTEGER NOT NULL,
+            game_id_hi INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (game_id_lo, game_id_hi),
+            FOREIGN KEY (game_id_lo) REFERENCES games(id) ON DELETE CASCADE,
+            FOREIGN KEY (game_id_hi) REFERENCES games(id) ON DELETE CASCADE
+        );
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -384,6 +404,9 @@ def migrate_db():
 
     # Add the external-ids identity table
     migrate_external_ids(conn)
+
+    # Add the not-duplicates table (dedup workstream)
+    migrate_not_duplicates(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
     # symbols, leading region tags, edition suffixes, etc.). Display-only:
