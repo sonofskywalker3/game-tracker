@@ -89,7 +89,10 @@
                     </div>
                 </div>
                 {% block nav_filters %}{% endblock %}
-                <div class="flex items-center flex-shrink-0">
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <button onclick="openDedupModal()" class="px-3 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm font-medium transition-colors whitespace-nowrap">
+                        Dedup
+                    </button>
                     <button onclick="openAddGameModal()" class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm font-medium transition-colors whitespace-nowrap">
                         + Add Game
                     </button>
@@ -146,6 +149,21 @@
         </div>
     </div>
 
+    <!-- Dedup Modal -->
+    <div id="dedup-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-white">Find duplicates</h2>
+                    <button onclick="closeDedupModal()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div id="dedup-body" class="space-y-6">
+                    <div class="text-gray-400 text-sm">Scanning your library…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Global utilities
         const api = {
@@ -174,6 +192,164 @@
                 return { ok: res.ok, status: res.status, data: await res.json() };
             }
         };
+
+        // ---- Dedup ----
+        let dedupData = null;
+        let candidateIndex = 0;
+
+        function showModalEl(id) {
+            const el = document.getElementById(id);
+            el.classList.remove('hidden');
+            el.classList.add('flex');
+        }
+        function hideModalEl(id) {
+            const el = document.getElementById(id);
+            el.classList.add('hidden');
+            el.classList.remove('flex');
+        }
+
+        async function openDedupModal() {
+            showModalEl('dedup-modal');
+            document.getElementById('dedup-body').innerHTML =
+                '<div class="text-gray-400 text-sm">Scanning your library…</div>';
+            dedupData = await api.get('/api/duplicates');
+            renderDedup();
+        }
+        function closeDedupModal() { hideModalEl('dedup-modal'); }
+
+        function dedupGame(id) { return dedupData.games.find(g => g.id === id); }
+
+        function gameLine(g) {
+            const plats = (g.platforms || []).join(', ') || '—';
+            const cur = g.curation || {};
+            const bits = [cur.status || 'backlog'];
+            if (cur.rating) bits.push('★' + cur.rating);
+            if (cur.hours_played) bits.push(cur.hours_played + 'h');
+            return `<div class="flex items-center gap-2">
+                <img src="${g.cover_url || ''}" onerror="this.style.display='none'"
+                     class="w-8 h-10 object-cover rounded bg-surface">
+                <div><div class="text-white text-sm">${g.title}</div>
+                <div class="text-gray-500 text-xs">${plats} · ${bits.join(' · ')}</div></div></div>`;
+        }
+
+        function renderDedup() {
+            const body = document.getElementById('dedup-body');
+            const def = dedupData.definite || [];
+            const cands = dedupData.candidates || [];
+            if (!def.length && !cands.length) {
+                body.innerHTML = '<div class="text-gray-400 text-sm">No duplicates found. 🎉</div>';
+                return;
+            }
+            let html = '';
+            if (def.length) {
+                html += `<div><div class="flex items-center justify-between mb-2">
+                    <h3 class="text-white font-semibold">Exact matches (${def.length})</h3>
+                    <button onclick="mergeAllDefinite()" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Merge all</button>
+                    </div><div class="space-y-2">` +
+                    def.map(group => `<div class="bg-surface rounded-lg p-3 space-y-1">
+                        ${group.map(id => gameLine(dedupGame(id))).join('')}</div>`).join('') +
+                    `</div></div>`;
+            }
+            if (cands.length) {
+                html += `<div><h3 class="text-white font-semibold mb-2">Review (${cands.length})</h3>
+                    <div id="candidate-host"></div></div>`;
+            }
+            body.innerHTML = html;
+            if (cands.length) renderCandidate(0);
+        }
+
+        async function mergeAllDefinite() {
+            for (const group of (dedupData.definite || [])) {
+                const [survivor, ...drops] = chooseSurvivor(group);
+                await api.post('/api/games/merge', {
+                    survivor_id: survivor, drop_ids: drops,
+                    title: baseTitle(group),
+                });
+            }
+            if (typeof refreshGameList === 'function') refreshGameList();
+            await openDedupModal();  // reload remaining
+        }
+
+        // Survivor = curated row if exactly one, else the one with a cover, else lowest id.
+        function chooseSurvivor(ids) {
+            const games = ids.map(dedupGame);
+            const curated = games.filter(g => isCurated(g.curation));
+            let survivor;
+            if (curated.length === 1) survivor = curated[0];
+            else survivor = games.find(g => g.cover_url) || games[0];
+            const rest = ids.filter(id => id !== survivor.id);
+            return [survivor.id, ...rest];
+        }
+        function isCurated(c) {
+            if (!c) return false;
+            return (c.status && c.status !== 'backlog') || c.rating || c.notes ||
+                   c.series_id || c.sort_order != null || (c.hours_played || 0) > 0;
+        }
+        function baseTitle(ids) {
+            // Shortest title in the group is the base/playable name default.
+            return ids.map(id => dedupGame(id).title).sort((a, b) => a.length - b.length)[0];
+        }
+
+        function renderCandidate(idx) {
+            candidateIndex = idx;
+            const host = document.getElementById('candidate-host');
+            const cands = dedupData.candidates || [];
+            if (!host) return;
+            if (idx >= cands.length) {
+                host.innerHTML = '<div class="text-gray-400 text-sm">All candidates reviewed.</div>';
+                return;
+            }
+            const c = cands[idx];
+            const a = dedupGame(c.a), b = dedupGame(c.b);
+            const reason = { edition: 'Edition variant', contains: 'One name contains the other',
+                             similar: `Similar (${c.score})` }[c.reason] || c.reason;
+            const names = [a.title, b.title].sort((x, y) => x.length - y.length);
+            host.innerHTML = `
+              <div class="bg-surface rounded-lg p-4 space-y-3">
+                <div class="text-xs text-accent">${reason} · ${idx + 1} of ${cands.length}</div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="bg-surface-light rounded p-2">${gameLine(a)}</div>
+                  <div class="bg-surface-light rounded p-2">${gameLine(b)}</div>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">Keep which?</label>
+                  <select id="cand-survivor" class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
+                    <option value="${a.id}">${a.title}</option>
+                    <option value="${b.id}">${b.title}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">Name</label>
+                  <input id="cand-title" type="text" value="${names[0].replace(/"/g, '&quot;')}"
+                         class="w-full bg-surface-light border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
+                  <div class="flex gap-2 mt-1">
+                    ${[...new Set(names)].map(n => `<button type="button" onclick="document.getElementById('cand-title').value=this.dataset.n" data-n="${n.replace(/"/g, '&quot;')}" class="text-xs text-gray-400 hover:text-white underline">${n}</button>`).join('')}
+                  </div>
+                </div>
+                <div class="flex gap-2 pt-1">
+                  <button onclick="confirmMerge()" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Merge</button>
+                  <button onclick="keepSeparate()" class="px-3 py-1.5 bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Keep separate</button>
+                </div>
+              </div>`;
+        }
+
+        async function confirmMerge() {
+            const c = dedupData.candidates[candidateIndex];
+            const survivor = parseInt(document.getElementById('cand-survivor').value);
+            const drop = (survivor === c.a) ? c.b : c.a;
+            const title = document.getElementById('cand-title').value.trim();
+            const res = await api.post('/api/games/merge',
+                { survivor_id: survivor, drop_ids: [drop], title });
+            if (!res.ok) { alert(res.data.error || 'Merge failed'); return; }
+            if (typeof refreshGameList === 'function') refreshGameList();
+            renderCandidate(candidateIndex + 1);
+        }
+
+        async function keepSeparate() {
+            const c = dedupData.candidates[candidateIndex];
+            await api.post('/api/duplicates/dismiss', { game_id_a: c.a, game_id_b: c.b });
+            renderCandidate(candidateIndex + 1);
+        }
 
         const ratingOptions = [
             { value: 1, label: 'Hate it', color: 'bg-red-600/30 text-red-400 border-red-600/50' },
