@@ -599,13 +599,23 @@
         const available = getGamesNotInSeries();
 
         // Extract keywords from series name (split on spaces, colons, dashes)
-        const keywords = currentSeries.name.toLowerCase().split(/[\s:\-–]+/).filter(k => k.length > 2);
+        const nameLower = currentSeries.name.toLowerCase();
+        const keywords = nameLower.split(/[\s:\-–]+/).filter(k => k.length > 2);
 
-        // Find games that match any keyword
-        const suggestions = available.filter(g => {
-            const titleLower = g.title.toLowerCase();
-            return keywords.some(k => titleLower.includes(k));
-        }).slice(0, 8);
+        // Match the FULL series term: require the whole phrase, or every keyword
+        // (not just any one) — so "Star Ocean" suggests Star Ocean games, not
+        // every "Star ..." title. Rank titles that start with the name first.
+        const suggestions = available
+            .filter(g => {
+                const titleLower = g.title.toLowerCase();
+                return titleLower.includes(nameLower) || keywords.every(k => titleLower.includes(k));
+            })
+            .sort((a, b) => {
+                const ap = a.title.toLowerCase().startsWith(nameLower) ? 0 : 1;
+                const bp = b.title.toLowerCase().startsWith(nameLower) ? 0 : 1;
+                return ap - bp || a.title.localeCompare(b.title);
+            })
+            .slice(0, 8);
 
         if (suggestions.length > 0) {
             suggestionsList.innerHTML = suggestions.map(g => `
