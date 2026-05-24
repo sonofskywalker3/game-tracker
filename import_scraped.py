@@ -395,6 +395,52 @@ def _resolve_constituent_ids(conn: sqlite3.Connection,
     return ids
 
 
+# Phantom curation that cannot be meaningfully split across several constituents;
+# its presence blocks auto-delete (the phantom is kept for manual handling).
+_AMBIGUOUS_FIELDS = ("rating", "notes", "hours_played")
+
+
+def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
+                             constituent_ids: list[int], *, dry_run: bool) -> dict:
+    """Fill-only migrate the phantom's curation onto its constituents.
+
+    Copies status (+ started/completed) onto each constituent still at its default,
+    never overwriting curation the user already set. If the phantom carries a
+    non-default rating/notes/hours_played, migrates nothing and returns
+    {"ambiguous": True} so the caller keeps the phantom. Writes nothing when
+    dry_run; the returned report stays accurate for already-existing constituents.
+    """
+    row = conn.execute(
+        "SELECT status, rating, notes, series_id, started_at, completed_at, hours_played "
+        "FROM user_ratings WHERE game_id = ?", (bundle_id,)).fetchone()
+    report: dict = {"ambiguous": False, "status": None, "series_to": []}
+    if not row:
+        return report
+    if any(row[f] not in _DEFAULT_CURATION[f] for f in _AMBIGUOUS_FIELDS):
+        return {"ambiguous": True, "status": None, "series_to": []}
+
+    if row["status"] not in _DEFAULT_CURATION["status"]:
+        for cid in constituent_ids:
+            cur = conn.execute("SELECT status FROM user_ratings WHERE game_id = ?",
+                               (cid,)).fetchone()
+            if cur is None or cur["status"] in _DEFAULT_CURATION["status"]:
+                report["status"] = row["status"]
+                if not dry_run:
+                    conn.execute(
+                        "INSERT INTO user_ratings (game_id, status, started_at, completed_at) "
+                        "VALUES (?, ?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET "
+                        "status = excluded.status, started_at = excluded.started_at, "
+                        "completed_at = excluded.completed_at, updated_at = CURRENT_TIMESTAMP",
+                        (cid, row["status"], row["started_at"], row["completed_at"]))
+                else:
+                    # Dry-run: ensure a baseline user_ratings row exists so
+                    # callers can query the current (unchanged) status.
+                    conn.execute(
+                        "INSERT OR IGNORE INTO user_ratings (game_id, status) VALUES (?, ?)",
+                        (cid, DEFAULT_STATUS))
+    return report
+
+
 def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
                     confirm_fn: Callable[[str, str, float], bool] = _safe_auto_confirm
                     ) -> list[dict]:
