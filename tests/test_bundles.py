@@ -143,3 +143,14 @@ def test_cleanup_dry_run_writes_nothing(temp_db):
     conn.commit()
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1  # nothing changed
     conn.close()
+
+
+def test_resolve_constituent_ids_finds_existing_skips_missing(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    _insert(conn, "Pikmin 2")
+    conn.commit()
+    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1", "Pikmin 2", "Not Imported Yet"))
+    rows = {r[0]: r[1] for r in conn.execute("SELECT title, id FROM games")}
+    assert ids == [rows["Pikmin 1"], rows["Pikmin 2"]]  # missing title omitted
+    conn.close()
