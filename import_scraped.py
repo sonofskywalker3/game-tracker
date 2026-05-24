@@ -378,6 +378,23 @@ def _is_curated(conn: sqlite3.Connection, game_id: int) -> bool:
     return any(row[field] not in defaults for field, defaults in _DEFAULT_CURATION.items())
 
 
+def _resolve_constituent_ids(conn: sqlite3.Connection,
+                             constituents: tuple[str, ...]) -> list[int]:
+    """game_ids for constituents that exist (matched by normalized title).
+
+    Missing titles are omitted; in a real cleanup run import_games has already
+    created them, in a dry run a not-yet-created constituent simply has nothing to
+    migrate onto.
+    """
+    ids: list[int] = []
+    for title in constituents:
+        row = conn.execute("SELECT id FROM games WHERE normalized_title = ?",
+                           (match_key(title),)).fetchone()
+        if row:
+            ids.append(row[0])
+    return ids
+
+
 def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
                     confirm_fn: Callable[[str, str, float], bool] = _safe_auto_confirm
                     ) -> list[dict]:
