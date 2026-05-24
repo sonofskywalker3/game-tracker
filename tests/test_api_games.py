@@ -304,3 +304,25 @@ def test_not_a_game_records_exclusion_and_deletes(client, tmp_path, monkeypatch)
 
 def test_not_a_game_404_for_missing(client):
     assert client.post("/api/games/999999/not-a-game").status_code == 404
+
+
+def test_pick_igdb_series_name_prefers_exact_match():
+    from app import pick_igdb_series_name
+    results = [{"name": "Final Fantasy VII"}, {"name": "Final Fantasy"}]
+    assert pick_igdb_series_name("final fantasy", results) == "Final Fantasy"
+
+
+def test_pick_igdb_series_name_best_similarity():
+    from app import pick_igdb_series_name
+    results = [{"name": "SteamWorld Dig"}, {"name": "SteamWorld"}]
+    assert pick_igdb_series_name("steamworld build", results) == "SteamWorld"
+
+
+def test_pick_igdb_series_name_none_when_no_good_match():
+    from app import pick_igdb_series_name
+    assert pick_igdb_series_name("final fantasy", [{"name": "Halo"}, {"name": "Doom"}]) is None
+
+
+def test_pick_igdb_series_name_empty():
+    from app import pick_igdb_series_name
+    assert pick_igdb_series_name("anything", []) is None
