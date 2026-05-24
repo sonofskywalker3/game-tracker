@@ -81,3 +81,87 @@ def merge_dlc(conn: sqlite3.Connection, game_id: int, parsed: list[dict]) -> dic
             (game_id, d["name"], d.get("igdb_id"), d.get("kind", "dlc")))
         added += 1
     return {"added": added, "existing": existing}
+
+
+_DLC_FIELDS = ("name, slug, cover.url, dlcs.name, expansions.name, "
+               "standalone_expansions.name")
+
+
+def _igdb_query(query: str, client_id: str, access_token: str) -> list[dict]:
+    """POST an apicalypse query to IGDB /games; retry once on 429."""
+    headers = {"Client-ID": client_id, "Authorization": f"Bearer {access_token}",
+               "Content-Type": "text/plain"}
+    response = requests.post(f"{IGDB_API_URL}/games", headers=headers, data=query)
+    if response.status_code == 429:
+        time.sleep(1)
+        return _igdb_query(query, client_id, access_token)
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_game_by_id(igdb_id: int, client_id: str, token: str) -> dict | None:
+    res = _igdb_query(f"fields {_DLC_FIELDS}; where id = {int(igdb_id)};", client_id, token)
+    return res[0] if res else None
+
+
+def fetch_game_by_slug(slug: str, client_id: str, token: str) -> dict | None:
+    safe = slug.replace('"', "")
+    res = _igdb_query(f'fields {_DLC_FIELDS}; where slug = "{safe}";', client_id, token)
+    return res[0] if res else None
+
+
+def fetch_game_by_title(title: str, client_id: str, token: str) -> dict | None:
+    from fetch_covers import clean_search_title
+    safe = clean_search_title(title).replace('"', "")
+    res = _igdb_query(f'search "{safe}"; fields {_DLC_FIELDS}; limit 1;', client_id, token)
+    return res[0] if res else None
+
+
+def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: str,
+                *, slug: str | None = None) -> dict:
+    """Resolve a game on IGDB (by slug, stored id, or title), store igdb_id +
+    cover, and merge its DLC. Returns {matched, cover_set, added, existing}.
+
+    Cover is overwritten when pinning by slug; on auto-resolution it is only set
+    when the game has no cover (never clobbers a user/IGDB cover).
+    """
+    row = conn.execute("SELECT title, igdb_id, cover_url FROM games WHERE id = ?",
+                       (game_id,)).fetchone()
+    if not row:
+        return {"matched": False, "cover_set": False, "added": 0, "existing": 0}
+    if slug:
+        game = fetch_game_by_slug(slug, client_id, token)
+    elif row["igdb_id"]:
+        game = fetch_game_by_id(row["igdb_id"], client_id, token)
+    else:
+        game = fetch_game_by_title(row["title"], client_id, token)
+    if not game:
+        return {"matched": False, "cover_set": False, "added": 0, "existing": 0}
+    conn.execute("UPDATE games SET igdb_id = ? WHERE id = ?", (game.get("id"), game_id))
+    cover = format_cover_url((game.get("cover") or {}).get("url"))
+    cover_set = False
+    if cover and (slug or not row["cover_url"]):
+        conn.execute("UPDATE games SET cover_url = ? WHERE id = ?", (cover, game_id))
+        cover_set = True
+    counts = merge_dlc(conn, game_id, parse_dlc_payload(game))
+    return {"matched": True, "cover_set": cover_set, **counts}
+
+
+def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> dict:
+    """Enrich every never-enriched game (games.igdb_id IS NULL). Commits per game;
+    a per-game network error is logged and skipped (never aborts the run)."""
+    ids = [r[0] for r in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL")]
+    totals = {"games": 0, "matched": 0, "added": 0, "errors": 0}
+    for gid in ids:
+        try:
+            rep = enrich_game(conn, gid, client_id, token)
+            conn.commit()
+        except requests.RequestException as exc:
+            conn.rollback()
+            totals["errors"] += 1
+            logger.warning("DLC enrich failed for game %s: %s", gid, exc)
+            continue
+        totals["games"] += 1
+        totals["matched"] += int(rep["matched"])
+        totals["added"] += rep["added"]
+    return totals

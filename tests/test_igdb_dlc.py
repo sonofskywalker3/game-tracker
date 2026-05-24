@@ -78,3 +78,48 @@ def test_merge_inserts_then_is_idempotent_and_preserves_owned(temp_db):
     assert "My Manual" in rows
     assert "Pack B" in rows
     conn.close()
+
+
+def test_enrich_game_by_title_sets_igdb_id_cover_and_dlc(temp_db, monkeypatch):
+    conn = models.get_db()
+    gid = _game(conn, "Base")
+    conn.commit()
+    payload = {"id": 999, "name": "Base", "slug": "base",
+               "cover": {"url": "//img/t_thumb/co9.jpg"},
+               "dlcs": [{"id": 11, "name": "Pack A"}]}
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [payload])
+    rep = igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    conn.commit()
+    assert rep["matched"] and rep["added"] == 1
+    g = conn.execute("SELECT igdb_id, cover_url FROM games WHERE id=?", (gid,)).fetchone()
+    assert g["igdb_id"] == 999
+    assert g["cover_url"] == "https://img/t_cover_big/co9.jpg"
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id=?", (gid,)).fetchone()[0] == 1
+    conn.close()
+
+
+def test_enrich_game_no_match_returns_unmatched(temp_db, monkeypatch):
+    conn = models.get_db()
+    gid = _game(conn, "Nope")
+    conn.commit()
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [])
+    rep = igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    assert rep["matched"] is False and rep["added"] == 0
+    conn.close()
+
+
+def test_enrich_missing_is_incremental(temp_db, monkeypatch):
+    conn = models.get_db()
+    g1 = _game(conn, "One")
+    g2 = _game(conn, "Two")
+    conn.execute("UPDATE games SET igdb_id = 5 WHERE id = ?", (g2,))
+    conn.commit()
+    calls = []
+    def fake_query(q, c, t):
+        calls.append(q)
+        return [{"id": 42, "name": "One", "dlcs": [{"id": 1, "name": "X"}]}]
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", fake_query)
+    totals = igdb_dlc.enrich_missing(conn, client_id="cid", token="tok")
+    assert totals["games"] == 1 and totals["matched"] == 1
+    assert conn.execute("SELECT igdb_id FROM games WHERE id=?", (g1,)).fetchone()[0] == 42
+    conn.close()
