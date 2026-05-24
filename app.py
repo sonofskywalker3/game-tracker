@@ -280,6 +280,12 @@ def api_game(game_id):
     """, (game_id,)).fetchall()
     result['tags'] = [dict(t) for t in tags]
 
+    # DLC list (folded into the game detail for the modal)
+    dlc = conn.execute(
+        "SELECT id, name, kind, owned, source FROM dlc WHERE game_id = ? ORDER BY kind, name",
+        (game_id,)).fetchall()
+    result['dlc'] = [{**dict(d), 'owned': bool(d['owned'])} for d in dlc]
+
     conn.close()
     return jsonify(result)
 
