@@ -326,3 +326,19 @@ def test_pick_igdb_series_name_none_when_no_good_match():
 def test_pick_igdb_series_name_empty():
     from app import pick_igdb_series_name
     assert pick_igdb_series_name("anything", []) is None
+
+
+def test_get_game_includes_dlc(client, temp_db):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.execute("INSERT INTO dlc (game_id, name, kind, owned, source) "
+                 "VALUES (?, 'Pack A', 'dlc', 1, 'igdb')", (gid,))
+    conn.commit()
+    conn.close()
+    resp = client.get(f"/api/games/{gid}")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["dlc"] == [{"id": data["dlc"][0]["id"], "name": "Pack A",
+                            "kind": "dlc", "owned": True, "source": "igdb"}]
