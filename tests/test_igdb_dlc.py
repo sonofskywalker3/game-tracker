@@ -2,6 +2,13 @@ import igdb_dlc
 import models
 
 
+def test_dlc_fields_requests_nested_ids():
+    # IGDB omits nested ids unless explicitly named; without these every stored
+    # dlc.igdb_id would be NULL in production.
+    for field in ("dlcs.id", "expansions.id", "standalone_expansions.id"):
+        assert field in igdb_dlc._DLC_FIELDS
+
+
 def test_parse_flattens_dlcs_and_expansions_with_kind():
     payload = {
         "id": 1, "name": "Base Game",

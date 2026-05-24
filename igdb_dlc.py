@@ -83,18 +83,21 @@ def merge_dlc(conn: sqlite3.Connection, game_id: int, parsed: list[dict]) -> dic
     return {"added": added, "existing": existing}
 
 
-_DLC_FIELDS = ("name, slug, cover.url, dlcs.name, expansions.name, "
-               "standalone_expansions.name")
+# Nested ids are requested explicitly — IGDB omits them unless named, otherwise
+# every stored DLC row's igdb_id would be NULL.
+_DLC_FIELDS = ("name, slug, cover.url, dlcs.id, dlcs.name, expansions.id, "
+               "expansions.name, standalone_expansions.id, standalone_expansions.name")
 
 
-def _igdb_query(query: str, client_id: str, access_token: str) -> list[dict]:
-    """POST an apicalypse query to IGDB /games; retry once on 429."""
+def _igdb_query(query: str, client_id: str, access_token: str,
+                *, _retried: bool = False) -> list[dict]:
+    """POST an apicalypse query to IGDB /games; retry once on 429, then give up."""
     headers = {"Client-ID": client_id, "Authorization": f"Bearer {access_token}",
                "Content-Type": "text/plain"}
     response = requests.post(f"{IGDB_API_URL}/games", headers=headers, data=query)
-    if response.status_code == 429:
+    if response.status_code == 429 and not _retried:
         time.sleep(1)
-        return _igdb_query(query, client_id, access_token)
+        return _igdb_query(query, client_id, access_token, _retried=True)
     response.raise_for_status()
     return response.json()
 
