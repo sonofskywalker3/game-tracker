@@ -38,3 +38,25 @@ def parse_dlc_payload(igdb_game: dict) -> list[dict]:
             seen.add(name.lower())
             out.append({"name": name, "igdb_id": item.get("id"), "kind": kind})
     return out
+
+
+_IGDB_GAME_URL = re.compile(r"https?://(?:www\.)?igdb\.com/games/([a-z0-9][a-z0-9\-]*)",
+                            re.IGNORECASE)
+
+
+def slug_from_igdb_url(url: str | None) -> str | None:
+    """Extract the game slug from an igdb.com/games/<slug> URL, else None."""
+    if not url:
+        return None
+    m = _IGDB_GAME_URL.search(url.strip())
+    return m.group(1).lower() if m else None
+
+
+def format_cover_url(raw: str | None) -> str | None:
+    """Upgrade an IGDB cover URL to t_cover_big and ensure an https scheme."""
+    if not raw:
+        return None
+    url = raw.replace("t_thumb", "t_cover_big")
+    if not url.startswith("http"):
+        url = "https:" + url
+    return url
