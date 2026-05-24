@@ -154,3 +154,68 @@ def test_resolve_constituent_ids_finds_existing_skips_missing(temp_db):
     rows = {r[0]: r[1] for r in conn.execute("SELECT title, id FROM games")}
     assert ids == [rows["Pikmin 1"], rows["Pikmin 2"]]  # missing title omitted
     conn.close()
+
+
+def _curated_phantom(conn, *, status="backlog", rating=None, notes=None,
+                     series_id=None, hours_played=0, started_at=None,
+                     completed_at=None):
+    """Insert a Pikmin 1+2 phantom with chosen curation; return its game_id."""
+    bid = _insert_phantom(conn, "Pikmin 1+2 Bundle", "nintendo", "70070000018036")
+    conn.execute(
+        "UPDATE user_ratings SET status=?, rating=?, notes=?, series_id=?, "
+        "hours_played=?, started_at=?, completed_at=? WHERE game_id=?",
+        (status, rating, notes, series_id, hours_played, started_at, completed_at, bid))
+    conn.commit()
+    return bid
+
+
+def test_migrate_status_fills_default_constituents_only(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    _insert(conn, "Pikmin 2")
+    # Pikmin 2 already curated by the user -> must NOT be overwritten (fill-only).
+    p2 = conn.execute("SELECT id FROM games WHERE title='Pikmin 2'").fetchone()[0]
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'playing')", (p2,))
+    conn.commit()
+    bid = _curated_phantom(conn, status="completed")
+    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1", "Pikmin 2"))
+    report = imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
+    conn.commit()
+    statuses = {r[0]: r[1] for r in conn.execute(
+        "SELECT g.title, ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+        "WHERE g.title IN ('Pikmin 1','Pikmin 2')")}
+    assert statuses["Pikmin 1"] == "completed"   # was default -> filled
+    assert statuses["Pikmin 2"] == "playing"     # user value preserved
+    assert report["ambiguous"] is False and report["status"] == "completed"
+    conn.close()
+
+
+def test_migrate_ambiguous_rating_migrates_nothing(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    _insert(conn, "Pikmin 2")
+    conn.commit()
+    bid = _curated_phantom(conn, status="completed", rating=5)
+    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1", "Pikmin 2"))
+    report = imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
+    conn.commit()
+    statuses = [r[0] for r in conn.execute(
+        "SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+        "WHERE g.title IN ('Pikmin 1','Pikmin 2')")]
+    assert report["ambiguous"] is True
+    assert all(s == "backlog" for s in statuses)  # nothing migrated
+    conn.close()
+
+
+def test_migrate_status_dry_run_writes_nothing(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    conn.commit()
+    bid = _curated_phantom(conn, status="completed")
+    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1",))
+    imp._migrate_bundle_curation(conn, bid, ids, dry_run=True)
+    conn.commit()
+    s = conn.execute("SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+                     "WHERE g.title='Pikmin 1'").fetchone()[0]
+    assert s == "backlog"  # dry run wrote nothing
+    conn.close()
