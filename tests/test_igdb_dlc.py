@@ -47,3 +47,34 @@ def test_format_cover_url():
     assert igdb_dlc.format_cover_url("https://x/t_thumb/co.jpg") == "https://x/t_cover_big/co.jpg"
     assert igdb_dlc.format_cover_url(None) is None
     assert igdb_dlc.format_cover_url("") is None
+
+
+import models
+
+
+def _game(conn, title="Base"):
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(title)))
+    return conn.execute("SELECT id FROM games WHERE title=?", (title,)).fetchone()[0]
+
+
+def test_merge_inserts_then_is_idempotent_and_preserves_owned(temp_db):
+    conn = models.get_db()
+    gid = _game(conn)
+    parsed = [{"name": "Pack A", "igdb_id": 11, "kind": "dlc"},
+              {"name": "Expo", "igdb_id": 21, "kind": "expansion"}]
+    r1 = igdb_dlc.merge_dlc(conn, gid, parsed)
+    conn.commit()
+    assert r1 == {"added": 2, "existing": 0}
+    conn.execute("UPDATE dlc SET owned=1 WHERE game_id=? AND name='Pack A'", (gid,))
+    conn.execute("INSERT INTO dlc (game_id, name, source) VALUES (?, 'My Manual', 'manual')", (gid,))
+    conn.commit()
+    r2 = igdb_dlc.merge_dlc(conn, gid, parsed + [{"name": "Pack B", "igdb_id": 12, "kind": "dlc"}])
+    conn.commit()
+    assert r2 == {"added": 1, "existing": 2}
+    rows = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT name, owned, source FROM dlc WHERE game_id=?", (gid,))}
+    assert rows["Pack A"][0] == 1
+    assert "My Manual" in rows
+    assert "Pack B" in rows
+    conn.close()
