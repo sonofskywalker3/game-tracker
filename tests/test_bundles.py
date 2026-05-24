@@ -55,6 +55,23 @@ def test_expand_bundle_none_for_missing_external_id():
     assert bundles.expand_bundle("nintendo", None) is None
 
 
+def test_expand_bundle_user_added_entries():
+    assert bundles.expand_bundle("xbox", "BRW49CBS558D") == (
+        "Batman: Arkham Asylum", "Batman: Arkham City")
+    assert bundles.expand_bundle("xbox", "9NZJGLTJX1J1") == (
+        "Borderlands", "Borderlands 2", "Borderlands: The Pre-Sequel", "Borderlands 3")
+    assert bundles.expand_bundle("nintendo", "70070000014049") == (
+        "Deponia", "Chaos on Deponia", "Goodbye Deponia")
+    assert bundles.expand_bundle("xbox", "C4HB1XWT02DK") == (
+        "Assassin's Creed Chronicles: China",
+        "Assassin's Creed Chronicles: India",
+        "Assassin's Creed Chronicles: Russia")
+    # FF I-VI links the existing rows: constituents are the plain franchise titles.
+    assert bundles.expand_bundle("nintendo", "70070000017105") == (
+        "Final Fantasy", "Final Fantasy II", "Final Fantasy III",
+        "Final Fantasy IV", "Final Fantasy V", "Final Fantasy VI")
+
+
 def test_import_expands_bundle_creating_missing_constituents(temp_db):
     conn = models.get_db()
     stats = imp.import_games(
