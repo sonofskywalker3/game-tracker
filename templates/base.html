@@ -485,11 +485,15 @@
                 </div>
                 <label class="block text-xs text-gray-400 mb-1">Series name</label>
                 <input id="series-name" type="text" value="${escapeHtml(name)}"
-                       class="w-full bg-surface border border-gray-600 rounded px-2 py-1.5 text-white text-sm mb-3">
+                       class="w-full bg-surface border border-gray-600 rounded px-2 py-1.5 text-white text-sm mb-1">
+                <div id="igdb-suggest" class="text-xs text-gray-400 mb-3 min-h-[1rem]"></div>
                 <label class="block text-xs text-gray-400 mb-1">These ${members.length} games will be added — remove any that don't belong from the group first with ✕</label>
                 <div class="space-y-1 max-h-64 overflow-y-auto">
                     ${members.map(id => `<div class="text-sm text-white">${escapeHtml(dedupGame(id).title)}</div>`).join('')}
                 </div>
+                <label class="flex items-center gap-2 text-sm text-gray-300 mt-3">
+                    <input type="checkbox" id="series-order-release"> Order by release date after saving
+                </label>
                 ${rememberRow}
                 <div class="flex gap-2 pt-4">
                     <button onclick="confirmSeriesFromGroup(${idx})" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">${existing ? 'Add' : 'Create'}</button>
@@ -497,6 +501,23 @@
                 </div>`;
             showModalEl('series-dialog');
             document.getElementById('series-name').focus();
+            if (!existing) loadIgdbSuggestion(name);
+        }
+
+        // Offer IGDB's canonical franchise name if it differs from the inferred one.
+        async function loadIgdbSuggestion(name) {
+            const el = document.getElementById('igdb-suggest');
+            if (!el || !name) return;
+            try {
+                const data = await api.get(`/api/series/igdb-suggest?name=${encodeURIComponent(name)}`);
+                const s = data && data.suggestion;
+                if (!s || s.toLowerCase() === name.toLowerCase()) return;
+                el.innerHTML = `IGDB suggests <button class="text-accent hover:underline">"${escapeHtml(s)}"</button>`;
+                el.querySelector('button').onclick = () => {
+                    document.getElementById('series-name').value = s;
+                    el.textContent = '';
+                };
+            } catch (e) { /* best-effort; leave the inferred name */ }
         }
 
         function closeSeriesDialog() { hideModalEl('series-dialog'); }
@@ -509,11 +530,15 @@
             if (!gameIds.length) { alert('No games left in this group.'); return; }
             const rememberEl = document.getElementById('series-remember');
             const remember = rememberEl ? rememberEl.checked : false;
+            const orderByRelease = document.getElementById('series-order-release')?.checked;
             dedupBusy = true;
             try {
                 const res = await api.post('/api/series/from-group', { name, game_ids: gameIds, remember });
                 if (!res.ok) { alert(res.data.error || 'Could not save series'); return; }
                 closeSeriesDialog();
+                if (orderByRelease && res.data.series_id) {
+                    await api.post(`/api/series/${res.data.series_id}/sort-by-release`, {});
+                }
                 // A series = confirmed-distinct games; dismiss the group's internal
                 // pairs so they never resurface as candidates, then drop the card.
                 const active = new Set(gameIds);

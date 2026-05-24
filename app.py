@@ -1,6 +1,8 @@
 """
 Game Tracker - Flask Application
 """
+import difflib
+import logging
 import sqlite3
 from collections import Counter
 import dedup
@@ -15,6 +17,7 @@ from config import load_config, save_config, get_twitch_credentials
 from background_tasks import run_cover_fetch_background, get_cover_fetch_status
 
 app = Flask(__name__)
+log = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -784,6 +787,76 @@ def get_original_title(title):
     for pattern in patterns:
         original = re.sub(pattern, '', original, flags=re.IGNORECASE)
     return original.strip()
+
+
+# Below this similarity to the query, an IGDB result isn't a confident match.
+_IGDB_NAME_MATCH_THRESHOLD = 0.6
+
+
+def _is_word_prefix(prefix: str, text: str) -> bool:
+    """True if `prefix` spans whole leading words of `text` (case-insensitive)."""
+    p, t = prefix.lower(), text.lower()
+    return t == p or (t.startswith(p) and not t[len(p)].isalnum())
+
+
+def pick_igdb_series_name(query: str, results: list[dict]) -> str | None:
+    """Best canonical franchise/collection name from IGDB results for `query`.
+
+    Prefers an exact (case-insensitive) match, then a result that is a word-prefix
+    of the query (the franchise the series belongs to — longest wins), then the
+    highest-similarity name at or above the confidence threshold, else None. Pure.
+    """
+    q = (query or "").strip().lower()
+    names = [r["name"] for r in results if isinstance(r, dict) and r.get("name")]
+    if not q or not names:
+        return None
+    for name in names:
+        if name.lower() == q:
+            return name
+    prefixes = [name for name in names if _is_word_prefix(name, q)]
+    if prefixes:
+        return max(prefixes, key=len)
+    best, best_score = None, 0.0
+    for name in names:
+        score = difflib.SequenceMatcher(None, q, name.lower()).ratio()
+        if score > best_score:
+            best, best_score = name, score
+    return best if best_score >= _IGDB_NAME_MATCH_THRESHOLD else None
+
+
+@app.route('/api/series/igdb-suggest')
+def api_series_igdb_suggest():
+    """Suggest the canonical franchise/collection name for a series name via IGDB.
+
+    GET ?name=... -> {"suggestion": <name or null>}. Best-effort: returns
+    {"suggestion": null} when IGDB is unconfigured or nothing matches.
+    """
+    from fetch_covers import get_access_token
+    import requests
+
+    name = (request.args.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+
+    client_id, client_secret = get_twitch_credentials()
+    if not client_id or not client_secret:
+        return jsonify({'suggestion': None})
+
+    try:
+        access_token = get_access_token(client_id, client_secret)
+        headers = {'Client-ID': client_id, 'Authorization': f'Bearer {access_token}',
+                   'Content-Type': 'text/plain'}
+        query = f'search "{name.replace(chr(34), "")}"; fields name; limit 5;'
+        results = []
+        for endpoint in ('franchises', 'collections'):
+            resp = requests.post(f'https://api.igdb.com/v4/{endpoint}',
+                                 headers=headers, data=query, timeout=10)
+            if resp.ok:
+                results.extend(resp.json())
+        return jsonify({'suggestion': pick_igdb_series_name(name, results)})
+    except requests.RequestException as e:
+        log.warning("igdb-suggest failed for %r: %s", name, e)
+        return jsonify({'suggestion': None})
 
 
 @app.route('/api/series/<int:series_id>/sort-by-release', methods=['POST'])
