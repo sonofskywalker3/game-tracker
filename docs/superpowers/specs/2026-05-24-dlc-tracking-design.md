@@ -83,11 +83,18 @@ per-DLC checkbox state).
 New module **`igdb_dlc.py`** with three concerns, the pure ones unit-tested and the
 network one isolated/mockable:
 
-1. **Fetch** (`fetch_game_dlc(igdb_id_or_title, client_id, token) -> list[dict]`,
-   network): reuse `fetch_covers.get_access_token` for auth (no duplicated token
-   logic). Resolve the game's IGDB id when not already stored (reuse the existing
-   title search, store on `games.igdb_id`), then query
-   `fields name, dlcs.name, expansions.name, standalone_expansions.name; where id = <igdb_id>;`.
+1. **Fetch** (`fetch_game_dlc(...) -> dict`, network): reuse
+   `fetch_covers.get_access_token` for auth (no duplicated token logic). Resolve
+   the game's IGDB id, then query
+   `fields name, cover.url, dlcs.name, expansions.name, standalone_expansions.name; where id = <igdb_id>;`.
+   Resolution has two paths:
+   - **By title** (auto, during import): reuse the existing title search; store the
+     top match on `games.igdb_id`. Best-effort (may mis-match — see "Pinning the
+     IGDB identity").
+   - **By slug** (manual correction): when an IGDB game URL is supplied, query
+     `where slug = "<slug>"; fields ...;` to resolve the exact game.
+   The cover URL is formatted with the existing `t_thumb`→`t_cover_big` /
+   `https:`-prefix rule (`app.py:1086-1088`).
 2. **Parse** (`parse_dlc_payload(igdb_game: dict) -> list[dict]`, pure): flatten
    `dlcs` + `expansions` + `standalone_expansions` into
    `{name, igdb_id, kind}` dicts. `kind='expansion'` for expansions/standalone
@@ -122,9 +129,28 @@ they never abort an import. All fetched DLC starts `owned = 0`.
   `(game_id, name)` already exists, return the existing row (200, no duplicate
   created).
 - `DELETE /api/dlc/<dlc_id>` — remove an entry; returns `{ok}`.
-- `POST /api/games/<id>/dlc/refresh` — re-fetch from IGDB, merge, return the
-  updated `dlc` list and `{added, existing}`. Network-dependent; on failure returns
-  a JSON error with a non-500 status the UI can surface.
+- `POST /api/games/<id>/dlc/refresh` — re-fetch from IGDB using the stored
+  `games.igdb_id` (or by title if unset), merge, return the updated `dlc` list and
+  `{added, existing}`. Network-dependent; on failure returns a JSON error with a
+  non-500 status the UI can surface.
+- `POST /api/games/<id>/igdb` body `{url}` — **pin the IGDB identity**. Parse the
+  slug from an `igdb.com/games/<slug>` URL, resolve the exact game via IGDB, then
+  set `games.igdb_id`, update `cover_url` from IGDB, and merge its DLC. Returns the
+  updated game (incl. `cover_url`) + `dlc` list. Rejects (400) a URL that isn't an
+  IGDB game URL.
+
+## Pinning the IGDB identity (cover + DLC)
+
+Auto title-resolution is best-effort and can match the wrong IGDB game, which would
+show the wrong cover *and* the wrong DLC. The correction is a single user action:
+paste the game's IGDB page URL (`https://www.igdb.com/games/<slug>`) into the
+existing **Cover Art URL** field. On Save, the frontend detects an IGDB game URL
+(regex on host `igdb.com` + path `/games/<slug>`) and routes it to
+`POST /api/games/<id>/igdb` (which pins `igdb_id`, refreshes the cover, and
+re-fetches DLC); any other value is treated as a literal cover image URL via the
+existing `PUT /api/games/<id> {cover_url}` path, exactly as today. The field's
+placeholder/help text is updated to mention this. This one field thus corrects
+identity for both cover art and DLC; there is no separate "add the game" control.
 
 ## UI — DLC tab in the game modal
 
@@ -134,7 +160,10 @@ strip and two panels:
 - Tab strip: **`Details | DLC (owned/total)`** — the count comes from the `dlc`
   array; `DLC (0)` when empty. Clicking toggles which panel shows (client-side
   only; no reload).
-- **Details** panel = today's modal content unchanged.
+- **Details** panel = today's modal content, with one change: the **Cover Art URL**
+  field's Save now smart-routes an `igdb.com/games/<slug>` URL to
+  `POST /api/games/<id>/igdb` (pins identity + cover + DLC); any other value is a
+  literal cover URL as today. Placeholder/help text updated to say so.
 - **DLC** panel: a checklist; each row `[checkbox owned] Name  <kind badge>`. The
   checkbox calls `POST /api/dlc/<id>/owned` on change (same inline-save UX as other
   fields). A **"Refresh from IGDB"** button calls the refresh endpoint and
@@ -158,6 +187,10 @@ API (temp-DB `client` fixture, IGDB mocked):
 - `GET /api/games/<id>` includes the `dlc` array.
 - toggle owned; add manual (and duplicate no-ops); delete; refresh (monkeypatch the
   `igdb_dlc` fetch to return a fixed payload) merges and returns the list.
+- `POST /api/games/<id>/igdb` with an IGDB game URL (fetch mocked): sets
+  `games.igdb_id`, updates `cover_url`, and populates `dlc`. A non-IGDB URL → 400.
+- slug parse helper: `https://www.igdb.com/games/elden-ring` → `elden-ring`;
+  a raw image URL / non-IGDB URL → None (so the UI routes it to the cover path).
 
 Import integration (temp DB, IGDB fetch mocked):
 - importing a game runs enrichment and populates `dlc`; a second import skips the
