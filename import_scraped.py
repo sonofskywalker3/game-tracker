@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+import bundles
 import models
 
 logger = logging.getLogger(__name__)
@@ -170,6 +171,7 @@ class ImportStats:
     ratings_created: int = 0
     skipped_non_games: int = 0
     skipped_excluded: int = 0
+    bundles_expanded: int = 0
     platforms_created: list[tuple[str, str]] = field(default_factory=list)
     fuzzy_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
@@ -184,6 +186,7 @@ class ImportStats:
         self.ratings_created += other.ratings_created
         self.skipped_non_games += other.skipped_non_games
         self.skipped_excluded += other.skipped_excluded
+        self.bundles_expanded += other.bundles_expanded
         self.platforms_created += other.platforms_created
         self.fuzzy_candidates += other.fuzzy_candidates
 
@@ -293,41 +296,125 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
         if is_excluded(source, game.get("external_id"), game["title"]):
             stats.skipped_excluded += 1
             continue
-        m = resolve_game(conn, source, game.get("external_id"), game["title"])
-        is_new = False
+        constituents = bundles.expand_bundle(source, game.get("external_id"))
+        if constituents is not None:
+            # Owning the bundle = owning its games; import each, never the phantom.
+            stats.bundles_expanded += 1
+            for title in constituents:
+                _import_one(conn, _constituent_game(game, title, source), source, stats,
+                            batch_new_keys, dry_run=dry_run, confirm_fn=confirm_fn)
+            continue
+        _import_one(conn, game, source, stats, batch_new_keys,
+                    dry_run=dry_run, confirm_fn=confirm_fn)
+    return stats
 
-        if m.method == "external_id":
-            stats.external_id_matches += 1
+
+def _constituent_game(bundle_game: dict, title: str, source: str) -> dict:
+    """Synthesize a scraped-game dict for one constituent of a bundle.
+
+    Inherits the bundle's platform; carries no external id (the constituent is
+    identified by title, and the bundle's own id is intentionally dropped).
+    """
+    return {"title": title, "platform": bundle_game.get("platform"), "source": source,
+            "external_id": None, "cover_url": None, "source_title": title}
+
+
+def _import_one(conn: sqlite3.Connection, game: dict, source: str, stats: ImportStats,
+                batch_new_keys: set[str], *, dry_run: bool,
+                confirm_fn: Callable[[str, str, float], bool]) -> None:
+    """Reconcile a single scraped game through the match cascade (mutates stats)."""
+    m = resolve_game(conn, source, game.get("external_id"), game["title"])
+    is_new = False
+
+    if m.method == "external_id":
+        stats.external_id_matches += 1
+        game_id = m.game_id
+    elif m.method == "title":
+        stats.title_matches += 1
+        game_id = m.game_id
+    elif m.method == "fuzzy":
+        stats.fuzzy_candidates.append((game["title"], m.matched_title, round(m.score, 3)))
+        if dry_run:
+            return
+        if confirm_fn(game["title"], m.matched_title, m.score):
+            stats.fuzzy_confirmed += 1
             game_id = m.game_id
-        elif m.method == "title":
-            stats.title_matches += 1
-            game_id = m.game_id
-        elif m.method == "fuzzy":
-            stats.fuzzy_candidates.append((game["title"], m.matched_title, round(m.score, 3)))
-            if dry_run:
-                continue
-            if confirm_fn(game["title"], m.matched_title, m.score):
-                stats.fuzzy_confirmed += 1
-                game_id = m.game_id
-            else:
-                stats.fuzzy_rejected += 1
-                stats.new_games += 1
-                is_new = True
-                game_id = _create_game(conn, game)
-                batch_new_keys.add(match_key(game["title"]))
-        else:  # new
-            key = match_key(game["title"])
-            if dry_run and key in batch_new_keys:
-                # A real run would unify this with the earlier same-batch new game.
-                stats.title_matches += 1
-                continue
-            batch_new_keys.add(key)
+        else:
+            stats.fuzzy_rejected += 1
             stats.new_games += 1
             is_new = True
-            game_id = None if dry_run else _create_game(conn, game)
+            game_id = _create_game(conn, game)
+            batch_new_keys.add(match_key(game["title"]))
+    else:  # new
+        key = match_key(game["title"])
+        if dry_run and key in batch_new_keys:
+            # A real run would unify this with the earlier same-batch new game.
+            stats.title_matches += 1
+            return
+        batch_new_keys.add(key)
+        stats.new_games += 1
+        is_new = True
+        game_id = None if dry_run else _create_game(conn, game)
 
-        _apply_or_plan(conn, game_id, game, source, stats, dry_run=dry_run, is_new=is_new)
-    return stats
+    _apply_or_plan(conn, game_id, game, source, stats, dry_run=dry_run, is_new=is_new)
+
+
+# Curation fields whose listed values mean "untouched by the user" (uncurated).
+_DEFAULT_CURATION = {
+    "status": ("backlog", "", None), "rating": (None,), "notes": ("", None),
+    "series_id": (None,), "started_at": (None,), "completed_at": (None,),
+    "sort_order": (None,), "hours_played": (0, 0.0, None), "priority": (5, None),
+}
+
+
+def _is_curated(conn: sqlite3.Connection, game_id: int) -> bool:
+    """True if the user has touched this row (any curation field off its default)."""
+    row = conn.execute(
+        "SELECT status, rating, notes, series_id, started_at, completed_at, "
+        "sort_order, hours_played, priority FROM user_ratings WHERE game_id = ?",
+        (game_id,)).fetchone()
+    if not row:
+        return False
+    return any(row[field] not in defaults for field, defaults in _DEFAULT_CURATION.items())
+
+
+def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
+                    confirm_fn: Callable[[str, str, float], bool] = _safe_auto_confirm
+                    ) -> list[dict]:
+    """One-time pass: expand every known bundle that exists in the DB as a phantom.
+
+    For each mapped (source, external_id) present: ensure its constituents exist
+    and are owned on the bundle's platform(s), then delete the phantom row IF it
+    carries no user curation (curated rows are kept and reported for manual
+    handling). Honors dry_run (writes nothing). Returns a per-bundle report.
+    """
+    results: list[dict] = []
+    for (source, external_id), constituents in bundles.BUNDLE_CONTENTS.items():
+        row = conn.execute(
+            "SELECT game_id FROM game_external_ids WHERE source = ? AND external_id = ?",
+            (source, external_id)).fetchone()
+        if not row:
+            continue
+        bundle_id = row[0]
+        bundle = conn.execute("SELECT title FROM games WHERE id = ?", (bundle_id,)).fetchone()
+        if not bundle:
+            continue
+        platforms = [r[0] for r in conn.execute(
+            "SELECT p.short_name FROM game_platforms gp JOIN platforms p ON p.id = gp.platform_id "
+            "WHERE gp.game_id = ?", (bundle_id,))] or [None]
+        synth = [_constituent_game({"platform": pf}, title, source)
+                 for title in constituents for pf in platforms]
+        stats = import_games(conn, synth, source, dry_run=dry_run, confirm_fn=confirm_fn)
+        curated = _is_curated(conn, bundle_id)
+        if not curated and not dry_run:
+            conn.execute("DELETE FROM games WHERE id = ?", (bundle_id,))
+        results.append({"bundle_id": bundle_id, "title": bundle[0],
+                        "source": source, "external_id": external_id,
+                        "action": "kept_curated" if curated else "deleted",
+                        "constituents_created": stats.new_games})
+    if not dry_run:
+        conn.commit()
+    return results
 
 
 def _iter_json_paths(paths: Sequence[str]) -> Iterator[Path]:
@@ -352,6 +439,8 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
         logger.info("skipped non-games:  %d", total.skipped_non_games)
     if total.skipped_excluded:
         logger.info("skipped excluded:   %d", total.skipped_excluded)
+    if total.bundles_expanded:
+        logger.info("bundles expanded:   %d", total.bundles_expanded)
     if total.fuzzy_confirmed or total.fuzzy_rejected:
         logger.info("fuzzy merged/new:   %d / %d", total.fuzzy_confirmed, total.fuzzy_rejected)
     if total.platforms_created:
@@ -365,8 +454,10 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
 def main(argv: Optional[Sequence[str]] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Import scraped library JSON into games.db")
-    parser.add_argument("paths", nargs="+", help="JSON files or a directory of them (e.g. scraped)")
+    parser.add_argument("paths", nargs="*", help="JSON files or a directory of them (e.g. scraped)")
     parser.add_argument("--dry-run", action="store_true", help="preview changes; write nothing")
+    parser.add_argument("--cleanup-bundles", action="store_true",
+                        help="expand known phantom bundles already in the DB, then exit")
     parser.add_argument("--accept-fuzzy", action="store_true",
                         help="auto-confirm ALL fuzzy matches")
     parser.add_argument("--auto-fuzzy", action="store_true",
@@ -377,6 +468,20 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
     conn = models.get_db()
+
+    if args.cleanup_bundles:
+        report = cleanup_bundles(conn, dry_run=args.dry_run)
+        for r in report:
+            logger.info("%s: %s (+%d constituents) [%s]", r["title"], r["action"],
+                        r["constituents_created"], f"{r['source']}/{r['external_id']}")
+        logger.info("DRY RUN — no changes written." if args.dry_run
+                    else "bundles processed: %d" % len(report))
+        conn.close()
+        return
+
+    if not args.paths:
+        parser.error("paths are required unless --cleanup-bundles is given")
+
     if args.accept_fuzzy:
         confirm = _auto_confirm
     elif args.auto_fuzzy:
