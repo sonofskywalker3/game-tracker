@@ -5,6 +5,7 @@ import difflib
 import logging
 import sqlite3
 from collections import Counter
+import requests
 import dedup
 import import_scraped
 from flask import Flask, render_template, request, jsonify
@@ -344,6 +345,75 @@ def api_delete_dlc(dlc_id):
     if not found:
         return jsonify({'error': 'DLC not found'}), 404
     return jsonify({'ok': True})
+
+
+@app.route('/api/games/<int:game_id>/dlc/refresh', methods=['POST'])
+def api_refresh_dlc(game_id):
+    """Re-fetch a game's DLC from IGDB (by stored id, or by title if unset)."""
+    import config
+    import igdb_dlc
+    conn = get_db()
+    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    client_id, secret = config.get_twitch_credentials()
+    if not client_id:
+        conn.close()
+        return jsonify({'error': 'IGDB credentials not configured'}), 400
+    try:
+        token = igdb_dlc.get_access_token(client_id, secret)
+        report = igdb_dlc.enrich_game(conn, game_id, client_id, token)
+        conn.commit()
+    except requests.RequestException as exc:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'IGDB request failed: {exc}'}), 502
+    dlc = conn.execute(
+        "SELECT id, name, kind, owned, source FROM dlc WHERE game_id = ? ORDER BY kind, name",
+        (game_id,)).fetchall()
+    conn.close()
+    return jsonify({'dlc': [{**dict(d), 'owned': bool(d['owned'])} for d in dlc],
+                    'report': report})
+
+
+@app.route('/api/games/<int:game_id>/igdb', methods=['POST'])
+def api_pin_igdb(game_id):
+    """Pin a game's IGDB identity from an igdb.com/games/<slug> URL: sets igdb_id,
+    refreshes the cover, and re-fetches DLC."""
+    import config
+    import igdb_dlc
+    data = request.get_json(silent=True) or {}
+    slug = igdb_dlc.slug_from_igdb_url((data.get('url') or '').strip())
+    if not slug:
+        return jsonify({'error': 'Not an IGDB game URL'}), 400
+    conn = get_db()
+    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    client_id, secret = config.get_twitch_credentials()
+    if not client_id:
+        conn.close()
+        return jsonify({'error': 'IGDB credentials not configured'}), 400
+    try:
+        token = igdb_dlc.get_access_token(client_id, secret)
+        report = igdb_dlc.enrich_game(conn, game_id, client_id, token, slug=slug)
+        conn.commit()
+    except requests.RequestException as exc:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'IGDB request failed: {exc}'}), 502
+    if not report['matched']:
+        conn.close()
+        return jsonify({'error': 'No IGDB game found for that URL'}), 404
+    game = conn.execute(
+        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+    dlc = conn.execute(
+        "SELECT id, name, kind, owned, source FROM dlc WHERE game_id = ? ORDER BY kind, name",
+        (game_id,)).fetchall()
+    conn.close()
+    return jsonify({'game': dict(game),
+                    'dlc': [{**dict(d), 'owned': bool(d['owned'])} for d in dlc],
+                    'report': report})
 
 
 @app.route('/api/games/<int:game_id>', methods=['PUT'])

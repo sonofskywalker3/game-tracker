@@ -386,3 +386,60 @@ def test_delete_dlc(client, temp_db):
     assert conn.execute("SELECT COUNT(*) FROM dlc WHERE id=?", (did,)).fetchone()[0] == 0
     conn.close()
     assert client.delete(f"/api/dlc/{did}").status_code == 404
+
+
+def test_refresh_dlc_from_igdb(client, temp_db, monkeypatch):
+    import config, igdb_dlc, fetch_covers, models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit(); conn.close()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: [{"id": 7, "name": "G", "dlcs": [{"id": 1, "name": "P"}]}])
+    resp = client.post(f"/api/games/{gid}/dlc/refresh")
+    assert resp.status_code == 200
+    names = [d["name"] for d in resp.get_json()["dlc"]]
+    assert names == ["P"]
+
+
+def test_refresh_dlc_without_credentials_400(client, temp_db, monkeypatch):
+    import config, models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit(); conn.close()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: (None, None))
+    assert client.post(f"/api/games/{gid}/dlc/refresh").status_code == 400
+
+
+def test_pin_igdb_identity_sets_cover_and_dlc(client, temp_db, monkeypatch):
+    import config, igdb_dlc, fetch_covers, models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit(); conn.close()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: [{"id": 50, "name": "G", "slug": "g",
+                                          "cover": {"url": "//img/t_thumb/co.jpg"},
+                                          "expansions": [{"id": 2, "name": "Exp"}]}])
+    resp = client.post(f"/api/games/{gid}/igdb",
+                       json={"url": "https://www.igdb.com/games/g"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["game"]["igdb_id"] == 50
+    assert data["game"]["cover_url"] == "https://img/t_cover_big/co.jpg"
+    assert [d["name"] for d in data["dlc"]] == ["Exp"]
+
+
+def test_pin_igdb_rejects_non_igdb_url(client, temp_db):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit(); conn.close()
+    assert client.post(f"/api/games/{gid}/igdb",
+                       json={"url": "https://example.com/x.png"}).status_code == 400
