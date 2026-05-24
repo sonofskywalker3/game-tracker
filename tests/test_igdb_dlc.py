@@ -1,4 +1,5 @@
 import igdb_dlc
+import models
 
 
 def test_parse_flattens_dlcs_and_expansions_with_kind():
@@ -47,9 +48,6 @@ def test_format_cover_url():
     assert igdb_dlc.format_cover_url("https://x/t_thumb/co.jpg") == "https://x/t_cover_big/co.jpg"
     assert igdb_dlc.format_cover_url(None) is None
     assert igdb_dlc.format_cover_url("") is None
-
-
-import models
 
 
 def _game(conn, title="Base"):
