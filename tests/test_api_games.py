@@ -342,3 +342,47 @@ def test_get_game_includes_dlc(client, temp_db):
     data = resp.get_json()
     assert data["dlc"] == [{"id": data["dlc"][0]["id"], "name": "Pack A",
                             "kind": "dlc", "owned": True, "source": "igdb"}]
+
+
+def _make_game_with_dlc(name="Pack A"):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.execute("INSERT INTO dlc (game_id, name, source) VALUES (?, ?, 'igdb')", (gid, name))
+    did = conn.execute("SELECT id FROM dlc WHERE game_id=?", (gid,)).fetchone()[0]
+    conn.commit()
+    conn.close()
+    return gid, did
+
+
+def test_toggle_dlc_owned(client, temp_db):
+    gid, did = _make_game_with_dlc()
+    resp = client.post(f"/api/dlc/{did}/owned", json={"owned": True})
+    assert resp.status_code == 200 and resp.get_json()["owned"] is True
+    import models
+    conn = models.get_db()
+    assert conn.execute("SELECT owned FROM dlc WHERE id=?", (did,)).fetchone()[0] == 1
+    conn.close()
+    assert client.post("/api/dlc/99999/owned", json={"owned": True}).status_code == 404
+
+
+def test_add_manual_dlc_and_duplicate_noop(client, temp_db):
+    gid, _ = _make_game_with_dlc()
+    resp = client.post(f"/api/games/{gid}/dlc", json={"name": "Manual X"})
+    assert resp.status_code == 201
+    row = resp.get_json()
+    assert row["name"] == "Manual X" and row["source"] == "manual"
+    resp2 = client.post(f"/api/games/{gid}/dlc", json={"name": "Manual X"})
+    assert resp2.status_code == 200 and resp2.get_json()["id"] == row["id"]
+    assert client.post(f"/api/games/{gid}/dlc", json={"name": "  "}).status_code == 400
+
+
+def test_delete_dlc(client, temp_db):
+    gid, did = _make_game_with_dlc()
+    assert client.delete(f"/api/dlc/{did}").status_code == 200
+    import models
+    conn = models.get_db()
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE id=?", (did,)).fetchone()[0] == 0
+    conn.close()
+    assert client.delete(f"/api/dlc/{did}").status_code == 404

@@ -290,6 +290,62 @@ def api_game(game_id):
     return jsonify(result)
 
 
+@app.route('/api/dlc/<int:dlc_id>/owned', methods=['POST'])
+def api_set_dlc_owned(dlc_id):
+    """Toggle ownership of a DLC entry."""
+    data = request.get_json(silent=True) or {}
+    owned = 1 if data.get('owned') else 0
+    conn = get_db()
+    cur = conn.execute("UPDATE dlc SET owned = ? WHERE id = ?", (owned, dlc_id))
+    conn.commit()
+    found = cur.rowcount > 0
+    conn.close()
+    if not found:
+        return jsonify({'error': 'DLC not found'}), 404
+    return jsonify({'ok': True, 'owned': bool(owned)})
+
+
+@app.route('/api/games/<int:game_id>/dlc', methods=['POST'])
+def api_add_dlc(game_id):
+    """Add a manual DLC entry; returns the existing row if the name is a dup."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    kind = data.get('kind') or 'dlc'
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    conn = get_db()
+    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    existing = conn.execute(
+        "SELECT id, name, kind, owned, source FROM dlc WHERE game_id = ? AND name = ?",
+        (game_id, name)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({**dict(existing), 'owned': bool(existing['owned'])})
+    cur = conn.execute(
+        "INSERT INTO dlc (game_id, name, kind, source) VALUES (?, ?, ?, 'manual')",
+        (game_id, name, kind))
+    conn.commit()
+    new = conn.execute(
+        "SELECT id, name, kind, owned, source FROM dlc WHERE id = ?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return jsonify({**dict(new), 'owned': bool(new['owned'])}), 201
+
+
+@app.route('/api/dlc/<int:dlc_id>', methods=['DELETE'])
+def api_delete_dlc(dlc_id):
+    """Delete a DLC entry (manual or IGDB-sourced)."""
+    conn = get_db()
+    cur = conn.execute("DELETE FROM dlc WHERE id = ?", (dlc_id,))
+    conn.commit()
+    found = cur.rowcount > 0
+    conn.close()
+    if not found:
+        return jsonify({'error': 'DLC not found'}), 404
+    return jsonify({'ok': True})
+
+
 @app.route('/api/games/<int:game_id>', methods=['PUT'])
 def api_update_game(game_id):
     """Update game rating, status, priority, title, cover_url, etc."""
