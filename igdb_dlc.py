@@ -60,3 +60,24 @@ def format_cover_url(raw: str | None) -> str | None:
     if not url.startswith("http"):
         url = "https:" + url
     return url
+
+
+def merge_dlc(conn: sqlite3.Connection, game_id: int, parsed: list[dict]) -> dict:
+    """Insert any parsed DLC not already present for the game (by name).
+
+    Never updates existing rows, so `owned` and manual entries are preserved.
+    Returns {"added", "existing"}.
+    """
+    added = existing = 0
+    for d in parsed:
+        present = conn.execute(
+            "SELECT 1 FROM dlc WHERE game_id = ? AND name = ?", (game_id, d["name"])).fetchone()
+        if present:
+            existing += 1
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO dlc (game_id, name, igdb_id, kind, source) "
+            "VALUES (?, ?, ?, ?, 'igdb')",
+            (game_id, d["name"], d.get("igdb_id"), d.get("kind", "dlc")))
+        added += 1
+    return {"added": added, "existing": existing}
