@@ -75,6 +75,7 @@ def init_db():
             cover_url TEXT,
             metacritic_score INTEGER,
             opencritic_score INTEGER,
+            igdb_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(normalized_title)
@@ -169,6 +170,21 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_tags_game ON game_tags(game_id);
         CREATE INDEX IF NOT EXISTS idx_game_tags_tag ON game_tags(tag_id);
         CREATE INDEX IF NOT EXISTS idx_game_external_ids_game ON game_external_ids(game_id);
+
+        -- DLC / expansions for a game (child rows; checkbox ownership)
+        CREATE TABLE IF NOT EXISTS dlc (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id    INTEGER NOT NULL,
+            name       TEXT    NOT NULL,
+            igdb_id    INTEGER,
+            kind       TEXT    DEFAULT 'dlc',
+            owned      INTEGER DEFAULT 0,
+            source     TEXT    DEFAULT 'igdb',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (game_id, name),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_dlc_game ON dlc(game_id);
     """)
 
     # Insert default platforms
@@ -403,6 +419,29 @@ def migrate_not_duplicates(conn):
     conn.commit()
 
 
+def migrate_dlc(conn: sqlite3.Connection) -> None:
+    """Add the dlc child table and games.igdb_id column if missing (idempotent)."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)")]
+    if "igdb_id" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN igdb_id INTEGER")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dlc (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id    INTEGER NOT NULL,
+            name       TEXT    NOT NULL,
+            igdb_id    INTEGER,
+            kind       TEXT    DEFAULT 'dlc',
+            owned      INTEGER DEFAULT 0,
+            source     TEXT    DEFAULT 'igdb',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (game_id, name),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dlc_game ON dlc(game_id)")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -445,6 +484,9 @@ def migrate_db():
 
     # Add the not-duplicates table (dedup workstream)
     migrate_not_duplicates(conn)
+
+    # Add the dlc table + games.igdb_id (DLC tracking)
+    migrate_dlc(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
     # symbols, leading region tags, edition suffixes, etc.). Display-only:
