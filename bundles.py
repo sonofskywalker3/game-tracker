@@ -28,6 +28,23 @@ BUNDLE_CONTENTS: dict[tuple[str, str], tuple[str, ...]] = {
     # "Frozen Hearth" is DLC and is intentionally dropped.
     ("xbox", "9P6KBLVP8V3G"): ("Nobody Saves the World",),
     ("xbox", "C4DQHRNN1ZN5"): ("Borderlands 2", "Borderlands: The Pre-Sequel"),
+    # --- user-curated additions ---
+    ("xbox", "BRW49CBS558D"): ("Batman: Arkham Asylum", "Batman: Arkham City"),
+    ("xbox", "C4HB1XWT02DK"): (
+        "Assassin's Creed Chronicles: China",
+        "Assassin's Creed Chronicles: India",
+        "Assassin's Creed Chronicles: Russia",
+    ),
+    ("xbox", "9NZJGLTJX1J1"): (
+        "Borderlands", "Borderlands 2", "Borderlands: The Pre-Sequel", "Borderlands 3",
+    ),
+    ("nintendo", "70070000014049"): ("Deponia", "Chaos on Deponia", "Goodbye Deponia"),
+    # FF I-VI Pixel Remaster: the plain titles match the existing FF I-VI rows
+    # (one row per playable game), so this links them rather than creating dupes.
+    ("nintendo", "70070000017105"): (
+        "Final Fantasy", "Final Fantasy II", "Final Fantasy III",
+        "Final Fantasy IV", "Final Fantasy V", "Final Fantasy VI",
+    ),
 }
 
 
