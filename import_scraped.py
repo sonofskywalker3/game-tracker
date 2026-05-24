@@ -438,6 +438,24 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
                     conn.execute(
                         "INSERT OR IGNORE INTO user_ratings (game_id, status) VALUES (?, ?)",
                         (cid, DEFAULT_STATUS))
+
+    if row["series_id"] is not None:
+        order = conn.execute(
+            "SELECT MAX(series_order) FROM user_ratings WHERE series_id = ?",
+            (row["series_id"],)).fetchone()[0] or 0
+        for cid in constituent_ids:
+            cur = conn.execute("SELECT series_id FROM user_ratings WHERE game_id = ?",
+                               (cid,)).fetchone()
+            if cur is None or cur["series_id"] is None:
+                order += 1
+                report["series_to"].append(cid)
+                if not dry_run:
+                    conn.execute(
+                        "INSERT INTO user_ratings (game_id, series_id, series_order) "
+                        "VALUES (?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET "
+                        "series_id = excluded.series_id, series_order = excluded.series_order, "
+                        "updated_at = CURRENT_TIMESTAMP",
+                        (cid, row["series_id"], order))
     return report
 
 
