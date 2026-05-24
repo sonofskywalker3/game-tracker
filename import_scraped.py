@@ -432,12 +432,6 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
                         "status = excluded.status, started_at = excluded.started_at, "
                         "completed_at = excluded.completed_at, updated_at = CURRENT_TIMESTAMP",
                         (cid, row["status"], row["started_at"], row["completed_at"]))
-                else:
-                    # Dry-run: ensure a baseline user_ratings row exists so
-                    # callers can query the current (unchanged) status.
-                    conn.execute(
-                        "INSERT OR IGNORE INTO user_ratings (game_id, status) VALUES (?, ?)",
-                        (cid, DEFAULT_STATUS))
 
     if row["series_id"] is not None:
         order = conn.execute(

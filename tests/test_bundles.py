@@ -210,6 +210,10 @@ def test_migrate_ambiguous_rating_migrates_nothing(temp_db):
 def test_migrate_status_dry_run_writes_nothing(temp_db):
     conn = models.get_db()
     _insert(conn, "Pikmin 1")
+    # The constituent already has a backlog rating row (as import_games would
+    # create); a dry-run migrate must leave it untouched and write nothing.
+    p1 = conn.execute("SELECT id FROM games WHERE title='Pikmin 1'").fetchone()[0]
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (p1,))
     conn.commit()
     bid = _curated_phantom(conn, status="completed")
     ids = imp._resolve_constituent_ids(conn, ("Pikmin 1",))
