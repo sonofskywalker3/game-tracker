@@ -245,7 +245,7 @@ Expected: FAIL (`AttributeError: module 'scrape_service' has no attribute '_run_
 
 - [ ] **Step 3: Implement `_run_pipeline`**
 
-Append to `scrape_service.py`:
+First add `from dataclasses import asdict` to the stdlib import group at the top of `scrape_service.py` (after `import threading`). Then append to `scrape_service.py`:
 
 ```python
 def _run_pipeline(conn, vendor: str, games) -> dict:
@@ -399,7 +399,7 @@ Expected: FAIL (`AttributeError: ... has no attribute 'start'`).
 
 - [ ] **Step 3: Implement the runner and public API**
 
-Append to `scrape_service.py`:
+First add these imports at the top of `scrape_service.py` (after `import models`): `from scrape_libraries import SCRAPERS` and `from scrapers.base import capturing_browser, write_scrape`. Then append to `scrape_service.py`:
 
 ```python
 def start(vendor: str, *, browser_factory=None, collect=None) -> tuple[bool, str]:

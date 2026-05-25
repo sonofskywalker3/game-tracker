@@ -12,13 +12,10 @@ from __future__ import annotations
 import logging
 import shutil
 import threading
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 import models
-from scrape_libraries import SCRAPERS
-from scrapers.base import capturing_browser, write_scrape
 
 logger = logging.getLogger(__name__)
 
