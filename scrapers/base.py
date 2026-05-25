@@ -68,6 +68,7 @@ class ScrapedGame:
     cover_url: Optional[str] = None
     source_title: Optional[str] = None  # exact vendor title; defaults to title
     status_hint: Optional[str] = None
+    kind: str = "game"                  # "game" | "addon" (add-ons attach to a game's DLC)
 
     def __post_init__(self) -> None:
         if self.source_title is None:
