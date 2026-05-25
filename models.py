@@ -185,6 +185,18 @@ def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_dlc_game ON dlc(game_id);
+        -- Vendor add-on ids for DLC rows (one DLC may carry ids from several stores)
+        CREATE TABLE IF NOT EXISTS dlc_external_ids (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            dlc_id       INTEGER NOT NULL,
+            source       TEXT    NOT NULL,
+            external_id  TEXT    NOT NULL,
+            source_title TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (source, external_id),
+            FOREIGN KEY (dlc_id) REFERENCES dlc(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_dlc_ext_dlc ON dlc_external_ids(dlc_id);
     """)
 
     # Insert default platforms
@@ -442,6 +454,29 @@ def migrate_dlc(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_dlc_external_ids(conn: sqlite3.Connection) -> None:
+    """Create the dlc_external_ids table if missing. Idempotent.
+
+    One DLC carries many rows here (one per store); identity is
+    (source, external_id), so a re-scrape matches an owned add-on by its stable
+    vendor id and the per-game deep-fetch (later SPs) can reconcile owned rows to
+    catalogue rows by id."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS dlc_external_ids (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            dlc_id       INTEGER NOT NULL,
+            source       TEXT    NOT NULL,
+            external_id  TEXT    NOT NULL,
+            source_title TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (source, external_id),
+            FOREIGN KEY (dlc_id) REFERENCES dlc(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_dlc_ext_dlc ON dlc_external_ids(dlc_id);
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -487,6 +522,9 @@ def migrate_db():
 
     # Add the dlc table + games.igdb_id (DLC tracking)
     migrate_dlc(conn)
+
+    # Add the dlc_external_ids table (vendor add-on ids; DLC source-of-truth rework)
+    migrate_dlc_external_ids(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
     # symbols, leading region tags, edition suffixes, etc.). Display-only:
