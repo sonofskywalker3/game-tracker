@@ -969,7 +969,7 @@
 
         async function refreshDlc(gameId) {
             const res = await api.post(`/api/games/${gameId}/dlc/refresh`, {});
-            if (res && res.error) alert(res.error);
+            if (res && !res.ok) alert(res.data?.error || 'IGDB refresh failed');
             await loadGameModal(gameId);
             switchGameTab(gameId, 'dlc');
         }
@@ -1029,7 +1029,7 @@
             // An IGDB game URL pins identity (cover + DLC); anything else is a literal cover URL.
             if (/https?:\/\/(www\.)?igdb\.com\/games\//i.test(v)) {
                 const res = await api.post(`/api/games/${gameId}/igdb`, { url: v });
-                if (res && res.error) alert(res.error);
+                if (res && !res.ok) alert(res.data?.error || 'Could not resolve that IGDB URL');
             } else {
                 await api.put(`/api/games/${gameId}`, { cover_url: v });
             }
