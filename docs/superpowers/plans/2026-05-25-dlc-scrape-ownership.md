@@ -950,8 +950,11 @@ Expected: PASS.
 
 Run: `uv run pytest -q`
 Expected: PASS (all tests, including the previously-green suite).
-Run: `uv run ruff check . && uv run ruff format --check .`
-Expected: clean (fix any findings, then re-run).
+Run: `uv run ruff check .`
+Expected: "All checks passed!" (fix any findings, then re-run). NOTE: this repo's
+gate is `ruff check` (lint) only — it does NOT use `ruff format` (the codebase
+uses a hand-aligned style; `ruff format --check` reports ~34 pre-existing files
+and must NOT be run). Match the surrounding hand-aligned style in new code.
 
 - [ ] **Step 6: Commit**
 
