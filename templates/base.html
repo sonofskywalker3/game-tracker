@@ -144,6 +144,21 @@
                     <button onclick="addNewGame()" class="w-full px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
                         Add Game
                     </button>
+                    <div class="border-t border-gray-700 pt-4 mt-2">
+                        <div class="text-sm font-medium text-gray-400 mb-2">Or sync a whole library</div>
+                        <div id="scrape-vendors" class="flex gap-2">
+                            <button onclick="startScrape('playstation')" class="scrape-vendor-btn flex-1 px-3 py-2 bg-surface hover:bg-surface-lighter rounded-lg text-white text-sm transition-colors">PlayStation</button>
+                            <button onclick="startScrape('xbox')" class="scrape-vendor-btn flex-1 px-3 py-2 bg-surface hover:bg-surface-lighter rounded-lg text-white text-sm transition-colors">Xbox</button>
+                            <button onclick="startScrape('nintendo')" class="scrape-vendor-btn flex-1 px-3 py-2 bg-surface hover:bg-surface-lighter rounded-lg text-white text-sm transition-colors">Nintendo</button>
+                        </div>
+                        <div id="scrape-status" class="hidden mt-3 text-sm">
+                            <div id="scrape-message" class="text-gray-300"></div>
+                            <div id="scrape-actions" class="hidden mt-2 flex gap-2">
+                                <button onclick="continueScrape()" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded text-white text-sm">Continue</button>
+                                <button onclick="cancelScrape()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter rounded text-white text-sm">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1115,6 +1130,7 @@
             document.getElementById('igdb-results').classList.add('hidden');
             document.getElementById('add-game-error').classList.add('hidden');
             renderNewGamePlatforms();
+            refreshScrapeSection();
             document.getElementById('new-game-title').focus();
         }
 
@@ -1122,6 +1138,86 @@
             const modal = document.getElementById('add-game-modal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+        }
+
+        // ---- Scrape now (web-driven library sync) ----
+        let scrapePollInterval = null;
+        const SCRAPE_ACTIVE = ['launching', 'awaiting_login', 'scraping',
+                               'importing', 'enriching', 'matching'];
+
+        async function startScrape(vendor) {
+            const res = await api.post('/api/scrape/start', { vendor });
+            document.getElementById('scrape-status').classList.remove('hidden');
+            if (!res.ok) {
+                document.getElementById('scrape-message').textContent =
+                    (res.data && res.data.error) || 'Could not start scrape';
+                return;
+            }
+            setScrapeButtonsDisabled(true);
+            startScrapePolling();
+        }
+
+        async function continueScrape() {
+            await api.post('/api/scrape/continue', {});
+        }
+
+        async function cancelScrape() {
+            await api.post('/api/scrape/cancel', {});
+        }
+
+        function setScrapeButtonsDisabled(disabled) {
+            document.querySelectorAll('.scrape-vendor-btn').forEach(b => b.disabled = disabled);
+        }
+
+        function renderScrapeStatus(st) {
+            const msg = document.getElementById('scrape-message');
+            document.getElementById('scrape-actions').classList.toggle(
+                'hidden', st.phase !== 'awaiting_login');
+            if (st.phase === 'complete') {
+                const s = st.summary || {};
+                msg.textContent = `Done: +${s.new_games || 0} games, ` +
+                    `${s.owned_marked || 0} add-ons marked owned, ` +
+                    `${s.dlc_added || 0} DLC added. Refresh to see them.`;
+            } else if (st.phase === 'error') {
+                msg.textContent = 'Error: ' + (st.error || 'scrape failed');
+            } else if (st.phase === 'cancelled') {
+                msg.textContent = 'Cancelled.';
+            } else {
+                msg.textContent = st.message || st.phase;
+            }
+        }
+
+        function startScrapePolling() {
+            if (scrapePollInterval) return;
+            scrapePollInterval = setInterval(async () => {
+                const st = await api.get('/api/scrape/status');
+                renderScrapeStatus(st);
+                if (!SCRAPE_ACTIVE.includes(st.phase)) {
+                    clearInterval(scrapePollInterval);
+                    scrapePollInterval = null;
+                    setScrapeButtonsDisabled(false);
+                    if (st.phase === 'complete') {
+                        if (typeof refreshGameList === 'function') refreshGameList();
+                        if (typeof loadNavStats === 'function') loadNavStats();
+                    }
+                }
+            }, 1000);
+        }
+
+        function refreshScrapeSection() {
+            // On modal open: reflect an in-progress scrape, else reset the section.
+            api.get('/api/scrape/status').then(st => {
+                const statusEl = document.getElementById('scrape-status');
+                if (SCRAPE_ACTIVE.includes(st.phase)) {
+                    statusEl.classList.remove('hidden');
+                    setScrapeButtonsDisabled(true);
+                    renderScrapeStatus(st);
+                    startScrapePolling();
+                } else {
+                    statusEl.classList.add('hidden');
+                    setScrapeButtonsDisabled(false);
+                }
+            });
         }
 
         document.getElementById('add-game-modal').addEventListener('click', (e) => {
