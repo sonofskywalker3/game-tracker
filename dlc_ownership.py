@@ -8,8 +8,6 @@ row are reported, never inserted (the dlc list stays IGDB-curated). See
 from __future__ import annotations
 
 import logging
-import sqlite3
-from dataclasses import dataclass, field
 
 import models
 
