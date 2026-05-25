@@ -1580,4 +1580,8 @@ if __name__ == '__main__':
         # Run migrations for existing databases
         migrate_db()
 
-    app.run(debug=True, port=5000)
+    # use_reloader=False: the "scrape now" feature runs a long-lived background
+    # thread (browser -> import -> IGDB enrich -> ownership). The dev auto-reloader
+    # restarts the server whenever a .py file changes, which would kill that thread
+    # mid-run and reset the scrape to "idle". Keep debug error pages, drop the reloader.
+    app.run(debug=True, use_reloader=False, port=5000)
