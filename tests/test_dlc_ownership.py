@@ -181,3 +181,21 @@ def test_marked_items_for_result_list(temp_db):
     assert len(rep.marked_items) == 1
     assert rep.marked_items[0].dlc_id is not None
     conn.close()
+
+
+def test_create_collision_falls_back_to_reconcile(temp_db, monkeypatch):
+    conn = models.get_db()
+    gid = _seed(conn, dlc_names=("Bonus Pack",))  # existing igdb row, owned=0
+    conn.commit()
+    # Force the create branch to produce a name that collides with the existing row
+    # while the add-on remainder ("mystery") won't equality-match it (path b misses).
+    monkeypatch.setattr(own, "_clean_remainder", lambda addon, parent: "Bonus Pack")
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Mystery")])
+    conn.commit()
+    assert rep.created == 0 and rep.marked == 1 and rep.reconciled == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id=?", (gid,)).fetchone()[0] == 1
+    assert conn.execute("SELECT owned FROM dlc WHERE name='Bonus Pack'").fetchone()[0] == 1
+    ext = conn.execute(
+        "SELECT external_id FROM dlc_external_ids WHERE source='nintendo'").fetchone()
+    assert ext["external_id"] == "A1"
+    conn.close()

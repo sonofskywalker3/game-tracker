@@ -204,17 +204,29 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
             _flip(conn, report, match, title, parent, dry_run)
             continue
 
-        # (c) create a vendor-sourced owned row
-        report.created += 1
-        report.marked += 1
+        # (c) create a vendor-sourced owned row. A UNIQUE(game_id, name) collision
+        #     (a same-name row that equality-matching missed) is unreachable with
+        #     normal data, but would otherwise abort the whole pass mid-scrape, so
+        #     fall back to reconciling the existing row instead.
+        name = _clean_remainder(title, titles.get(parent, ""))
         if dry_run:
+            report.created += 1
+            report.marked += 1
             report.marked_items.append(Match(title, game_id=parent, reason="created"))
             continue
-        name = _clean_remainder(title, titles.get(parent, ""))
-        cur = conn.execute(
-            "INSERT INTO dlc (game_id, name, kind, owned, source) VALUES (?, ?, 'dlc', 1, ?)",
-            (parent, name, source or "vendor"))
+        try:
+            cur = conn.execute(
+                "INSERT INTO dlc (game_id, name, kind, owned, source) VALUES (?, ?, 'dlc', 1, ?)",
+                (parent, name, source or "vendor"))
+        except sqlite3.IntegrityError:
+            existing = conn.execute(
+                "SELECT id FROM dlc WHERE game_id = ? AND name = ?", (parent, name)).fetchone()
+            _record_ext_id(conn, existing[0], source, ext, source_title)
+            _flip(conn, report, existing[0], title, parent, dry_run)
+            continue
         new_id = cur.lastrowid
+        report.created += 1
+        report.marked += 1
         _record_ext_id(conn, new_id, source, ext, source_title)
         report.marked_items.append(Match(title, game_id=parent, dlc_id=new_id, reason="created"))
     return report

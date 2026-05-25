@@ -594,7 +594,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="skip scrape-driven DLC ownership matching after enrichment")
     args = parser.parse_args(argv)
 
-    models.migrate_db()  # ensure schema (incl. game_external_ids) is current
+    models.migrate_db()  # ensure schema (incl. game_external_ids, dlc_external_ids) is current
     conn = models.get_db()
 
     if args.cleanup_bundles:
