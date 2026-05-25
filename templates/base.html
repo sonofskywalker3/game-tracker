@@ -772,7 +772,18 @@
                         </div>
                     </div>
 
-                    <div class="mt-4 space-y-3">
+                    <div class="mt-3 flex gap-2 border-b border-gray-700" id="modal-tabs-${game.id}">
+                        <button type="button" data-tab="details"
+                            class="modal-tab px-3 py-2 text-sm border-b-2 border-accent text-white"
+                            onclick="switchGameTab(${game.id}, 'details')">Details</button>
+                        <button type="button" data-tab="dlc"
+                            class="modal-tab px-3 py-2 text-sm border-b-2 border-transparent text-gray-400"
+                            onclick="switchGameTab(${game.id}, 'dlc')">
+                            DLC (${(game.dlc || []).filter(d => d.owned).length}/${(game.dlc || []).length})
+                        </button>
+                    </div>
+
+                    <div id="tab-details-${game.id}" class="game-tab-panel mt-4 space-y-3">
                         <!-- Title (editable) -->
                         <div>
                             <label class="block text-sm font-medium text-gray-400 mb-1">Title</label>
@@ -785,7 +796,7 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-400 mb-1">Cover Art URL</label>
                             <div class="flex gap-2">
-                                <input type="text" id="cover-url-${game.id}" value="${coverUrl}" placeholder="https://..."
+                                <input type="text" id="cover-url-${game.id}" value="${coverUrl}" placeholder="https://… or an IGDB game URL"
                                        class="flex-1 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
                                 <button onclick="setCoverUrl(${game.id}, document.getElementById('cover-url-${game.id}').value)"
                                         class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm transition-colors">
@@ -802,6 +813,7 @@
                                     return links.join(' · ');
                                 })()}
                             </p>
+                            <p class="text-xs text-gray-500 mt-1">Tip: paste an IGDB game URL above to set the right cover + DLC.</p>
                         </div>
 
                         <!-- Status & Priority row -->
@@ -889,8 +901,77 @@
                             </button>
                         </div>
                     </div>
+
+                    <div id="tab-dlc-${game.id}" class="game-tab-panel hidden mt-4">
+                        ${renderDlcPanel(game)}
+                    </div>
                 </div>
             `;
+        }
+
+        function switchGameTab(gameId, tab) {
+            document.querySelectorAll(`#modal-tabs-${gameId} .modal-tab`).forEach(b => {
+                const on = b.dataset.tab === tab;
+                b.classList.toggle('border-accent', on);
+                b.classList.toggle('text-white', on);
+                b.classList.toggle('border-transparent', !on);
+                b.classList.toggle('text-gray-400', !on);
+            });
+            document.getElementById(`tab-details-${gameId}`).classList.toggle('hidden', tab !== 'details');
+            document.getElementById(`tab-dlc-${gameId}`).classList.toggle('hidden', tab !== 'dlc');
+        }
+
+        function renderDlcPanel(game) {
+            const dlc = game.dlc || [];
+            const rows = dlc.map(d => `
+                <label class="flex items-center gap-2 py-1 text-sm">
+                    <input type="checkbox" ${d.owned ? 'checked' : ''} class="accent-accent w-4 h-4"
+                        onchange="toggleDlcOwned(${game.id}, ${d.id}, this.checked)">
+                    <span class="flex-1 text-white">${d.name.replace(/</g, '&lt;')}</span>
+                    <span class="px-2 py-0.5 bg-surface rounded text-xs text-gray-400">${d.kind}</span>
+                    ${d.source === 'manual'
+                        ? `<button onclick="deleteDlc(${game.id}, ${d.id})" class="text-gray-500 hover:text-red-400">&times;</button>`
+                        : ''}
+                </label>`).join('');
+            return `
+                <div class="space-y-2">
+                    ${dlc.length ? rows : '<p class="text-sm text-gray-500">No DLC found — Refresh from IGDB or add manually.</p>'}
+                    <div class="flex gap-2 pt-2 border-t border-gray-700">
+                        <input id="dlc-add-${game.id}" type="text" placeholder="Add DLC name…"
+                            class="flex-1 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none"
+                            onkeypress="if(event.key==='Enter') addDlc(${game.id}, this.value)">
+                        <button onclick="addDlc(${game.id}, document.getElementById('dlc-add-${game.id}').value)"
+                            class="px-3 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Add</button>
+                        <button onclick="refreshDlc(${game.id})"
+                            class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Refresh from IGDB</button>
+                    </div>
+                </div>`;
+        }
+
+        async function toggleDlcOwned(gameId, dlcId, owned) {
+            await api.post(`/api/dlc/${dlcId}/owned`, { owned });
+            await loadGameModal(gameId);
+            switchGameTab(gameId, 'dlc');
+        }
+
+        async function addDlc(gameId, name) {
+            if (!name.trim()) return;
+            await api.post(`/api/games/${gameId}/dlc`, { name: name.trim() });
+            await loadGameModal(gameId);
+            switchGameTab(gameId, 'dlc');
+        }
+
+        async function deleteDlc(gameId, dlcId) {
+            await api.delete(`/api/dlc/${dlcId}`);
+            await loadGameModal(gameId);
+            switchGameTab(gameId, 'dlc');
+        }
+
+        async function refreshDlc(gameId) {
+            const res = await api.post(`/api/games/${gameId}/dlc/refresh`, {});
+            if (res && res.error) alert(res.error);
+            await loadGameModal(gameId);
+            switchGameTab(gameId, 'dlc');
         }
 
         async function addTag(gameId, tagName, input) {
@@ -944,7 +1025,14 @@
         }
 
         async function setCoverUrl(gameId, url) {
-            await api.put(`/api/games/${gameId}`, { cover_url: url.trim() });
+            const v = url.trim();
+            // An IGDB game URL pins identity (cover + DLC); anything else is a literal cover URL.
+            if (/https?:\/\/(www\.)?igdb\.com\/games\//i.test(v)) {
+                const res = await api.post(`/api/games/${gameId}/igdb`, { url: v });
+                if (res && res.error) alert(res.error);
+            } else {
+                await api.put(`/api/games/${gameId}`, { cover_url: v });
+            }
             loadGameModal(gameId);
             if (typeof refreshGameList === 'function') refreshGameList();
         }
