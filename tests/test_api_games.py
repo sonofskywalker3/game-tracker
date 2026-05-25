@@ -389,11 +389,15 @@ def test_delete_dlc(client, temp_db):
 
 
 def test_refresh_dlc_from_igdb(client, temp_db, monkeypatch):
-    import config, igdb_dlc, fetch_covers, models
+    import config
+    import fetch_covers
+    import igdb_dlc
+    import models
     conn = models.get_db()
     conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
     gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
     monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
     monkeypatch.setattr(igdb_dlc, "_igdb_query",
@@ -405,21 +409,27 @@ def test_refresh_dlc_from_igdb(client, temp_db, monkeypatch):
 
 
 def test_refresh_dlc_without_credentials_400(client, temp_db, monkeypatch):
-    import config, models
+    import config
+    import models
     conn = models.get_db()
     conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
     gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     monkeypatch.setattr(config, "get_twitch_credentials", lambda: (None, None))
     assert client.post(f"/api/games/{gid}/dlc/refresh").status_code == 400
 
 
 def test_pin_igdb_identity_sets_cover_and_dlc(client, temp_db, monkeypatch):
-    import config, igdb_dlc, fetch_covers, models
+    import config
+    import fetch_covers
+    import igdb_dlc
+    import models
     conn = models.get_db()
     conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
     gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
     monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
     monkeypatch.setattr(igdb_dlc, "_igdb_query",
@@ -440,6 +450,7 @@ def test_pin_igdb_rejects_non_igdb_url(client, temp_db):
     conn = models.get_db()
     conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
     gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     assert client.post(f"/api/games/{gid}/igdb",
                        json={"url": "https://example.com/x.png"}).status_code == 400
