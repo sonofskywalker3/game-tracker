@@ -390,7 +390,6 @@ def test_delete_dlc(client, temp_db):
 
 def test_refresh_dlc_from_igdb(client, temp_db, monkeypatch):
     import config
-    import fetch_covers
     import igdb_dlc
     import models
     conn = models.get_db()
@@ -399,7 +398,9 @@ def test_refresh_dlc_from_igdb(client, temp_db, monkeypatch):
     conn.commit()
     conn.close()
     monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
-    monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
+    # The endpoint calls igdb_dlc.get_access_token (igdb_dlc imported it by name),
+    # so patch that binding — patching fetch_covers.get_access_token would not take.
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
     monkeypatch.setattr(igdb_dlc, "_igdb_query",
                         lambda q, c, t: [{"id": 7, "name": "G", "dlcs": [{"id": 1, "name": "P"}]}])
     resp = client.post(f"/api/games/{gid}/dlc/refresh")
@@ -422,7 +423,6 @@ def test_refresh_dlc_without_credentials_400(client, temp_db, monkeypatch):
 
 def test_pin_igdb_identity_sets_cover_and_dlc(client, temp_db, monkeypatch):
     import config
-    import fetch_covers
     import igdb_dlc
     import models
     conn = models.get_db()
@@ -431,7 +431,7 @@ def test_pin_igdb_identity_sets_cover_and_dlc(client, temp_db, monkeypatch):
     conn.commit()
     conn.close()
     monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
-    monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
     monkeypatch.setattr(igdb_dlc, "_igdb_query",
                         lambda q, c, t: [{"id": 50, "name": "G", "slug": "g",
                                           "cover": {"url": "//img/t_thumb/co.jpg"},
@@ -454,3 +454,49 @@ def test_pin_igdb_rejects_non_igdb_url(client, temp_db):
     conn.close()
     assert client.post(f"/api/games/{gid}/igdb",
                        json={"url": "https://example.com/x.png"}).status_code == 400
+
+
+def _one_game():
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return gid
+
+
+def test_dlc_endpoints_unknown_game_404(client, temp_db):
+    assert client.post("/api/games/99999/dlc", json={"name": "X"}).status_code == 404
+    assert client.post("/api/games/99999/dlc/refresh").status_code == 404
+    # pin: a valid IGDB URL on an unknown game still 404s (URL passes validation first)
+    assert client.post("/api/games/99999/igdb",
+                       json={"url": "https://www.igdb.com/games/g"}).status_code == 404
+
+
+def test_pin_igdb_no_match_404(client, temp_db, monkeypatch):
+    import config
+    import igdb_dlc
+    gid = _one_game()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [])  # no IGDB match
+    resp = client.post(f"/api/games/{gid}/igdb",
+                       json={"url": "https://www.igdb.com/games/nope"})
+    assert resp.status_code == 404
+
+
+def test_refresh_dlc_network_error_502(client, temp_db, monkeypatch):
+    import config
+    import igdb_dlc
+    import requests
+    gid = _one_game()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+
+    def boom(*a, **k):
+        raise requests.RequestException("network down")
+
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", boom)
+    resp = client.post(f"/api/games/{gid}/dlc/refresh")
+    assert resp.status_code == 502
