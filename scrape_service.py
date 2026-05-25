@@ -147,9 +147,9 @@ def _run(vendor: str, browser_factory, collect) -> None:
     Cancellation is honored during the (potentially long) login wait. Any error
     sets phase=error and is surfaced to the UI; the browser is always closed.
     """
-    factory = browser_factory or capturing_browser
-    collect_fn = collect or SCRAPERS[vendor].collect
     mod = SCRAPERS[vendor]
+    factory = browser_factory or capturing_browser
+    collect_fn = collect or mod.collect
     _set(phase="launching", message=f"opening {vendor} in a browser...",
          started_at=datetime.now().isoformat())
     try:
