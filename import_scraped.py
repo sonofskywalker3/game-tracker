@@ -567,6 +567,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="preview changes; write nothing")
     parser.add_argument("--cleanup-bundles", action="store_true",
                         help="expand known phantom bundles already in the DB, then exit")
+    parser.add_argument("--include-curated", action="store_true",
+                        help="with --cleanup-bundles: also migrate curated phantoms' "
+                             "status/series onto constituents, then delete them")
     parser.add_argument("--accept-fuzzy", action="store_true",
                         help="auto-confirm ALL fuzzy matches")
     parser.add_argument("--auto-fuzzy", action="store_true",
@@ -581,10 +584,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     conn = models.get_db()
 
     if args.cleanup_bundles:
-        report = cleanup_bundles(conn, dry_run=args.dry_run)
+        report = cleanup_bundles(conn, dry_run=args.dry_run,
+                                 include_curated=args.include_curated)
         for r in report:
-            logger.info("%s: %s (+%d constituents) [%s]", r["title"], r["action"],
-                        r["constituents_created"], f"{r['source']}/{r['external_id']}")
+            extra = ""
+            mig = r.get("migrated") or {}
+            if mig.get("status"):
+                extra += f" status={mig['status']}"
+            if mig.get("series_to"):
+                extra += f" series+{len(mig['series_to'])}"
+            logger.info("%s: %s (+%d constituents)%s [%s]", r["title"], r["action"],
+                        r["constituents_created"], extra, f"{r['source']}/{r['external_id']}")
         logger.info("DRY RUN — no changes written." if args.dry_run
                     else "bundles processed: %d" % len(report))
         conn.close()

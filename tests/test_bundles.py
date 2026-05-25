@@ -278,7 +278,7 @@ def test_cleanup_include_curated_migrates_and_deletes(temp_db):
     _insert(conn, "Pikmin 1")
     _insert(conn, "Pikmin 2")
     conn.commit()
-    bid = _curated_phantom(conn, status="completed")
+    _curated_phantom(conn, status="completed")
     results = imp.cleanup_bundles(conn, include_curated=True)
     conn.commit()
     titles = {r[0] for r in conn.execute("SELECT title FROM games")}
