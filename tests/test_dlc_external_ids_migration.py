@@ -33,10 +33,12 @@ def test_source_external_id_is_unique():
     migrate_dlc_external_ids(conn)
     conn.execute("INSERT INTO dlc (id, name) VALUES (1, 'X')")
     conn.execute(
-        "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (1, 'nintendo', 'N1')")
+        "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (1, 'nintendo', 'N1')"
+    )
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (1, 'nintendo', 'N1')")
+            "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (1, 'nintendo', 'N1')"
+        )
 
 
 def test_fk_to_dlc_is_enforced():
@@ -45,4 +47,17 @@ def test_fk_to_dlc_is_enforced():
     migrate_dlc_external_ids(conn)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (999, 'xbox', 'X1')")
+            "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (999, 'xbox', 'X1')"
+        )
+
+
+def test_fk_cascade_deletes_rows_when_dlc_deleted():
+    conn = _conn_with_dlc()
+    conn.execute("PRAGMA foreign_keys = ON")
+    migrate_dlc_external_ids(conn)
+    conn.execute("INSERT INTO dlc (id, name) VALUES (1, 'X')")
+    conn.execute(
+        "INSERT INTO dlc_external_ids (dlc_id, source, external_id) VALUES (1, 'xbox', 'X1')"
+    )
+    conn.execute("DELETE FROM dlc WHERE id = 1")
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0] == 0
