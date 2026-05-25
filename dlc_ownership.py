@@ -9,6 +9,7 @@ docs/superpowers/specs/2026-05-25-dlc-scrape-ownership-design.md.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import models
 
@@ -97,3 +98,45 @@ def match_dlc(remainder: str, dlc_rows: list[tuple[int, str]]) -> tuple[int | st
     if len(contained) > 1:
         return AMBIGUOUS, "containment"
     return None, None
+
+
+@dataclass
+class Match:
+    """The matching verdict for one scraped add-on."""
+
+    action: str  # "apply" | "hold" | "unmatched"
+    addon_title: str
+    game_id: int | None = None
+    dlc_id: int | None = None
+    reason: str = ""
+
+
+def classify(
+    addon_title: str,
+    library: list[tuple[int, str]],
+    dlc_by_game: dict[int, list[tuple[int, str]]],
+) -> Match:
+    """Decide whether an add-on should apply, hold, or be reported unmatched.
+
+    apply  = parent resolves uniquely AND a dlc name matches by equality.
+    hold   = ambiguous parent/dlc, or a containment-only dlc match (plausible,
+             not certain) -- never auto-applied without include_flagged.
+    unmatched = no parent, or parent has no matching dlc row.
+    """
+    parent = parent_of(addon_title, library)
+    if parent is None:
+        return Match("unmatched", addon_title, reason="no parent game")
+    if parent is AMBIGUOUS:
+        return Match("hold", addon_title, reason="ambiguous parent")
+    rows = dlc_by_game.get(parent) or []
+    if not rows:
+        return Match("unmatched", addon_title, game_id=parent, reason="parent has no dlc")
+    parent_norm = next(gnorm for gid, gnorm in library if gid == parent)
+    result, method = match_dlc(_remainder(addon_title, parent_norm), rows)
+    if result is None:
+        return Match("unmatched", addon_title, game_id=parent, reason="no dlc name match")
+    if result is AMBIGUOUS:
+        return Match("hold", addon_title, game_id=parent, reason="ambiguous dlc")
+    if method == "equality":
+        return Match("apply", addon_title, game_id=parent, dlc_id=result)
+    return Match("hold", addon_title, game_id=parent, dlc_id=result, reason="containment only")
