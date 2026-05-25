@@ -136,9 +136,13 @@ The CLI partitions each scrape file's `games` list by `kind` (default `"game"`
 for older files). New flags, mirroring the existing DLC flags:
 
 - `--no-ownership` — skip step 3 (parallel to `--no-dlc`).
-- `--include-flagged` — also apply `hold` matches (this flag is new for
-  ownership; the bundle path's `--include-curated` is unrelated).
+- `--apply-flagged-ownership` — also apply `hold` matches (this flag is new for
+  ownership; named to avoid confusion with the bundle path's unrelated
+  `--include-curated`).
 - `--dry-run` (existing) — steps 1–3 all preview; `mark_ownership` writes nothing.
+  Note: under `--dry-run` the DLC-enrichment step is skipped, so the ownership
+  preview omits not-yet-imported games (it still previews matches against DLC
+  rows already in the DB); `main` logs a note to that effect.
 
 `_log_summary` gains an ownership block: `owned marked / already owned / held /
 unmatched` counts, plus a held-and-unmatched listing in the style of the existing
@@ -178,7 +182,8 @@ Scraper parse (existing fixtures already carry add-on rows):
 
 Integration (temp DB, IGDB fetch mocked):
 - Import a game → enrich DLC → feed a matching owned add-on → its `dlc.owned`
-  flips to 1; an ambiguous add-on is held (not flipped) unless `--include-flagged`;
+  flips to 1; an ambiguous add-on is held (not flipped) unless
+  `--apply-flagged-ownership`;
   an add-on with no IGDB DLC row is reported `unmatched` and creates nothing;
   `--dry-run` writes nothing; a second identical run changes nothing.
 
