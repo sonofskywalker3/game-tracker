@@ -564,14 +564,12 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
 def _log_ownership(report: "dlc_ownership.OwnershipReport", *, dry_run: bool) -> None:
     label = "WOULD MARK (dry run)" if dry_run else "MARKED"
     logger.info("--- DLC OWNERSHIP (%s) ---", label)
-    logger.info("owned marked:       %d", report.marked)
+    logger.info("created:            %d", report.created)
+    logger.info("reconciled:         %d", report.reconciled)
     logger.info("already owned:      %d", report.already_owned)
-    logger.info("held (review):      %d", len(report.held))
-    logger.info("unmatched:          %d", len(report.unmatched))
-    for m in report.held:
-        logger.info("  HOLD       '%s'  [%s]", m.addon_title, m.reason)
-    for m in report.unmatched:
-        logger.info("  UNMATCHED  '%s'  [%s]", m.addon_title, m.reason)
+    logger.info("needs review:       %d", len(report.review))
+    for m in report.review:
+        logger.info("  REVIEW     '%s'  [%s]", m.addon_title, m.reason)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -594,8 +592,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="skip IGDB DLC enrichment after import")
     parser.add_argument("--no-ownership", action="store_true",
                         help="skip scrape-driven DLC ownership matching after enrichment")
-    parser.add_argument("--apply-flagged-ownership", action="store_true",
-                        help="also apply held (ambiguous/containment-only) ownership matches")
     args = parser.parse_args(argv)
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
@@ -655,9 +651,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if args.dry_run:
             logger.info("(dry run skipped DLC enrichment, so ownership preview "
                         "omits not-yet-imported games)")
-        report = dlc_ownership.mark_ownership(
-            conn, all_addons, dry_run=args.dry_run,
-            include_flagged=args.apply_flagged_ownership)
+        report = dlc_ownership.mark_ownership(conn, all_addons, dry_run=args.dry_run)
         if not args.dry_run:
             conn.commit()
         _log_ownership(report, dry_run=args.dry_run)
