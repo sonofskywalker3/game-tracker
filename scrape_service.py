@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sqlite3
 import threading
 from dataclasses import asdict
 from datetime import datetime
@@ -71,7 +72,7 @@ def backup_db() -> str | None:
     return str(dst)
 
 
-def _run_pipeline(conn, vendor: str, games) -> dict:
+def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
     """Back up the DB, then import games, enrich DLC, and mark ownership.
 
     `games` is a list of ScrapedGame objects (or dicts). Updates the phase as it
