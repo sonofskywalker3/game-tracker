@@ -150,6 +150,7 @@ class OwnershipReport:
     already_owned: int = 0
     held: list[Match] = field(default_factory=list)
     unmatched: list[Match] = field(default_factory=list)
+    marked_items: list[Match] = field(default_factory=list)
 
 
 def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False,
@@ -179,6 +180,7 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False,
                 report.already_owned += 1
             else:
                 report.marked += 1
+                report.marked_items.append(m)
                 if not dry_run:
                     conn.execute("UPDATE dlc SET owned = 1 WHERE id = ?", (m.dlc_id,))
         elif m.action == "hold":
