@@ -460,7 +460,8 @@ def migrate_dlc_external_ids(conn: sqlite3.Connection) -> None:
     One DLC carries many rows here (one per store); identity is
     (source, external_id), so a re-scrape matches an owned add-on by its stable
     vendor id and the per-game deep-fetch (later SPs) can reconcile owned rows to
-    catalogue rows by id."""
+    catalogue rows by id.
+    """
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS dlc_external_ids (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
