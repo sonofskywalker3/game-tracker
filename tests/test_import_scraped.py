@@ -1,5 +1,8 @@
 import json
 
+import dlc_ownership
+import igdb_dlc
+import import_scraped
 import models
 import import_scraped as imp
 
@@ -311,4 +314,64 @@ def test_run_dlc_enrichment_populates_dlc(temp_db, monkeypatch):
     totals = imp.run_dlc_enrichment(conn)
     assert totals["matched"] == 1 and totals["added"] == 1
     assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 1
+    conn.close()
+
+
+def test_partition_imports_games_and_marks_addon_ownership(temp_db):
+    conn = models.get_db()
+    # Existing game with an IGDB-sourced DLC row already present.
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 ("The Witcher 3: Wild Hunt",
+                  models.normalize_title(models.clean_title("The Witcher 3: Wild Hunt"))))
+    gid = conn.execute("SELECT id FROM games WHERE title LIKE 'The Witcher%'").fetchone()[0]
+    conn.execute("INSERT INTO dlc (game_id, name, source) VALUES (?, 'Hearts of Stone', 'igdb')", (gid,))
+    conn.commit()
+    conn.close()
+
+    rows = [
+        {"title": "The Witcher 3: Wild Hunt", "platform": "PS5", "source": "playstation",
+         "external_id": "G1", "kind": "game"},
+        {"title": "The Witcher 3: Wild Hunt - Hearts of Stone", "platform": "PS5",
+         "source": "playstation", "external_id": "A1", "kind": "addon"},
+    ]
+    games_only = [g for g in rows if g.get("kind", "game") == "game"]
+    addons = [g for g in rows if g.get("kind") == "addon"]
+
+    conn = models.get_db()
+    import_scraped.import_games(conn, games_only, "playstation",
+                               confirm_fn=import_scraped._auto_confirm)
+    report = dlc_ownership.mark_ownership(conn, addons)
+    conn.commit()
+    assert report.marked == 1
+    owned = conn.execute("SELECT owned FROM dlc WHERE name='Hearts of Stone'").fetchone()[0]
+    assert owned == 1
+    conn.close()
+
+
+def test_main_runs_ownership_after_enrichment(temp_db, monkeypatch, tmp_path):
+    # Mock IGDB enrichment so importing the base game populates a DLC row.
+    def fake_enrich_missing(conn, *, client_id, token):
+        for (gid,) in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL").fetchall():
+            conn.execute("UPDATE games SET igdb_id = 1 WHERE id = ?", (gid,))
+            conn.execute("INSERT OR IGNORE INTO dlc (game_id, name, source) "
+                         "VALUES (?, 'Hearts of Stone', 'igdb')", (gid,))
+        conn.commit()
+        return {"games": 1, "matched": 1, "added": 1, "errors": 0}
+
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", fake_enrich_missing)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+
+    scrape = tmp_path / "playstation_20260525.json"
+    scrape.write_text(json.dumps({"source": "playstation", "games": [
+        {"title": "The Witcher 3: Wild Hunt", "platform": "PS5", "source": "playstation",
+         "external_id": "G1", "kind": "game"},
+        {"title": "The Witcher 3: Wild Hunt - Hearts of Stone", "platform": "PS5",
+         "source": "playstation", "external_id": "A1", "kind": "addon"},
+    ]}), encoding="utf-8")
+
+    import_scraped.main([str(scrape), "--auto-fuzzy"])
+    conn = models.get_db()
+    owned = conn.execute("SELECT owned FROM dlc WHERE name='Hearts of Stone'").fetchone()[0]
+    assert owned == 1
     conn.close()
