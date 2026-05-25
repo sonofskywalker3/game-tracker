@@ -492,6 +492,22 @@ def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
     return results
 
 
+def run_dlc_enrichment(conn: sqlite3.Connection) -> Optional[dict]:
+    """Enrich never-enriched games with IGDB DLC. Returns totals, or None if no
+    Twitch credentials are configured (enrichment skipped)."""
+    import config
+    import igdb_dlc
+    client_id, secret = config.get_twitch_credentials()
+    if not client_id:
+        logger.info("DLC enrich skipped (no Twitch credentials in config.json)")
+        return None
+    token = igdb_dlc.get_access_token(client_id, secret)
+    totals = igdb_dlc.enrich_missing(conn, client_id=client_id, token=token)
+    logger.info("DLC enrich: %d games, %d matched, +%d dlc, %d errors",
+                totals["games"], totals["matched"], totals["added"], totals["errors"])
+    return totals
+
+
 def _iter_json_paths(paths: Sequence[str]) -> Iterator[Path]:
     for p in paths:
         path = Path(p)
@@ -539,6 +555,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="auto-confirm only spacing/punctuation renames; reject the rest")
     parser.add_argument("--keep-non-games", action="store_true",
                         help="do not skip apps / demos / DLC-style entries")
+    parser.add_argument("--no-dlc", action="store_true",
+                        help="skip IGDB DLC enrichment after import")
     args = parser.parse_args(argv)
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
@@ -579,6 +597,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     else:
         conn.commit()
     _log_summary(total, dry_run=args.dry_run)
+    if not args.dry_run and not args.no_dlc:
+        run_dlc_enrichment(conn)
     conn.close()
 
 
