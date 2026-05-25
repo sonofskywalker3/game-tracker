@@ -97,6 +97,11 @@ def test_reconcile_by_name_equality_flips_and_records_id(temp_db):
     row = conn.execute(
         "SELECT dlc_id FROM dlc_external_ids WHERE source='nintendo' AND external_id='A1'").fetchone()
     assert row is not None
+    # second run must hit the id-first path (a), not name-equality again
+    rep2 = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Hearts of Stone")])
+    conn.commit()
+    assert rep2.marked == 0 and rep2.already_owned == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0] == 1
     conn.close()
 
 
@@ -160,6 +165,10 @@ def test_already_owned_not_remarked(temp_db):
     rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Hearts of Stone")])
     conn.commit()
     assert rep.marked == 0 and rep.already_owned == 1
+    ext = conn.execute(
+        "SELECT dlc_id FROM dlc_external_ids WHERE source='nintendo' AND external_id='A1'"
+    ).fetchone()
+    assert ext is not None  # ext_id recorded even when the row was already owned
     conn.close()
 
 

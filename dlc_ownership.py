@@ -79,7 +79,7 @@ def match_equal(remainder: str, dlc_rows: list[tuple[int, str]]) -> int | str | 
     rem = (remainder or "").strip()
     if not rem:
         return None
-    equal = [dlc_id for dlc_id, name in dlc_rows if models.normalize_title(name) == rem]
+    equal = [dlc_id for dlc_id, name in dlc_rows if _norm(name) == rem]
     if len(equal) == 1:
         return equal[0]
     if len(equal) > 1:
@@ -120,7 +120,7 @@ class OwnershipReport:
     review: list[Match] = field(default_factory=list)
 
 
-def _addon_field(addon, key: str):
+def _addon_field(addon, key: str) -> str | None:
     """Read a field off a scrape dict or a ScrapedGame-like object."""
     return addon.get(key) if isinstance(addon, dict) else getattr(addon, key, None)
 
