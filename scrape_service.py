@@ -79,7 +79,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
 
     `games` is a list of ScrapedGame objects (or dicts). Updates the phase as it
     goes and returns a summary dict (counts + the DLC added this run, the DLC
-    flipped owned this run, and held/unmatched add-ons for review). Fuzzy matches
+    flipped owned this run, and add-ons needing review). Fuzzy matches
     use the safe non-interactive confirmer (auto-merges only spacing/punctuation).
     """
     import dlc_ownership
