@@ -32,3 +32,33 @@ def test_parent_of_cross_game_tie_is_ambiguous():
 def test_parent_of_exact_title_match():
     lib = _lib("Celeste")
     assert own.parent_of("Celeste", lib) == 1
+
+
+def test_remainder_strips_parent_prefix():
+    assert own._remainder("The Witcher 3 - Hearts of Stone", "the witcher 3") == "hearts of stone"
+    assert own._remainder("Celeste", "celeste") == ""
+
+
+def test_match_dlc_equality():
+    rows = [(10, "Hearts of Stone"), (11, "Blood and Wine")]
+    assert own.match_dlc("hearts of stone", rows) == (10, "equality")
+
+
+def test_match_dlc_containment():
+    rows = [(10, "Hearts of Stone")]
+    # add-on remainder carries extra words around the dlc name
+    assert own.match_dlc("hearts of stone expansion", rows) == (10, "containment")
+
+
+def test_match_dlc_multiple_equality_is_ambiguous():
+    rows = [(10, "Season Pass"), (11, "Season Pass")]
+    assert own.match_dlc("season pass", rows) == (own.AMBIGUOUS, "equality")
+
+
+def test_match_dlc_none():
+    rows = [(10, "Hearts of Stone")]
+    assert own.match_dlc("totally different", rows) == (None, None)
+
+
+def test_match_dlc_empty_remainder():
+    assert own.match_dlc("", [(10, "X")]) == (None, None)

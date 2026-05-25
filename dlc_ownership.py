@@ -51,3 +51,49 @@ def parent_of(addon_title: str, library: list[tuple[int, str]]) -> int | str | N
     if len(winners) > 1:
         return AMBIGUOUS
     return next(iter(winners))
+
+
+def _remainder(addon_title: str, parent_norm: str) -> str:
+    """The normalized add-on title with the parent's normalized prefix removed."""
+    addon = _norm(addon_title)
+    if addon == parent_norm:
+        return ""
+    prefix = parent_norm + " "
+    if addon.startswith(prefix):
+        return addon[len(prefix):]
+    return addon
+
+
+def _contains_words(haystack: str, needle: str) -> bool:
+    """True if `needle` occurs as a whole-word run inside `haystack`.
+
+    Both args are already normalized (lowercase, single-spaced)."""
+    if not needle or not haystack:
+        return False
+    return f" {needle} " in f" {haystack} "
+
+
+def match_dlc(remainder: str, dlc_rows: list[tuple[int, str]]) -> tuple[int | str | None, str | None]:
+    """Match an add-on remainder to one of a parent's dlc rows.
+
+    Returns (result, method): result is a dlc_id, None, or AMBIGUOUS; method is
+    "equality", "containment", or None. Equality on normalized names is tried
+    first; then whole-word containment in either direction. `dlc_rows` is
+    [(dlc_id, name)].
+    """
+    rem = (remainder or "").strip()
+    if not rem:
+        return None, None
+    norm = [(dlc_id, models.normalize_title(name)) for dlc_id, name in dlc_rows]
+    equal = [dlc_id for dlc_id, n in norm if n == rem]
+    if len(equal) == 1:
+        return equal[0], "equality"
+    if len(equal) > 1:
+        return AMBIGUOUS, "equality"
+    contained = [dlc_id for dlc_id, n in norm
+                 if _contains_words(rem, n) or _contains_words(n, rem)]
+    if len(contained) == 1:
+        return contained[0], "containment"
+    if len(contained) > 1:
+        return AMBIGUOUS, "containment"
+    return None, None
