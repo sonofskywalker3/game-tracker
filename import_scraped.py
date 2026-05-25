@@ -454,14 +454,18 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
 
 
 def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
+                    include_curated: bool = False,
                     confirm_fn: Callable[[str, str, float], bool] = _safe_auto_confirm
                     ) -> list[dict]:
     """One-time pass: expand every known bundle that exists in the DB as a phantom.
 
     For each mapped (source, external_id) present: ensure its constituents exist
-    and are owned on the bundle's platform(s), then delete the phantom row IF it
-    carries no user curation (curated rows are kept and reported for manual
-    handling). Honors dry_run (writes nothing). Returns a per-bundle report.
+    and are owned on the bundle's platform(s), then delete the phantom row. An
+    uncurated phantom is deleted outright. A curated phantom is kept (reported
+    `kept_curated`) UNLESS include_curated is set, in which case its curation is
+    migrated onto its constituents (fill-only) and the phantom deleted
+    (`migrated_deleted`); a phantom carrying un-splittable curation
+    (rating/notes/hours) is kept and reported `kept_ambiguous`. Honors dry_run.
     """
     results: list[dict] = []
     for (source, external_id), constituents in bundles.BUNDLE_CONTENTS.items():
@@ -481,12 +485,26 @@ def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
                  for title in constituents for pf in platforms]
         stats = import_games(conn, synth, source, dry_run=dry_run, confirm_fn=confirm_fn)
         curated = _is_curated(conn, bundle_id)
-        if not curated and not dry_run:
-            conn.execute("DELETE FROM games WHERE id = ?", (bundle_id,))
+        migrated: dict = {}
+        if not curated:
+            action = "deleted"
+            if not dry_run:
+                conn.execute("DELETE FROM games WHERE id = ?", (bundle_id,))
+        elif include_curated:
+            ids = _resolve_constituent_ids(conn, constituents)
+            migrated = _migrate_bundle_curation(conn, bundle_id, ids, dry_run=dry_run)
+            if migrated["ambiguous"]:
+                action = "kept_ambiguous"
+            else:
+                action = "migrated_deleted"
+                if not dry_run:
+                    conn.execute("DELETE FROM games WHERE id = ?", (bundle_id,))
+        else:
+            action = "kept_curated"
         results.append({"bundle_id": bundle_id, "title": bundle[0],
                         "source": source, "external_id": external_id,
-                        "action": "kept_curated" if curated else "deleted",
-                        "constituents_created": stats.new_games})
+                        "action": action, "constituents_created": stats.new_games,
+                        "migrated": migrated})
     if not dry_run:
         conn.commit()
     return results
