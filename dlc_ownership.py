@@ -25,7 +25,7 @@ def _norm(title: str | None) -> str:
     return models.normalize_title(models.clean_title(title or ""))
 
 
-def parent_of(addon_title: str, library: list[tuple[int, str]]):
+def parent_of(addon_title: str, library: list[tuple[int, str]]) -> int | str | None:
     """Resolve an add-on's parent game by longest normalized-title prefix.
 
     `library` is [(game_id, normalized_title)]. Returns the game_id, None (no
