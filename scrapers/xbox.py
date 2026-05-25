@@ -23,7 +23,19 @@ logger = logging.getLogger(__name__)
 VENDOR_URL = "https://account.microsoft.com/billing/orders"
 SOURCE = "xbox"
 GAME_ITEM_TYPE = "Game"
+# Purchasable add-on content types we attach to a game's DLC ownership. Other
+# types (e.g. "Subscription" for Game Pass) are skipped entirely.
+ADDON_ITEM_TYPES = frozenset({"Durable", "Consumable"})
 PLATFORM = "Xbox"  # modern Xbox; reuses the existing coarse platform row
+
+
+def _kind_for(item_type: str | None) -> str | None:
+    """Map an order item's itemTypeName to "game", "addon", or None (skip)."""
+    if item_type == GAME_ITEM_TYPE:
+        return "game"
+    if item_type in ADDON_ITEM_TYPES:
+        return "addon"
+    return None
 
 ORDERS_API = "https://account.microsoft.com/billing/orders/list"
 ORDERS_PARAMS = {
@@ -45,7 +57,8 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
     for body in responses:
         for order in body.get("orders", []):
             for item in order.get("items", []):
-                if item.get("itemTypeName") != GAME_ITEM_TYPE:
+                kind = _kind_for(item.get("itemTypeName"))
+                if kind is None:
                     continue
                 title = item.get("localTitle")
                 product_id = item.get("productId")
@@ -59,6 +72,7 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                     external_id=product_id,
                     cover_url=item.get("logoLink"),
                     source_title=title,
+                    kind=kind,
                 ))
     return games
 

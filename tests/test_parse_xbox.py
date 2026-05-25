@@ -10,9 +10,14 @@ def _body():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
-def test_extracts_only_games():
-    titles = {g.title for g in parse_orders([_body()])}
-    assert titles == {"Sample Quest", "Another Game"}  # DLC + subscription excluded
+def test_extracts_games_and_addons_skips_subscriptions():
+    by_kind = {}
+    for g in parse_orders([_body()]):
+        by_kind.setdefault(g.kind, set()).add(g.title)
+    assert by_kind["game"] == {"Sample Quest", "Another Game"}
+    assert by_kind["addon"] == {"Sample Quest - Season Pass"}
+    assert "Game Pass Ultimate" not in by_kind.get("game", set())
+    assert "Game Pass Ultimate" not in by_kind.get("addon", set())
 
 
 def test_maps_fields():
