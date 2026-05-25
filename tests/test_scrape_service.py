@@ -218,4 +218,5 @@ def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
     assert review_titles == ["Unknown Game - Bonus"]
     assert summary["owned_marked"] == 2
     assert summary["created"] == 1
+    assert len(summary["newly_owned"]) == summary["owned_marked"]
     conn.close()
