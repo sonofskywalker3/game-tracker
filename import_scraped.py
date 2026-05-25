@@ -652,6 +652,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if not args.dry_run and not args.no_dlc:
         run_dlc_enrichment(conn)
     if not args.no_ownership and all_addons:
+        if args.dry_run:
+            logger.info("(dry run skipped DLC enrichment, so ownership preview "
+                        "omits not-yet-imported games)")
         report = dlc_ownership.mark_ownership(
             conn, all_addons, dry_run=args.dry_run,
             include_flagged=args.apply_flagged_ownership)
