@@ -16,6 +16,7 @@ from models import (
 from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials
 from background_tasks import run_cover_fetch_background, get_cover_fetch_status
+import scrape_service
 
 app = Flask(__name__)
 log = logging.getLogger(__name__)
@@ -1533,6 +1534,38 @@ def api_fetch_covers():
 def api_fetch_covers_status():
     """Get current status of cover fetch background task."""
     return jsonify(get_cover_fetch_status())
+
+
+@app.route('/api/scrape/start', methods=['POST'])
+def api_scrape_start():
+    """Start a web-driven vendor library scrape in the background."""
+    vendor = (request.json or {}).get('vendor', '')
+    if vendor not in scrape_service.VENDORS:
+        return jsonify({'error': f'unknown vendor: {vendor}'}), 400
+    ok, message = scrape_service.start(vendor)
+    if ok:
+        return jsonify({'success': True, 'message': message})
+    return jsonify({'error': message}), 409  # already running
+
+
+@app.route('/api/scrape/continue', methods=['POST'])
+def api_scrape_continue():
+    """Signal that the user has logged in and the scrape may proceed."""
+    scrape_service.signal_continue()
+    return jsonify({'success': True})
+
+
+@app.route('/api/scrape/cancel', methods=['POST'])
+def api_scrape_cancel():
+    """Request cancellation of the running scrape."""
+    scrape_service.cancel()
+    return jsonify({'success': True})
+
+
+@app.route('/api/scrape/status')
+def api_scrape_status():
+    """Current scrape phase/progress for the UI poller."""
+    return jsonify(scrape_service.status())
 
 
 # ============================================================================
