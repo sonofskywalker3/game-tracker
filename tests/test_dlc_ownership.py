@@ -170,3 +170,18 @@ def test_mark_ownership_idempotent(temp_db):
     conn.commit()
     assert rep.marked == 0 and rep.already_owned == 1
     conn.close()
+
+
+def test_mark_ownership_records_marked_items(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
+    conn.commit()
+    assert rep.marked == 1
+    assert len(rep.marked_items) == 1
+    assert rep.marked_items[0].dlc_id is not None
+    # already-owned re-run does not re-append
+    rep2 = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
+    assert rep2.marked == 0 and rep2.marked_items == []
+    conn.close()
