@@ -9,8 +9,6 @@ docs/superpowers/specs/2026-05-25-dlc-scrape-ownership-design.md.
 from __future__ import annotations
 
 import logging
-import sqlite3
-from dataclasses import dataclass, field
 
 import models
 

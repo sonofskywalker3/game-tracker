@@ -581,7 +581,13 @@ Expected: FAIL (`AttributeError: module 'dlc_ownership' has no attribute 'classi
 
 - [ ] **Step 3: Implement `Match` and `classify`**
 
-Append to `dlc_ownership.py` (after `match_dlc`):
+First add the dataclass import to the top of `dlc_ownership.py` (in the stdlib import group, after `import logging`):
+
+```python
+from dataclasses import dataclass
+```
+
+Then append to `dlc_ownership.py` (after `match_dlc`):
 
 ```python
 @dataclass
@@ -723,7 +729,9 @@ Expected: FAIL (`AttributeError: module 'dlc_ownership' has no attribute 'mark_o
 
 - [ ] **Step 3: Implement `OwnershipReport` and `mark_ownership`**
 
-Append to `dlc_ownership.py`:
+First update the imports at the top of `dlc_ownership.py`: add `import sqlite3` (stdlib group) and extend the dataclasses import to `from dataclasses import dataclass, field`.
+
+Then append to `dlc_ownership.py`:
 
 ```python
 @dataclass
