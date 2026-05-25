@@ -1,3 +1,5 @@
+import contextlib
+import time
 from pathlib import Path
 
 import pytest
@@ -84,3 +86,78 @@ def test_run_pipeline_skips_enrich_without_creds(temp_db, monkeypatch):
     assert summary["new_games"] == 1
     assert summary["owned_marked"] == 0
     conn.close()
+
+
+class _FakePage:
+    def goto(self, url):
+        pass
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+@contextlib.contextmanager
+def _fake_browser(headless=False):
+    yield _FakePage(), []
+
+
+def _wait_phase(target, timeout=3.0):
+    """Poll status() until phase == target (or in target tuple); return reached."""
+    targets = (target,) if isinstance(target, str) else tuple(target)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if scrape_service.status()["phase"] in targets:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_start_runs_full_flow(temp_db, monkeypatch):
+    import igdb_dlc
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+    monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
+
+    def fake_collect(page, captured):
+        return [
+            ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
+                        source="playstation", external_id="G1"),
+            ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone",
+                        platform="PS5", source="playstation",
+                        external_id="A1", kind="addon"),
+        ]
+
+    ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
+                                 collect=fake_collect)
+    assert ok
+    assert _wait_phase("awaiting_login")
+    scrape_service.signal_continue()
+    assert _wait_phase("complete")
+    st = scrape_service.status()
+    assert st["summary"]["owned_marked"] == 1
+    assert st["summary"]["new_games"] == 1
+
+
+def test_cancel_before_continue(temp_db, monkeypatch):
+    monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
+    ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
+                                 collect=lambda p, c: [])
+    assert ok
+    assert _wait_phase("awaiting_login")
+    scrape_service.cancel()
+    assert _wait_phase("cancelled")
+    conn = models.get_db()
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+    conn.close()
+
+
+def test_start_rejects_unknown_vendor():
+    ok, msg = scrape_service.start("steam")
+    assert ok is False
+
+
+def test_start_rejects_when_active():
+    scrape_service._set(phase="scraping")
+    ok, msg = scrape_service.start("xbox")
+    assert ok is False

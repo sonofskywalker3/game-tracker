@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 
 import models
+from scrape_libraries import SCRAPERS
+from scrapers.base import capturing_browser, write_scrape
 
 logger = logging.getLogger(__name__)
 
@@ -111,3 +113,71 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         "unmatched": len(report.unmatched),
         "backup_path": backup_path,
     }
+
+
+def start(vendor: str, *, browser_factory=None, collect=None) -> tuple[bool, str]:
+    """Begin a scrape in a daemon thread. Rejects if a scrape is active or the
+    vendor is unknown. browser_factory/collect are test seams."""
+    if vendor not in VENDORS:
+        return False, f"unknown vendor: {vendor}"
+    if _is_active():
+        return False, "a scrape is already running"
+    _reset(vendor=vendor)
+    thread = threading.Thread(target=_run, args=(vendor, browser_factory, collect),
+                              daemon=True)
+    thread.start()
+    return True, "started"
+
+
+def signal_continue() -> bool:
+    """Tell the runner the user has logged in and the scrape may proceed."""
+    _continue.set()
+    return True
+
+
+def cancel() -> bool:
+    """Request cancellation; the runner stops at the login wait / next boundary."""
+    _cancel.set()
+    return True
+
+
+def _run(vendor: str, browser_factory, collect) -> None:
+    """Daemon-thread body: own the browser, wait for login, scrape, run pipeline.
+
+    Cancellation is honored during the (potentially long) login wait. Any error
+    sets phase=error and is surfaced to the UI; the browser is always closed.
+    """
+    factory = browser_factory or capturing_browser
+    collect_fn = collect or SCRAPERS[vendor].collect
+    mod = SCRAPERS[vendor]
+    _set(phase="launching", message=f"opening {vendor} in a browser...",
+         started_at=datetime.now().isoformat())
+    try:
+        with factory(headless=False) as (page, captured):
+            page.goto(mod.VENDOR_URL)
+            _set(phase="awaiting_login",
+                 message="log in and open your library, then click Continue")
+            while not _continue.is_set():
+                if _cancel.is_set():
+                    _set(phase="cancelled", message="cancelled",
+                         finished_at=datetime.now().isoformat())
+                    return
+                page.wait_for_timeout(300)
+            if _cancel.is_set():
+                _set(phase="cancelled", message="cancelled",
+                     finished_at=datetime.now().isoformat())
+                return
+            _set(phase="scraping", message=f"scraping your {vendor} library...")
+            games = collect_fn(page, captured)
+        write_scrape(vendor, games)
+        conn = models.get_db()
+        try:
+            summary = _run_pipeline(conn, vendor, games)
+        finally:
+            conn.close()
+        _set(phase="complete", message="done", summary=summary,
+             finished_at=datetime.now().isoformat())
+    except Exception as exc:  # never crash Flask; surface to the UI
+        logger.exception("scrape failed")
+        _set(phase="error", error=str(exc), message="scrape failed",
+             finished_at=datetime.now().isoformat())
