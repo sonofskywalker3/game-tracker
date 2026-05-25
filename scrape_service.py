@@ -78,8 +78,9 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
     """Back up the DB, then import games, enrich DLC, and mark ownership.
 
     `games` is a list of ScrapedGame objects (or dicts). Updates the phase as it
-    goes and returns a summary dict. Fuzzy matches use the safe non-interactive
-    confirmer (auto-merges only spacing/punctuation variants).
+    goes and returns a summary dict (counts + the DLC added this run, the DLC
+    flipped owned this run, and held/unmatched add-ons for review). Fuzzy matches
+    use the safe non-interactive confirmer (auto-merges only spacing/punctuation).
     """
     import dlc_ownership
     import import_scraped
@@ -87,6 +88,9 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
     rows = [g if isinstance(g, dict) else asdict(g) for g in games]
     games_only = [r for r in rows if r.get("kind", "game") == "game"]
     addons = [r for r in rows if r.get("kind") == "addon"]
+
+    # Timestamp (DB clock, matching dlc.created_at) to find DLC added this run.
+    run_started = conn.execute("SELECT CURRENT_TIMESTAMP").fetchone()[0]
 
     _set(phase="importing", message=f"importing {len(games_only)} {vendor} games...")
     backup_path = backup_db()
@@ -101,6 +105,22 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
     report = dlc_ownership.mark_ownership(conn, addons)
     conn.commit()
 
+    added_dlc = [
+        {"game": r["title"], "name": r["name"], "kind": r["kind"], "owned": bool(r["owned"])}
+        for r in conn.execute(
+            "SELECT g.title, d.name, d.kind, d.owned FROM dlc d JOIN games g ON g.id = d.game_id "
+            "WHERE d.created_at >= ? ORDER BY g.title, d.name", (run_started,))
+    ]
+    newly_owned = []
+    for m in report.marked_items:
+        row = conn.execute(
+            "SELECT g.title, d.name FROM dlc d JOIN games g ON g.id = d.game_id WHERE d.id = ?",
+            (m.dlc_id,)).fetchone()
+        if row:
+            newly_owned.append({"game": row["title"], "name": row["name"]})
+    review = [{"title": m.addon_title, "reason": m.reason}
+              for m in (report.held + report.unmatched)]
+
     return {
         "vendor": vendor,
         "scraped": len(rows),
@@ -112,6 +132,9 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         "held": len(report.held),
         "unmatched": len(report.unmatched),
         "backup_path": backup_path,
+        "added_dlc": added_dlc,
+        "newly_owned": newly_owned,
+        "review": review,
     }
 
 

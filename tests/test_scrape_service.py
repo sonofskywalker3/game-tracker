@@ -161,3 +161,53 @@ def test_start_rejects_when_active():
     scrape_service._set(phase="scraping")
     ok, msg = scrape_service.start("xbox")
     assert ok is False
+
+
+def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
+    import igdb_dlc
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 ("The Witcher 3: Wild Hunt",
+                  models.normalize_title(models.clean_title("The Witcher 3: Wild Hunt"))))
+    gid = conn.execute("SELECT id FROM games WHERE title LIKE 'The Witcher%'").fetchone()[0]
+    # pre-existing DLC, clearly created before this run
+    conn.execute("INSERT INTO dlc (game_id, name, source, created_at) "
+                 "VALUES (?, 'Hearts of Stone', 'igdb', '2000-01-01 00:00:00')", (gid,))
+    conn.commit()
+    conn.close()
+
+    def fake_enrich(conn, *, client_id, token):
+        for (g,) in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL").fetchall():
+            conn.execute("UPDATE games SET igdb_id = 1 WHERE id = ?", (g,))
+            conn.execute("INSERT OR IGNORE INTO dlc (game_id, name, source) "
+                         "VALUES (?, 'Blood and Wine', 'igdb')", (g,))
+        conn.commit()
+        return {"games": 1, "matched": 1, "added": 1, "errors": 0}
+
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", fake_enrich)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+
+    games = [
+        ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
+                    source="playstation", external_id="G1"),
+        ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone", platform="PS5",
+                    source="playstation", external_id="A1", kind="addon"),
+        ScrapedGame(title="The Witcher 3: Wild Hunt - Mystery Pack", platform="PS5",
+                    source="playstation", external_id="A2", kind="addon"),
+    ]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.commit()
+
+    added_names = [d["name"] for d in summary["added_dlc"]]
+    assert "Blood and Wine" in added_names
+    assert "Hearts of Stone" not in added_names
+    assert summary["added_dlc"][0]["game"] == "The Witcher 3: Wild Hunt"
+
+    owned_names = [d["name"] for d in summary["newly_owned"]]
+    assert owned_names == ["Hearts of Stone"]
+
+    review_titles = [r["title"] for r in summary["review"]]
+    assert any("Mystery Pack" in t for t in review_titles)
+    conn.close()
