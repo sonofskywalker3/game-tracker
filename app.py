@@ -1402,6 +1402,10 @@ def api_stats():
         "SELECT COUNT(*) FROM user_ratings WHERE rating IS NOT NULL"
     ).fetchone()[0]
 
+    # DLC ownership counts
+    stats['dlc_total'] = conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0]
+    stats['dlc_owned'] = conn.execute("SELECT COUNT(*) FROM dlc WHERE owned = 1").fetchone()[0]
+
     conn.close()
     return jsonify(stats)
 
