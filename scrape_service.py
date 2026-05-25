@@ -118,8 +118,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
             (m.dlc_id,)).fetchone()
         if row:
             newly_owned.append({"game": row["title"], "name": row["name"]})
-    review = [{"title": m.addon_title, "reason": m.reason}
-              for m in (report.held + report.unmatched)]
+    review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
     return {
         "vendor": vendor,
@@ -129,8 +128,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         "dlc_added": (enrich or {}).get("added", 0),
         "enrich_skipped": enrich is None,
         "owned_marked": report.marked,
-        "held": len(report.held),
-        "unmatched": len(report.unmatched),
+        "created": report.created,
         "backup_path": backup_path,
         "added_dlc": added_dlc,
         "newly_owned": newly_owned,

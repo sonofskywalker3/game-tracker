@@ -191,23 +191,31 @@ def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
     games = [
         ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                     source="playstation", external_id="G1"),
+        # reconciles to the pre-existing IGDB row -> newly owned
         ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone", platform="PS5",
                     source="playstation", external_id="A1", kind="addon"),
+        # confident parent, no matching row -> auto-created + owned this run
         ScrapedGame(title="The Witcher 3: Wild Hunt - Mystery Pack", platform="PS5",
                     source="playstation", external_id="A2", kind="addon"),
+        # no parent in the library -> review
+        ScrapedGame(title="Unknown Game - Bonus", platform="PS5",
+                    source="playstation", external_id="A3", kind="addon"),
     ]
     conn = models.get_db()
     summary = scrape_service._run_pipeline(conn, "playstation", games)
     conn.commit()
 
-    added_names = [d["name"] for d in summary["added_dlc"]]
-    assert "Blood and Wine" in added_names
-    assert "Hearts of Stone" not in added_names
-    assert summary["added_dlc"][0]["game"] == "The Witcher 3: Wild Hunt"
+    # added this run: IGDB "Blood and Wine" (not owned) + created "Mystery Pack" (owned).
+    added = {d["name"]: d for d in summary["added_dlc"]}
+    assert "Blood and Wine" in added and added["Blood and Wine"]["owned"] is False
+    assert "Mystery Pack" in added and added["Mystery Pack"]["owned"] is True
+    assert "Hearts of Stone" not in added  # created before this run
 
-    owned_names = [d["name"] for d in summary["newly_owned"]]
-    assert owned_names == ["Hearts of Stone"]
+    owned_names = sorted(d["name"] for d in summary["newly_owned"])
+    assert owned_names == ["Hearts of Stone", "Mystery Pack"]
 
     review_titles = [r["title"] for r in summary["review"]]
-    assert any("Mystery Pack" in t for t in review_titles)
+    assert review_titles == ["Unknown Game - Bonus"]
+    assert summary["owned_marked"] == 2
+    assert summary["created"] == 1
     conn.close()
