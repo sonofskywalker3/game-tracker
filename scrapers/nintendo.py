@@ -44,10 +44,10 @@ REQUEST_DELAY_MS = 400  # gentle pacing between API page requests
 PLATFORM = "Switch"
 
 # NSUID prefix -> content type. 7005 is add-on content (DLC / upgrade packs /
-# soundtracks); DLC is out of scope, so it is skipped. 7001 (base games) and
-# 7007 (bundles/collections) are kept. is_non_game is the downstream name-based
-# backstop for anything the prefix misses.
-SKIP_NSUID_PREFIXES = frozenset({"7005"})
+# soundtracks): kept as kind="addon" so it can mark DLC ownership. 7001 (base
+# games) and 7007 (bundles/collections) are kind="game". classify_nsuid is the
+# prefix gate; is_non_game is the downstream name-based backstop for games.
+ADDON_NSUID_PREFIXES = frozenset({"7005"})
 NSUID_PREFIX_LEN = 4
 # Real software NSUIDs are 14-digit ids starting "700". Physical hardware/merch
 # (GameCube controller, dock, Virtual Boy headset, etc.) use short non-NSUID
@@ -56,14 +56,14 @@ NSUID_LEN = 14
 NSUID_GAME_PREFIX = "700"
 
 
-def is_game_nsuid(nsuid: str | None) -> bool:
-    """True for a base-game/bundle NSUID; False for DLC (7005) and non-game
-    hardware/merch (short non-NSUID product ids)."""
+def classify_nsuid(nsuid: str | None) -> str | None:
+    """Classify a Nintendo product id: "game" (base/bundle), "addon" (7005 DLC),
+    or None for non-game hardware/merch (short non-NSUID product ids)."""
     if not nsuid or len(nsuid) != NSUID_LEN or not nsuid.isdigit():
-        return False
+        return None
     if not nsuid.startswith(NSUID_GAME_PREFIX):
-        return False
-    return nsuid[:NSUID_PREFIX_LEN] not in SKIP_NSUID_PREFIXES
+        return None
+    return "addon" if nsuid[:NSUID_PREFIX_LEN] in ADDON_NSUID_PREFIXES else "game"
 
 
 def _orders(body: dict) -> list[dict]:
@@ -75,8 +75,8 @@ def _orders(body: dict) -> list[dict]:
 def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
     """Map CustomerOrderHistory response payloads to ScrapedGame records.
 
-    Skips DLC (NSUID prefix 7005), items missing a name or NSUID, and duplicate
-    NSUIDs seen across overlapping pages.
+    Emits 7005 add-on NSUIDs as kind='addon'; skips hardware/merch (non-NSUID
+    ids), items missing a name or NSUID, and duplicate NSUIDs.
     """
     games: list[ScrapedGame] = []
     seen: set[str] = set()
@@ -86,7 +86,8 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                 nsuid = item.get("id")
                 product = item.get("product") or {}
                 name = product.get("name")
-                if not name or not is_game_nsuid(nsuid):
+                kind = classify_nsuid(nsuid)
+                if not name or kind is None:
                     continue
                 if nsuid in seen:
                     continue
@@ -101,6 +102,7 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                     external_id=nsuid,
                     cover_url=None,
                     source_title=name,
+                    kind=kind,
                 ))
     return games
 
