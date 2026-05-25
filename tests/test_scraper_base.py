@@ -1,4 +1,5 @@
 import pytest
+from dataclasses import asdict
 
 from scrapers.base import ScrapedGame, write_scrape, read_scrape
 
@@ -27,3 +28,14 @@ def test_write_and_read_roundtrip(tmp_path):
 def test_write_rejects_unknown_source(tmp_path):
     with pytest.raises(ValueError):
         write_scrape("steam", [], out_dir=tmp_path)
+
+
+def test_scrapedgame_kind_defaults_to_game():
+    g = ScrapedGame(title="X", platform="Switch", source="nintendo")
+    assert g.kind == "game"
+    assert asdict(g)["kind"] == "game"
+
+
+def test_scrapedgame_kind_addon_round_trips():
+    g = ScrapedGame(title="X - Season Pass", platform="Xbox", source="xbox", kind="addon")
+    assert asdict(g)["kind"] == "addon"
