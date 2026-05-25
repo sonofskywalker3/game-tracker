@@ -117,3 +117,16 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     if not games:
         logger.warning("playstation: 0 games — auth likely failed (see any error above)")
     return games
+
+
+def collect_addons(page, captured: list | None = None) -> list[ScrapedGame]:
+    """Owned PSN add-ons (kind="addon"), for DLC ownership matching.
+
+    Disabled until the PSN add-on GraphQL operation + persisted-query hash are
+    captured from a fresh recon (.recon/playstation.responses.jsonl); returns []
+    so base-game scraping is unaffected. Enabling this is the recon-gated
+    follow-up in docs/superpowers/specs/2026-05-25-dlc-scrape-ownership-design.md
+    (PSN section).
+    """
+    logger.info("playstation: add-on capture not yet enabled (needs recon hash)")
+    return []
