@@ -271,3 +271,80 @@ def test_migrate_series_skips_constituent_already_in_a_series(temp_db):
     p1_series = conn.execute("SELECT series_id FROM user_ratings WHERE game_id=?", (p1,)).fetchone()[0]
     assert p1_series == other  # untouched
     conn.close()
+
+
+def test_cleanup_include_curated_migrates_and_deletes(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    _insert(conn, "Pikmin 2")
+    conn.commit()
+    bid = _curated_phantom(conn, status="completed")
+    results = imp.cleanup_bundles(conn, include_curated=True)
+    conn.commit()
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Pikmin 1+2 Bundle" not in titles  # phantom deleted
+    statuses = [r[0] for r in conn.execute(
+        "SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+        "WHERE g.title IN ('Pikmin 1','Pikmin 2')")]
+    assert statuses == ["completed", "completed"]
+    assert any(r["action"] == "migrated_deleted" for r in results)
+    conn.close()
+
+
+def test_cleanup_include_curated_keeps_ambiguous(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    conn.commit()
+    _curated_phantom(conn, status="completed", notes="my note")
+    results = imp.cleanup_bundles(conn, include_curated=True)
+    conn.commit()
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Pikmin 1+2 Bundle" in titles  # kept (ambiguous)
+    assert any(r["action"] == "kept_ambiguous" for r in results)
+    conn.close()
+
+
+def test_cleanup_default_still_keeps_curated(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    conn.commit()
+    _curated_phantom(conn, status="completed")
+    results = imp.cleanup_bundles(conn)  # no include_curated
+    conn.commit()
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Pikmin 1+2 Bundle" in titles
+    assert any(r["action"] == "kept_curated" for r in results)
+    conn.close()
+
+
+def test_cleanup_include_curated_dry_run_writes_nothing(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    p1 = conn.execute("SELECT id FROM games WHERE title='Pikmin 1'").fetchone()[0]
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (p1,))
+    conn.commit()
+    _curated_phantom(conn, status="completed")
+    imp.cleanup_bundles(conn, include_curated=True, dry_run=True)
+    conn.commit()
+    assert "Pikmin 1+2 Bundle" in {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert conn.execute("SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+                        "WHERE g.title='Pikmin 1'").fetchone()[0] == "backlog"
+    conn.close()
+
+
+def test_cleanup_include_curated_idempotent(temp_db):
+    conn = models.get_db()
+    _insert(conn, "Pikmin 1")
+    _insert(conn, "Pikmin 2")
+    conn.commit()
+    _curated_phantom(conn, status="completed")
+    imp.cleanup_bundles(conn, include_curated=True)
+    conn.commit()
+    results = imp.cleanup_bundles(conn, include_curated=True)
+    conn.commit()
+    statuses = [r[0] for r in conn.execute(
+        "SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
+        "WHERE g.title IN ('Pikmin 1','Pikmin 2')")]
+    assert statuses == ["completed", "completed"]
+    assert results == [] or all(r["action"] != "migrated_deleted" for r in results)
+    conn.close()
