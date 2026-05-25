@@ -99,3 +99,74 @@ def test_classify_unmatched_no_dlc_name_match():
     lib = _lib("Hades")
     m = own.classify("Hades - Soundtrack", lib, {1: [(10, "Cosmetic Pack")]})
     assert m.action == "unmatched" and m.game_id == 1
+
+
+def _seed(conn, title="The Witcher 3: Wild Hunt", dlc_names=("Hearts of Stone",)):
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(models.clean_title(title))))
+    gid = conn.execute("SELECT id FROM games WHERE title=?", (title,)).fetchone()[0]
+    for name in dlc_names:
+        conn.execute("INSERT INTO dlc (game_id, name, source) VALUES (?, ?, 'igdb')", (gid, name))
+    return gid
+
+
+def test_mark_ownership_applies_equality_match(temp_db):
+    conn = models.get_db()
+    gid = _seed(conn)
+    conn.commit()
+    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
+    conn.commit()
+    assert rep.marked == 1 and not rep.held and not rep.unmatched
+    owned = conn.execute("SELECT owned FROM dlc WHERE game_id=? AND name='Hearts of Stone'",
+                         (gid,)).fetchone()[0]
+    assert owned == 1
+    conn.close()
+
+
+def test_mark_ownership_holds_unless_include_flagged(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    addon = {"title": "The Witcher 3: Wild Hunt - Hearts of Stone Expansion"}  # containment only
+    rep = own.mark_ownership(conn, [addon])
+    assert rep.marked == 0 and len(rep.held) == 1
+    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 0
+    rep2 = own.mark_ownership(conn, [addon], include_flagged=True)
+    conn.commit()
+    assert rep2.marked == 1
+    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 1
+    conn.close()
+
+
+def test_mark_ownership_reports_unmatched_creates_nothing(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Soundtrack"}])
+    assert rep.marked == 0 and len(rep.unmatched) == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 1  # nothing inserted
+    conn.close()
+
+
+def test_mark_ownership_dry_run_writes_nothing(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}],
+                             dry_run=True)
+    assert rep.marked == 1
+    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 0  # not written
+    conn.close()
+
+
+def test_mark_ownership_idempotent(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    addon = {"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}
+    own.mark_ownership(conn, [addon])
+    conn.commit()
+    rep = own.mark_ownership(conn, [addon])
+    conn.commit()
+    assert rep.marked == 0 and rep.already_owned == 1
+    conn.close()

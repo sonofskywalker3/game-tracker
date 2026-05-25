@@ -9,7 +9,8 @@ docs/superpowers/specs/2026-05-25-dlc-scrape-ownership-design.md.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import sqlite3
+from dataclasses import dataclass, field
 
 import models
 
@@ -140,3 +141,48 @@ def classify(
     if method == "equality":
         return Match("apply", addon_title, game_id=parent, dlc_id=result)
     return Match("hold", addon_title, game_id=parent, dlc_id=result, reason="containment only")
+
+
+@dataclass
+class OwnershipReport:
+    """Outcome counts + the held/unmatched lists for manual review."""
+    marked: int = 0
+    already_owned: int = 0
+    held: list[Match] = field(default_factory=list)
+    unmatched: list[Match] = field(default_factory=list)
+
+
+def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False,
+                   include_flagged: bool = False) -> OwnershipReport:
+    """Flip dlc.owned for scraped owned add-ons (0 -> 1 only; idempotent).
+
+    `addons` is an iterable of dicts (scrape rows) or objects with a `.title`.
+    Applies "apply" verdicts always, and "hold" verdicts only when
+    include_flagged. Reports held/unmatched for review; inserts nothing. Writes
+    nothing when dry_run (the caller owns commit).
+    """
+    library = [(r["id"], r["normalized_title"])
+               for r in conn.execute("SELECT id, normalized_title FROM games")]
+    dlc_by_game: dict[int, list[tuple[int, str]]] = {}
+    for r in conn.execute("SELECT id, game_id, name FROM dlc"):
+        dlc_by_game.setdefault(r["game_id"], []).append((r["id"], r["name"]))
+
+    report = OwnershipReport()
+    for addon in addons:
+        title = addon["title"] if isinstance(addon, dict) else addon.title
+        m = classify(title, library, dlc_by_game)
+        apply_it = m.action == "apply" or (
+            m.action == "hold" and include_flagged and m.dlc_id is not None)
+        if apply_it:
+            owned = conn.execute("SELECT owned FROM dlc WHERE id = ?", (m.dlc_id,)).fetchone()[0]
+            if owned:
+                report.already_owned += 1
+            else:
+                report.marked += 1
+                if not dry_run:
+                    conn.execute("UPDATE dlc SET owned = 1 WHERE id = ?", (m.dlc_id,))
+        elif m.action == "hold":
+            report.held.append(m)
+        elif m.action == "unmatched":
+            report.unmatched.append(m)
+    return report
