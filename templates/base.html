@@ -157,6 +157,7 @@
                                 <button onclick="continueScrape()" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded text-white text-sm">Continue</button>
                                 <button onclick="cancelScrape()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter rounded text-white text-sm">Cancel</button>
                             </div>
+                            <div id="scrape-results" class="mt-2"></div>
                         </div>
                     </div>
                 </div>
@@ -1177,14 +1178,54 @@
                 const s = st.summary || {};
                 msg.textContent = `Done: +${s.new_games || 0} games, ` +
                     `${s.owned_marked || 0} add-ons marked owned, ` +
-                    `${s.dlc_added || 0} DLC added. Refresh to see them.`;
+                    `${s.dlc_added || 0} DLC added.`;
+                renderScrapeResults(s);
             } else if (st.phase === 'error') {
                 msg.textContent = 'Error: ' + (st.error || 'scrape failed');
+                renderScrapeResults(null);
             } else if (st.phase === 'cancelled') {
                 msg.textContent = 'Cancelled.';
+                renderScrapeResults(null);
             } else {
                 msg.textContent = st.message || st.phase;
+                renderScrapeResults(null);
             }
+        }
+
+        function renderScrapeResults(s) {
+            const el = document.getElementById('scrape-results');
+            if (!s) { el.innerHTML = ''; return; }
+            const added = s.added_dlc || [];
+            const owned = s.newly_owned || [];
+            const review = s.review || [];
+            let html = '';
+            if (added.length) {
+                const byGame = {};
+                added.forEach(d => { (byGame[d.game] = byGame[d.game] || []).push(d); });
+                const groups = Object.keys(byGame).sort().map(game => {
+                    const rows = byGame[game].map(d =>
+                        `<div class="flex items-center justify-between gap-2 pl-3">
+                            <span class="text-gray-300">${escapeHtml(d.name)}</span>
+                            <span class="${d.owned ? 'text-green-400' : 'text-gray-500'}">${d.owned ? '✓ owned' : 'not owned'}</span>
+                         </div>`).join('');
+                    return `<div class="mt-1"><div class="text-white font-medium">${escapeHtml(game)}</div>${rows}</div>`;
+                }).join('');
+                html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Imported DLC (${added.length})</summary>
+                         <div class="mt-1 max-h-64 overflow-y-auto pr-1">${groups}</div></details>`;
+            }
+            if (owned.length) {
+                const rows = owned.map(d =>
+                    `<div class="pl-3 text-green-400">✓ ${escapeHtml(d.game)} — ${escapeHtml(d.name)}</div>`).join('');
+                html += `<details class="mt-2" open><summary class="cursor-pointer text-gray-300">Marked owned this run (${owned.length})</summary>
+                         <div class="mt-1 max-h-48 overflow-y-auto">${rows}</div></details>`;
+            }
+            if (review.length) {
+                const rows = review.map(r =>
+                    `<div class="pl-3 text-yellow-400">${escapeHtml(r.title)} <span class="text-gray-500">[${escapeHtml(r.reason)}]</span></div>`).join('');
+                html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Needs review (${review.length})</summary>
+                         <div class="mt-1 max-h-48 overflow-y-auto">${rows}</div></details>`;
+            }
+            el.innerHTML = html || '<div class="text-gray-500">No DLC changes.</div>';
         }
 
         function startScrapePolling() {
