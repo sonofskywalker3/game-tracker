@@ -7,6 +7,8 @@ def _lib(*titles):
     return [(i + 1, models.normalize_title(models.clean_title(t))) for i, t in enumerate(titles)]
 
 
+# --- parent_of (unchanged behavior) ---
+
 def test_parent_of_exact_prefix():
     lib = _lib("The Witcher 3: Wild Hunt", "Other Game")
     assert own.parent_of("The Witcher 3: Wild Hunt - Hearts of Stone", lib) == 1
@@ -14,7 +16,6 @@ def test_parent_of_exact_prefix():
 
 def test_parent_of_longest_prefix_wins():
     lib = _lib("Final Fantasy", "Final Fantasy XV")
-    # game_id 2 ("final fantasy xv") is the longer prefix of the add-on
     assert own.parent_of("Final Fantasy XV - Episode Ardyn", lib) == 2
 
 
@@ -24,7 +25,6 @@ def test_parent_of_no_prefix_is_none():
 
 
 def test_parent_of_cross_game_tie_is_ambiguous():
-    # Two different games normalize to the same prefix string.
     lib = [(1, "spirit"), (2, "spirit")]
     assert own.parent_of("Spirit Extra Pack", lib) is own.AMBIGUOUS
 
@@ -39,67 +39,39 @@ def test_remainder_strips_parent_prefix():
     assert own._remainder("Celeste", "celeste") == ""
 
 
-def test_match_dlc_equality():
+# --- match_equal (equality only; no containment) ---
+
+def test_match_equal_single():
     rows = [(10, "Hearts of Stone"), (11, "Blood and Wine")]
-    assert own.match_dlc("hearts of stone", rows) == (10, "equality")
+    assert own.match_equal("hearts of stone", rows) == 10
 
 
-def test_match_dlc_containment():
-    rows = [(10, "Hearts of Stone")]
-    # add-on remainder carries extra words around the dlc name
-    assert own.match_dlc("hearts of stone expansion", rows) == (10, "containment")
-
-
-def test_match_dlc_multiple_equality_is_ambiguous():
+def test_match_equal_multiple_is_ambiguous():
     rows = [(10, "Season Pass"), (11, "Season Pass")]
-    assert own.match_dlc("season pass", rows) == (own.AMBIGUOUS, "equality")
+    assert own.match_equal("season pass", rows) is own.AMBIGUOUS
 
 
-def test_match_dlc_none():
+def test_match_equal_none_on_containment():
     rows = [(10, "Hearts of Stone")]
-    assert own.match_dlc("totally different", rows) == (None, None)
+    assert own.match_equal("hearts of stone expansion", rows) is None
 
 
-def test_match_dlc_empty_remainder():
-    assert own.match_dlc("", [(10, "X")]) == (None, None)
+def test_match_equal_empty():
+    assert own.match_equal("", [(10, "X")]) is None
 
 
-def test_classify_apply_on_unique_parent_and_equality():
-    lib = _lib("The Witcher 3: Wild Hunt")
-    dlc_by_game = {1: [(10, "Hearts of Stone")]}
-    m = own.classify("The Witcher 3: Wild Hunt - Hearts of Stone", lib, dlc_by_game)
-    assert m.action == "apply" and m.game_id == 1 and m.dlc_id == 10
+# --- _clean_remainder (display name for a created row) ---
+
+def test_clean_remainder_strips_parent_prefix():
+    assert own._clean_remainder("The Witcher 3: Wild Hunt - Hearts of Stone",
+                                "The Witcher 3: Wild Hunt") == "Hearts of Stone"
 
 
-def test_classify_hold_on_containment_only():
-    lib = _lib("The Witcher 3: Wild Hunt")
-    dlc_by_game = {1: [(10, "Hearts of Stone")]}
-    m = own.classify("The Witcher 3: Wild Hunt - Hearts of Stone Expansion", lib, dlc_by_game)
-    assert m.action == "hold" and m.dlc_id == 10
+def test_clean_remainder_falls_back_to_full_title():
+    assert own._clean_remainder("Some Bundle Pack", "The Witcher 3") == "Some Bundle Pack"
 
 
-def test_classify_hold_on_ambiguous_parent():
-    lib = [(1, "spirit"), (2, "spirit")]
-    m = own.classify("Spirit Extra Pack", lib, {1: [(10, "extra pack")]})
-    assert m.action == "hold" and m.game_id is None
-
-
-def test_classify_unmatched_no_parent():
-    m = own.classify("Stardew Valley - Pack", _lib("Hades"), {})
-    assert m.action == "unmatched" and m.game_id is None
-
-
-def test_classify_unmatched_parent_without_dlc():
-    lib = _lib("Hades")
-    m = own.classify("Hades - Soundtrack", lib, {})
-    assert m.action == "unmatched" and m.game_id == 1
-
-
-def test_classify_unmatched_no_dlc_name_match():
-    lib = _lib("Hades")
-    m = own.classify("Hades - Soundtrack", lib, {1: [(10, "Cosmetic Pack")]})
-    assert m.action == "unmatched" and m.game_id == 1
-
+# --- mark_ownership engine (temp DB) ---
 
 def _seed(conn, title="The Witcher 3: Wild Hunt", dlc_names=("Hearts of Stone",)):
     conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
@@ -110,78 +82,93 @@ def _seed(conn, title="The Witcher 3: Wild Hunt", dlc_names=("Hearts of Stone",)
     return gid
 
 
-def test_mark_ownership_applies_equality_match(temp_db):
+def _addon(title, source="nintendo", external_id="A1"):
+    return {"title": title, "source": source, "external_id": external_id, "kind": "addon"}
+
+
+def test_reconcile_by_name_equality_flips_and_records_id(temp_db):
     conn = models.get_db()
-    gid = _seed(conn)
+    _seed(conn)  # has igdb "Hearts of Stone"
     conn.commit()
-    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Hearts of Stone")])
     conn.commit()
-    assert rep.marked == 1 and not rep.held and not rep.unmatched
-    owned = conn.execute("SELECT owned FROM dlc WHERE game_id=? AND name='Hearts of Stone'",
-                         (gid,)).fetchone()[0]
-    assert owned == 1
+    assert rep.marked == 1 and rep.reconciled == 1 and rep.created == 0
+    assert conn.execute("SELECT owned FROM dlc WHERE name='Hearts of Stone'").fetchone()[0] == 1
+    row = conn.execute(
+        "SELECT dlc_id FROM dlc_external_ids WHERE source='nintendo' AND external_id='A1'").fetchone()
+    assert row is not None
     conn.close()
 
 
-def test_mark_ownership_holds_unless_include_flagged(temp_db):
+def test_create_when_no_matching_row(temp_db):
     conn = models.get_db()
-    _seed(conn)
+    gid = _seed(conn, dlc_names=())  # game exists, no dlc rows (IGDB-missing case)
     conn.commit()
-    addon = {"title": "The Witcher 3: Wild Hunt - Hearts of Stone Expansion"}  # containment only
-    rep = own.mark_ownership(conn, [addon])
-    assert rep.marked == 0 and len(rep.held) == 1
-    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 0
-    rep2 = own.mark_ownership(conn, [addon], include_flagged=True)
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Ultimate Pack")])
     conn.commit()
-    assert rep2.marked == 1
-    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 1
+    assert rep.created == 1 and rep.marked == 1 and rep.reconciled == 0
+    row = conn.execute("SELECT name, owned, source FROM dlc WHERE game_id=?", (gid,)).fetchone()
+    assert row["name"] == "Ultimate Pack" and row["owned"] == 1 and row["source"] == "nintendo"
+    ext = conn.execute("SELECT external_id FROM dlc_external_ids WHERE source='nintendo'").fetchone()
+    assert ext["external_id"] == "A1"
     conn.close()
 
 
-def test_mark_ownership_reports_unmatched_creates_nothing(temp_db):
+def test_idempotent_by_id_on_rerun(temp_db):
     conn = models.get_db()
-    _seed(conn)
+    _seed(conn, dlc_names=())
     conn.commit()
-    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Soundtrack"}])
-    assert rep.marked == 0 and len(rep.unmatched) == 1
-    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 1  # nothing inserted
-    conn.close()
-
-
-def test_mark_ownership_dry_run_writes_nothing(temp_db):
-    conn = models.get_db()
-    _seed(conn)
-    conn.commit()
-    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}],
-                             dry_run=True)
-    assert rep.marked == 1
-    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 0  # not written
-    conn.close()
-
-
-def test_mark_ownership_idempotent(temp_db):
-    conn = models.get_db()
-    _seed(conn)
-    conn.commit()
-    addon = {"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}
+    addon = _addon("The Witcher 3: Wild Hunt - Ultimate Pack")
     own.mark_ownership(conn, [addon])
     conn.commit()
     rep = own.mark_ownership(conn, [addon])
+    conn.commit()
+    assert rep.created == 0 and rep.marked == 0 and rep.already_owned == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0] == 1
+    conn.close()
+
+
+def test_uncertain_parent_goes_to_review_no_write(temp_db):
+    conn = models.get_db()
+    _seed(conn)
+    conn.commit()
+    rep = own.mark_ownership(conn, [_addon("Totally Unknown Game - Bonus", external_id="Z9")])
+    assert rep.marked == 0 and len(rep.review) == 1 and rep.review[0].reason == "no parent game"
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0] == 0
+    assert conn.execute("SELECT owned FROM dlc").fetchone()[0] == 0
+    conn.close()
+
+
+def test_dry_run_writes_nothing(temp_db):
+    conn = models.get_db()
+    _seed(conn, dlc_names=())
+    conn.commit()
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Ultimate Pack")],
+                             dry_run=True)
+    assert rep.created == 1 and rep.marked == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0] == 0
+    conn.close()
+
+
+def test_already_owned_not_remarked(temp_db):
+    conn = models.get_db()
+    gid = _seed(conn)
+    conn.execute("UPDATE dlc SET owned=1 WHERE game_id=?", (gid,))  # already owned
+    conn.commit()
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Hearts of Stone")])
     conn.commit()
     assert rep.marked == 0 and rep.already_owned == 1
     conn.close()
 
 
-def test_mark_ownership_records_marked_items(temp_db):
+def test_marked_items_for_result_list(temp_db):
     conn = models.get_db()
-    _seed(conn)
+    _seed(conn, dlc_names=())
     conn.commit()
-    rep = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
+    rep = own.mark_ownership(conn, [_addon("The Witcher 3: Wild Hunt - Ultimate Pack")])
     conn.commit()
-    assert rep.marked == 1
     assert len(rep.marked_items) == 1
     assert rep.marked_items[0].dlc_id is not None
-    # already-owned re-run does not re-append
-    rep2 = own.mark_ownership(conn, [{"title": "The Witcher 3: Wild Hunt - Hearts of Stone"}])
-    assert rep2.marked == 0 and rep2.marked_items == []
     conn.close()
