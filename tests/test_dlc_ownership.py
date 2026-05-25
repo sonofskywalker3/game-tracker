@@ -4,7 +4,7 @@ import models
 
 def _lib(*titles):
     """Build a [(game_id, normalized_title)] library from display titles."""
-    return [(i + 1, models.normalize_title(t)) for i, t in enumerate(titles)]
+    return [(i + 1, models.normalize_title(models.clean_title(t))) for i, t in enumerate(titles)]
 
 
 def test_parent_of_exact_prefix():
