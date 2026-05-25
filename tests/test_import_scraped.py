@@ -283,3 +283,32 @@ def test_import_skips_excluded_row(temp_db, tmp_path, monkeypatch):
     titles = {r[0] for r in conn.execute("SELECT title FROM games")}
     assert "Some Tool" not in titles and "Real Game" in titles
     conn.close()
+
+
+def test_run_dlc_enrichment_skips_without_credentials(temp_db, monkeypatch):
+    import config
+    import models
+    import import_scraped as imp
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: (None, None))
+    conn = models.get_db()
+    assert imp.run_dlc_enrichment(conn) is None
+    conn.close()
+
+
+def test_run_dlc_enrichment_populates_dlc(temp_db, monkeypatch):
+    import config
+    import igdb_dlc
+    import models
+    import import_scraped as imp
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    conn.commit()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    # run_dlc_enrichment calls igdb_dlc.get_access_token — patch THAT binding.
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: [{"id": 3, "name": "G", "dlcs": [{"id": 1, "name": "P"}]}])
+    totals = imp.run_dlc_enrichment(conn)
+    assert totals["matched"] == 1 and totals["added"] == 1
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 1
+    conn.close()
