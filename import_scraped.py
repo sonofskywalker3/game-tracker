@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import bundles
+import dlc_ownership
 import models
 
 logger = logging.getLogger(__name__)
@@ -560,6 +561,19 @@ def _log_summary(total: ImportStats, *, dry_run: bool) -> None:
             logger.info("  '%s'  ~  '%s'  (%.2f)", scraped, existing, score)
 
 
+def _log_ownership(report: "dlc_ownership.OwnershipReport", *, dry_run: bool) -> None:
+    label = "WOULD MARK (dry run)" if dry_run else "MARKED"
+    logger.info("--- DLC OWNERSHIP (%s) ---", label)
+    logger.info("owned marked:       %d", report.marked)
+    logger.info("already owned:      %d", report.already_owned)
+    logger.info("held (review):      %d", len(report.held))
+    logger.info("unmatched:          %d", len(report.unmatched))
+    for m in report.held:
+        logger.info("  HOLD       '%s'  [%s]", m.addon_title, m.reason)
+    for m in report.unmatched:
+        logger.info("  UNMATCHED  '%s'  [%s]", m.addon_title, m.reason)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Import scraped library JSON into games.db")
@@ -578,6 +592,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="do not skip apps / demos / DLC-style entries")
     parser.add_argument("--no-dlc", action="store_true",
                         help="skip IGDB DLC enrichment after import")
+    parser.add_argument("--no-ownership", action="store_true",
+                        help="skip scrape-driven DLC ownership matching after enrichment")
+    parser.add_argument("--apply-flagged-ownership", action="store_true",
+                        help="also apply held (ambiguous/containment-only) ownership matches")
     args = parser.parse_args(argv)
 
     models.migrate_db()  # ensure schema (incl. game_external_ids) is current
@@ -611,14 +629,20 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         confirm = _interactive_confirm
 
     total = ImportStats()
+    all_addons: list[dict] = []
     for path in _iter_json_paths(args.paths):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        stats = import_games(conn, data["games"], data["source"], dry_run=args.dry_run,
+        rows = data["games"]
+        games_only = [g for g in rows if g.get("kind", "game") == "game"]
+        all_addons.extend(g for g in rows if g.get("kind") == "addon")
+        stats = import_games(conn, games_only, data["source"], dry_run=args.dry_run,
                              skip_non_games=not args.keep_non_games, confirm_fn=confirm)
         total.merge(stats)
-        logger.info("%s (%s): +%d new, %d id, %d title, %d fuzzy",
+        logger.info("%s (%s): +%d new, %d id, %d title, %d fuzzy, %d add-ons",
                     Path(path).name, data["source"], stats.new_games,
-                    stats.external_id_matches, stats.title_matches, len(stats.fuzzy_candidates))
+                    stats.external_id_matches, stats.title_matches,
+                    len(stats.fuzzy_candidates),
+                    sum(1 for g in rows if g.get("kind") == "addon"))
 
     if args.dry_run:
         logger.info("DRY RUN — no changes written.")
@@ -627,6 +651,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     _log_summary(total, dry_run=args.dry_run)
     if not args.dry_run and not args.no_dlc:
         run_dlc_enrichment(conn)
+    if not args.no_ownership and all_addons:
+        report = dlc_ownership.mark_ownership(
+            conn, all_addons, dry_run=args.dry_run,
+            include_flagged=args.apply_flagged_ownership)
+        if not args.dry_run:
+            conn.commit()
+        _log_ownership(report, dry_run=args.dry_run)
     conn.close()
 
 
