@@ -75,15 +75,16 @@ def backup_db() -> str | None:
 
 
 def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
-    """Back up the DB, then import games, enrich DLC, and mark ownership.
+    """Back up the DB, import games, then populate DLC + ownership per vendor.
 
-    `games` is a list of ScrapedGame objects (or dicts). Updates the phase as it
-    goes and returns a summary dict (counts + the DLC added this run, the DLC
-    flipped owned this run, and add-ons needing review). Fuzzy matches
-    use the safe non-interactive confirmer (auto-merges only spacing/punctuation).
+    Steam uses the id-based deep-fetch (steam_dlc: catalogue + appid ownership);
+    other vendors use IGDB enrichment + the title-based mark_ownership. Returns a
+    summary dict (counts + DLC added this run, rows flipped owned this run, and
+    add-ons needing review). Fuzzy matches use the safe non-interactive confirmer.
     """
     import dlc_ownership
     import import_scraped
+    import steam_dlc
 
     rows = [g if isinstance(g, dict) else asdict(g) for g in games]
     games_only = [r for r in rows if r.get("kind", "game") == "game"]
@@ -98,12 +99,26 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         conn, games_only, vendor, confirm_fn=import_scraped._safe_auto_confirm)
     conn.commit()
 
-    _set(phase="enriching", message="enriching DLC from IGDB...")
-    enrich = import_scraped.run_dlc_enrichment(conn)
-
-    _set(phase="matching", message="matching DLC ownership...")
-    report = dlc_ownership.mark_ownership(conn, addons)
-    conn.commit()
+    if vendor == "steam":
+        _set(phase="matching", message="fetching Steam DLC catalogue...")
+        owned_app_ids = {int(r["external_id"]) for r in addons if r.get("external_id")}
+        sr = steam_dlc.enrich_and_mark(conn, owned_app_ids)
+        conn.commit()
+        owned_marked, created, dlc_added = sr.owned_marked, sr.catalogue_added, sr.catalogue_added
+        enrich_skipped = True
+        marked_dlc_ids = list(sr.marked_items)
+        review = []
+    else:
+        _set(phase="enriching", message="enriching DLC from IGDB...")
+        enrich = import_scraped.run_dlc_enrichment(conn)
+        _set(phase="matching", message="matching DLC ownership...")
+        report = dlc_ownership.mark_ownership(conn, addons)
+        conn.commit()
+        owned_marked, created = report.marked, report.created
+        dlc_added = (enrich or {}).get("added", 0)
+        enrich_skipped = enrich is None
+        marked_dlc_ids = [m.dlc_id for m in report.marked_items]
+        review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
     added_dlc = [
         {"game": r["title"], "name": r["name"], "kind": r["kind"], "owned": bool(r["owned"])}
@@ -112,23 +127,22 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
             "WHERE d.created_at >= ? ORDER BY g.title, d.name", (run_started,))
     ]
     newly_owned = []
-    for m in report.marked_items:
+    for dlc_id in marked_dlc_ids:
         row = conn.execute(
             "SELECT g.title, d.name FROM dlc d JOIN games g ON g.id = d.game_id WHERE d.id = ?",
-            (m.dlc_id,)).fetchone()
+            (dlc_id,)).fetchone()
         if row:
             newly_owned.append({"game": row["title"], "name": row["name"]})
-    review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
     return {
         "vendor": vendor,
         "scraped": len(rows),
         "new_games": stats.new_games,
         "platform_links": stats.platform_links_added,
-        "dlc_added": (enrich or {}).get("added", 0),
-        "enrich_skipped": enrich is None,
-        "owned_marked": report.marked,
-        "created": report.created,
+        "dlc_added": dlc_added,
+        "enrich_skipped": enrich_skipped,
+        "owned_marked": owned_marked,
+        "created": created,
         "backup_path": backup_path,
         "added_dlc": added_dlc,
         "newly_owned": newly_owned,

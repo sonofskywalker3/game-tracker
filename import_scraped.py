@@ -645,13 +645,23 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     else:
         conn.commit()
     _log_summary(total, dry_run=args.dry_run)
+    steam_addons = [a for a in all_addons if a.get("source") == "steam"]
+    other_addons = [a for a in all_addons if a.get("source") != "steam"]
+
     if not args.dry_run and not args.no_dlc:
-        run_dlc_enrichment(conn)
-    if not args.no_ownership and all_addons:
+        run_dlc_enrichment(conn)                       # skips steam (vendor catalogue)
+        import steam_dlc
+        owned_app_ids = {int(a["external_id"]) for a in steam_addons if a.get("external_id")}
+        sr = steam_dlc.enrich_and_mark(conn, owned_app_ids)
+        conn.commit()
+        if sr.games:
+            logger.info("STEAM DLC: %d games, +%d catalogue, %d owned marked, %d errors",
+                        sr.games, sr.catalogue_added, sr.owned_marked, sr.errors)
+    if not args.no_ownership and other_addons:
         if args.dry_run:
             logger.info("(dry run skipped DLC enrichment, so ownership preview "
                         "omits not-yet-imported games)")
-        report = dlc_ownership.mark_ownership(conn, all_addons, dry_run=args.dry_run)
+        report = dlc_ownership.mark_ownership(conn, other_addons, dry_run=args.dry_run)
         if not args.dry_run:
             conn.commit()
         _log_ownership(report, dry_run=args.dry_run)

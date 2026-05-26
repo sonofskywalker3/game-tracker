@@ -220,3 +220,45 @@ def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
     assert summary["created"] == 1
     assert len(summary["newly_owned"]) == summary["owned_marked"]
     conn.close()
+
+
+def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
+    import steam_dlc
+    import import_scraped
+
+    # IGDB enrichment and the title matcher must NOT be called for steam.
+    def _boom_enrich(conn):
+        raise AssertionError("run_dlc_enrichment should not run for steam")
+
+    def _boom_mark(conn, addons, **kw):
+        raise AssertionError("mark_ownership should not run for steam")
+
+    monkeypatch.setattr(import_scraped, "run_dlc_enrichment", _boom_enrich)
+    import dlc_ownership
+    monkeypatch.setattr(dlc_ownership, "mark_ownership", _boom_mark)
+
+    def fetch(appid):
+        return {
+            620: {"type": "game", "name": "Portal 2", "dlc": [10, 20]},
+            10:  {"type": "dlc", "name": "DLC A"},
+            20:  {"type": "dlc", "name": "DLC B"},
+        }.get(appid)
+    real = steam_dlc.enrich_and_mark
+    monkeypatch.setattr(steam_dlc, "enrich_and_mark",
+                        lambda conn, owned, **kw: real(conn, owned, fetch=fetch))
+
+    games = [
+        ScrapedGame(title="Portal 2", platform="Steam", source="steam", external_id="620"),
+        ScrapedGame(title="10", platform="Steam", source="steam", external_id="10", kind="addon"),
+    ]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "steam", games)
+    conn.commit()
+    assert summary["new_games"] == 1
+    assert summary["owned_marked"] == 1     # appid 10 owned
+    assert summary["created"] == 2          # DLC A + DLC B catalogue rows
+    assert [d["name"] for d in summary["newly_owned"]] == ["DLC A"]
+    added = {d["name"]: d["owned"] for d in summary["added_dlc"]}
+    assert added == {"DLC A": True, "DLC B": False}
+    assert summary["review"] == []
+    conn.close()
