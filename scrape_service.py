@@ -23,7 +23,7 @@ from scrapers.base import capturing_browser, write_scrape
 
 logger = logging.getLogger(__name__)
 
-VENDORS = ("playstation", "xbox", "nintendo")
+VENDORS = ("playstation", "xbox", "nintendo", "steam")
 # Phases during which a scrape is considered "running" (start() is rejected).
 _ACTIVE = frozenset({"launching", "awaiting_login", "scraping",
                      "importing", "enriching", "matching"})

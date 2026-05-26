@@ -15,7 +15,7 @@ import json
 import logging
 import threading
 
-from scrapers import nintendo, playstation, xbox
+from scrapers import nintendo, playstation, steam, xbox
 from scrapers.base import (
     RECON_DIR,
     capturing_browser,
@@ -29,6 +29,7 @@ SCRAPERS = {
     "playstation": playstation,
     "xbox": xbox,
     "nintendo": nintendo,
+    "steam": steam,
 }
 
 

@@ -27,7 +27,12 @@ def test_status_initial_shape():
 
 
 def test_vendors_constant():
-    assert scrape_service.VENDORS == ("playstation", "xbox", "nintendo")
+    assert scrape_service.VENDORS == ("playstation", "xbox", "nintendo", "steam")
+
+
+def test_steam_registered_in_scrapers():
+    import scrape_libraries
+    assert "steam" in scrape_libraries.SCRAPERS
 
 
 def test_backup_db_copies_when_present(temp_db):
@@ -153,7 +158,7 @@ def test_cancel_before_continue(temp_db, monkeypatch):
 
 
 def test_start_rejects_unknown_vendor():
-    ok, msg = scrape_service.start("steam")
+    ok, msg = scrape_service.start("bogus")
     assert ok is False
 
 

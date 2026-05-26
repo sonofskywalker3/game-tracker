@@ -26,6 +26,7 @@ My Game Backlog.html
 .pw-profile/
 .recon/
 scraped/
+.steam_cache/
 
 # ---- Python ----
 __pycache__/
