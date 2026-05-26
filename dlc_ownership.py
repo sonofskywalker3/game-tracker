@@ -150,6 +150,99 @@ def _flip(conn: sqlite3.Connection, report: OwnershipReport, dlc_id: int, title:
         conn.execute("UPDATE dlc SET owned = 1 WHERE id = ?", (dlc_id,))
 
 
+def _apply_addon_to_parent(
+    conn: sqlite3.Connection,
+    report: OwnershipReport,
+    parent: int,
+    parent_norm: str,
+    titles: dict[int, str],
+    addon,
+    *,
+    dry_run: bool,
+    forced_dlc_id: int | None = None,
+    force_create: bool = False,
+) -> None:
+    """Reconcile or create one add-on against a known parent game.
+
+    Inner block factored out of mark_ownership; reused by dlc_review.resolve to
+    land a user-picked decision. When forced_dlc_id is given, that DLC row is
+    flipped directly (skipping reconcile-by-id and reconcile-by-name). When
+    force_create is True, the create branch is taken unconditionally (skipping
+    both reconcile steps); used when the user picks "none of these — create a
+    new DLC row". Otherwise this is identical to the engine's normal flow.
+    """
+    title = _addon_field(addon, "title")
+    source = _addon_field(addon, "source")
+    ext = _addon_field(addon, "external_id")
+    source_title = _addon_field(addon, "source_title") or title
+
+    # (forced_dlc_id) user picked a specific DLC row -> attach id + flip.
+    if forced_dlc_id is not None:
+        if not dry_run:
+            _record_ext_id(conn, forced_dlc_id, source, ext, source_title)
+        _flip(conn, report, forced_dlc_id, title, parent, dry_run)
+        return
+
+    # (force_create) user said "none of these — create new"; skip both reconciles.
+    if not force_create:
+        # (a) reconcile by vendor id
+        dlc_id = None
+        if source and ext:
+            row = conn.execute(
+                "SELECT dlc_id FROM dlc_external_ids WHERE source = ? AND external_id = ?",
+                (source, ext)).fetchone()
+            if row:
+                dlc_id = row[0]
+        if dlc_id is not None:
+            _flip(conn, report, dlc_id, title, parent, dry_run)
+            return
+
+        # (b) reconcile by normalized-name equality
+        rows = [(r["id"], r["name"])
+                for r in conn.execute("SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
+        match = match_equal(_remainder(title, parent_norm), rows)
+        if match is AMBIGUOUS:
+            report.review.append(Match(title, game_id=parent, reason="ambiguous dlc"))
+            return
+        if match is not None:
+            if not dry_run:
+                _record_ext_id(conn, match, source, ext, source_title)
+            _flip(conn, report, match, title, parent, dry_run)
+            return
+
+    # (c) create a vendor-sourced owned row. A UNIQUE(game_id, name) collision
+    #     (a same-name row that equality-matching missed) is unreachable with
+    #     normal data, but would otherwise abort the whole pass mid-scrape, so
+    #     fall back to reconciling the existing row instead. When force_create is
+    #     True the caller explicitly wants a new row; skip the reconcile fallback
+    #     on collision so the existing row is not silently flipped.
+    name = _clean_remainder(title, titles.get(parent, ""))
+    if dry_run:
+        report.created += 1
+        report.marked += 1
+        report.marked_items.append(Match(title, game_id=parent, reason="created"))
+        return
+    try:
+        cur = conn.execute(
+            "INSERT INTO dlc (game_id, name, kind, owned, source) VALUES (?, ?, 'dlc', 1, ?)",
+            (parent, name, source or "vendor"))
+    except sqlite3.IntegrityError:
+        existing = conn.execute(
+            "SELECT id FROM dlc WHERE game_id = ? AND name = ?", (parent, name)).fetchone()
+        _record_ext_id(conn, existing[0], source, ext, source_title)
+        if force_create:
+            report.created += 1
+            report.marked_items.append(Match(title, game_id=parent, reason="created"))
+            return
+        _flip(conn, report, existing[0], title, parent, dry_run)
+        return
+    new_id = cur.lastrowid
+    report.created += 1
+    report.marked += 1
+    _record_ext_id(conn, new_id, source, ext, source_title)
+    report.marked_items.append(Match(title, game_id=parent, dlc_id=new_id, reason="created"))
+
+
 def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -> OwnershipReport:
     """Flip dlc.owned for scraped owned add-ons (0 -> 1 only; idempotent).
 
@@ -166,10 +259,6 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
     report = OwnershipReport()
     for addon in addons:
         title = _addon_field(addon, "title")
-        source = _addon_field(addon, "source")
-        ext = _addon_field(addon, "external_id")
-        source_title = _addon_field(addon, "source_title") or title
-
         parent = parent_of(title, library)
         if parent is None:
             report.review.append(Match(title, reason="no parent game"))
@@ -177,56 +266,6 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
         if parent is AMBIGUOUS:
             report.review.append(Match(title, reason="ambiguous parent"))
             continue
-
-        # (a) reconcile by vendor id
-        dlc_id = None
-        if source and ext:
-            row = conn.execute(
-                "SELECT dlc_id FROM dlc_external_ids WHERE source = ? AND external_id = ?",
-                (source, ext)).fetchone()
-            if row:
-                dlc_id = row[0]
-        if dlc_id is not None:
-            _flip(conn, report, dlc_id, title, parent, dry_run)
-            continue
-
-        # (b) reconcile by normalized-name equality
         parent_norm = next(gnorm for gid, gnorm in library if gid == parent)
-        rows = [(r["id"], r["name"])
-                for r in conn.execute("SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
-        match = match_equal(_remainder(title, parent_norm), rows)
-        if match is AMBIGUOUS:
-            report.review.append(Match(title, game_id=parent, reason="ambiguous dlc"))
-            continue
-        if match is not None:
-            if not dry_run:
-                _record_ext_id(conn, match, source, ext, source_title)
-            _flip(conn, report, match, title, parent, dry_run)
-            continue
-
-        # (c) create a vendor-sourced owned row. A UNIQUE(game_id, name) collision
-        #     (a same-name row that equality-matching missed) is unreachable with
-        #     normal data, but would otherwise abort the whole pass mid-scrape, so
-        #     fall back to reconciling the existing row instead.
-        name = _clean_remainder(title, titles.get(parent, ""))
-        if dry_run:
-            report.created += 1
-            report.marked += 1
-            report.marked_items.append(Match(title, game_id=parent, reason="created"))
-            continue
-        try:
-            cur = conn.execute(
-                "INSERT INTO dlc (game_id, name, kind, owned, source) VALUES (?, ?, 'dlc', 1, ?)",
-                (parent, name, source or "vendor"))
-        except sqlite3.IntegrityError:
-            existing = conn.execute(
-                "SELECT id FROM dlc WHERE game_id = ? AND name = ?", (parent, name)).fetchone()
-            _record_ext_id(conn, existing[0], source, ext, source_title)
-            _flip(conn, report, existing[0], title, parent, dry_run)
-            continue
-        new_id = cur.lastrowid
-        report.created += 1
-        report.marked += 1
-        _record_ext_id(conn, new_id, source, ext, source_title)
-        report.marked_items.append(Match(title, game_id=parent, dlc_id=new_id, reason="created"))
+        _apply_addon_to_parent(conn, report, parent, parent_norm, titles, addon, dry_run=dry_run)
     return report
