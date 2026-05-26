@@ -239,6 +239,18 @@
             el.classList.remove('flex');
         }
 
+        function changeCoverHref(game) {
+            const title = encodeURIComponent(game.title || '');
+            const ext = game.external_ids || {};
+            if (ext.steam) {
+                return `https://store.steampowered.com/app/${ext.steam}/`;
+            }
+            if (game.igdb_id) {
+                return `https://www.igdb.com/search?type=1&q=${title}`;
+            }
+            return `https://www.google.com/search?q=${title}+game+cover+art&tbm=isch`;
+        }
+
         async function openDedupModal() {
             showModalEl('dedup-modal');
             document.getElementById('dedup-body').innerHTML =
@@ -839,6 +851,24 @@
                             <p class="text-xs text-gray-500 mt-1">Paste an IGDB or Steam URL above to pin this game's source. Use the cover field below to set a literal image URL.</p>
                         </div>
 
+                        <!-- Change cover + literal cover URL -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Cover image</label>
+                            <div class="flex gap-2 items-center">
+                                <a href="${changeCoverHref(game)}" target="_blank"
+                                   class="px-3 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm whitespace-nowrap">
+                                    Change cover ↗
+                                </a>
+                                <input type="text" id="cover-url-${game.id}" value="${coverUrl}" placeholder="Paste an image URL"
+                                       class="flex-1 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <button onclick="setCoverImage(${game.id}, document.getElementById('cover-url-${game.id}').value)"
+                                        class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm transition-colors">
+                                    Save
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">"Change cover" opens the pinned source's page in a new tab. Paste a cover image URL above to set it directly.</p>
+                        </div>
+
                         <!-- Status & Priority row -->
                         <div class="grid grid-cols-2 gap-4">
                             <div>
@@ -1074,6 +1104,13 @@
                 showSourceLinkError(gameId, "Only IGDB or Steam URLs are accepted here. Use the cover image field below for a literal image URL.");
                 return;
             }
+            loadGameModal(gameId);
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
+        async function setCoverImage(gameId, url) {
+            const v = (url || '').trim();
+            await api.put(`/api/games/${gameId}`, { cover_url: v });
             loadGameModal(gameId);
             if (typeof refreshGameList === 'function') refreshGameList();
         }
