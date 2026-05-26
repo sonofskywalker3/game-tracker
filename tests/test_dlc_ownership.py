@@ -35,8 +35,8 @@ def test_parent_of_exact_title_match():
 
 
 def test_remainder_strips_parent_prefix():
-    assert own._remainder("The Witcher 3 - Hearts of Stone", "the witcher 3") == "hearts of stone"
-    assert own._remainder("Celeste", "celeste") == ""
+    assert own.remainder("The Witcher 3 - Hearts of Stone", "the witcher 3") == "hearts of stone"
+    assert own.remainder("Celeste", "celeste") == ""
 
 
 # --- match_equal (equality only; no containment) ---
