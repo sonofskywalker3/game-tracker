@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 _DLC_RELATIONS = (("dlcs", "dlc"), ("expansions", "expansion"),
                   ("standalone_expansions", "expansion"))
 
+# Games whose DLC catalogue comes from a vendor store (not IGDB) are skipped by
+# enrich_missing -- IGDB is only the fallback catalogue for games without one.
+VENDOR_CATALOGUE_SOURCES = ("steam",)
+
 
 def parse_dlc_payload(igdb_game: dict) -> list[dict]:
     """Flatten an IGDB game's dlcs/expansions into {name, igdb_id, kind} dicts.
@@ -153,7 +157,11 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
 def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> dict:
     """Enrich every never-enriched game (games.igdb_id IS NULL). Commits per game;
     a per-game network error is logged and skipped (never aborts the run)."""
-    ids = [r[0] for r in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL")]
+    placeholders = ",".join("?" * len(VENDOR_CATALOGUE_SOURCES))
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM games WHERE igdb_id IS NULL AND id NOT IN "
+        f"(SELECT game_id FROM game_external_ids WHERE source IN ({placeholders}))",
+        VENDOR_CATALOGUE_SOURCES)]
     totals = {"games": 0, "matched": 0, "added": 0, "errors": 0}
     for gid in ids:
         try:
