@@ -487,6 +487,10 @@ def api_dlc_review_resolve(review_id):
             picked_dlc_id=picked_dlc_id,
             create_new_dlc=create_new_dlc,
         )
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "A DLC row with that name already exists for this game"}), 409
     except ValueError as exc:
         conn.rollback()
         conn.close()

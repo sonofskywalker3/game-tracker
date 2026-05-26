@@ -149,3 +149,28 @@ def test_dismiss_marks_dismissed(client):
 def test_dismiss_404_on_missing_review_id(client):
     res = client.post("/api/dlc/review/999/dismiss", json={})
     assert res.status_code == 404
+
+
+def test_resolve_create_new_dlc_collision_returns_409(client):
+    """When 'create_new_dlc' is requested but the cleaned-remainder name already
+    exists for the parent game, the route returns 409 (not 500) and closes the
+    connection cleanly."""
+    from models import normalize_title
+    with sqlite3.connect(models.DB_PATH) as c:
+        c.execute(
+            "INSERT INTO games (id, title, normalized_title) VALUES (1, 'Game C', ?)",
+            (normalize_title("Game C"),))
+        # Two DLC rows that both normalize-match 'pass plus' (the addon remainder),
+        # AND one of them has the cleaned name 'Pass Plus' that the create branch
+        # would try to use — so the INSERT collides.
+        c.execute("INSERT INTO dlc (game_id, name) VALUES (1, 'Pass Plus')")
+        c.execute("INSERT INTO dlc (game_id, name) VALUES (1, 'Pass  Plus')")  # double space → ties on normalize
+        c.commit()
+    rid = _seed_review(models.DB_PATH, reason="ambiguous dlc",
+                       addon_title="Game C - Pass Plus",
+                       source_title="Pass Plus",
+                       external_id="col1", game_id=1)
+    res = client.post(f"/api/dlc/review/{rid}/resolve",
+                      json={"create_new_dlc": True})
+    assert res.status_code == 409
+    assert "already exists" in (res.get_json() or {}).get("error", "")
