@@ -121,16 +121,49 @@ def test_forced_dlc_id_flips_that_specific_row(conn):
 
 def test_force_create_bypasses_reconcile(conn):
     gid = _add_game(conn, "Game Y")
-    existing = _add_dlc(conn, gid, "Bonus")  # would normally equality-reconcile
+    existing = _add_dlc(conn, gid, "Bonus")  # equality-reconcile target if not bypassed
     report = OwnershipReport()
-    addon = {"title": "Game Y - Bonus", "source": "playstation",
-             "external_id": "EP1234-001", "source_title": "Bonus"}
+    # Different name so the create branch doesn't collide with "Bonus":
+    addon = {"title": "Game Y - Bonus Deluxe", "source": "playstation",
+             "external_id": "EP1234-001", "source_title": "Bonus Deluxe"}
     parent_norm = normalize_title("Game Y")
     _apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "Game Y"}, addon, dry_run=False, force_create=True)
     assert report.created == 1
-    # The pre-existing row stays at owned=0 (force_create didn't touch it via reconcile):
+    assert report.marked == 1                 # invariant: marked = created + reconciled
+    assert report.reconciled == 0             # we explicitly bypassed reconcile
+    # The pre-existing "Bonus" row stays at owned=0 (force_create did not flip it):
     assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (existing,)).fetchone()[0] == 0
+    # A new "Bonus Deluxe" row exists, owned + sourced:
+    new_row = conn.execute(
+        "SELECT id, owned, source FROM dlc WHERE game_id = ? AND id != ?",
+        (gid, existing)).fetchone()
+    assert new_row is not None
+    assert new_row["owned"] == 1
+    assert new_row["source"] == "playstation"
+
+
+def test_force_create_unique_collision_raises(conn):
+    """force_create=True with a name that already exists is the user explicitly
+    saying 'these existing rows are not a match, make a new one' — but the new
+    row would collide with an existing UNIQUE(game_id, name). The function
+    raises sqlite3.IntegrityError so the caller (dlc_review.resolve) can surface
+    the collision to the UI rather than silently flipping the existing row.
+    """
+    gid = _add_game(conn, "Game Y")
+    existing = _add_dlc(conn, gid, "Bonus")
+    report = OwnershipReport()
+    addon = {"title": "Game Y - Bonus", "source": "playstation",
+             "external_id": "EP1234-001", "source_title": "Bonus"}
+    parent_norm = normalize_title("Game Y")
+    with pytest.raises(sqlite3.IntegrityError):
+        _apply_addon_to_parent(conn, report, gid, parent_norm,
+                               {gid: "Game Y"}, addon, dry_run=False, force_create=True)
+    # The existing row is unchanged:
+    assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (existing,)).fetchone()[0] == 0
+    # No new row was inserted:
+    n = conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id = ?", (gid,)).fetchone()[0]
+    assert n == 1
 
 
 def test_dry_run_writes_nothing(conn):

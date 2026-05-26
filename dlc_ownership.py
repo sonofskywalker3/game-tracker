@@ -227,13 +227,14 @@ def _apply_addon_to_parent(
             "INSERT INTO dlc (game_id, name, kind, owned, source) VALUES (?, ?, 'dlc', 1, ?)",
             (parent, name, source or "vendor"))
     except sqlite3.IntegrityError:
+        if force_create:
+            # User explicitly said "create new", but the name already exists.
+            # Surface the collision rather than silently reconciling to the
+            # existing row (which would contradict the user's choice).
+            raise
         existing = conn.execute(
             "SELECT id FROM dlc WHERE game_id = ? AND name = ?", (parent, name)).fetchone()
         _record_ext_id(conn, existing[0], source, ext, source_title)
-        if force_create:
-            report.created += 1
-            report.marked_items.append(Match(title, game_id=parent, reason="created"))
-            return
         _flip(conn, report, existing[0], title, parent, dry_run)
         return
     new_id = cur.lastrowid
