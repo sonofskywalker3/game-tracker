@@ -125,6 +125,33 @@ def _addon_field(addon, key: str) -> str | None:
     return addon.get(key) if isinstance(addon, dict) else getattr(addon, key, None)
 
 
+_UPSERT_REVIEW_SQL = """
+INSERT INTO dlc_review_queue
+    (addon_title, source, external_id, source_title, reason, game_id)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (source, external_id) WHERE source IS NOT NULL AND external_id IS NOT NULL
+DO UPDATE SET
+    addon_title  = excluded.addon_title,
+    source_title = excluded.source_title,
+    reason       = excluded.reason,
+    game_id      = excluded.game_id
+"""
+
+
+def _persist_review(conn: sqlite3.Connection, addon, reason: str, game_id: int | None) -> None:
+    """UPSERT a review item into dlc_review_queue.
+
+    Keyed on (source, external_id) via the partial unique index so re-scrapes
+    of the same vendor add-on refresh the reason without duplicating rows.
+    Resolved/dismissed timestamps are intentionally NOT touched by the UPSERT.
+    """
+    title = _addon_field(addon, "title")
+    source = _addon_field(addon, "source")
+    ext = _addon_field(addon, "external_id")
+    source_title = _addon_field(addon, "source_title") or title
+    conn.execute(_UPSERT_REVIEW_SQL, (title, source, ext, source_title, reason, game_id))
+
+
 def _record_ext_id(conn: sqlite3.Connection, dlc_id: int, source: str | None,
                    ext: str | None, source_title: str | None) -> None:
     """Record a vendor add-on id for a dlc row (no-op without source+id)."""
@@ -203,6 +230,8 @@ def _apply_addon_to_parent(
         match = match_equal(_remainder(title, parent_norm), rows)
         if match is AMBIGUOUS:
             report.review.append(Match(title, game_id=parent, reason="ambiguous dlc"))
+            if not dry_run:
+                _persist_review(conn, addon, "ambiguous dlc", parent)
             return
         if match is not None:
             if not dry_run:
@@ -263,9 +292,13 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
         parent = parent_of(title, library)
         if parent is None:
             report.review.append(Match(title, reason="no parent game"))
+            if not dry_run:
+                _persist_review(conn, addon, "no parent game", None)
             continue
         if parent is AMBIGUOUS:
             report.review.append(Match(title, reason="ambiguous parent"))
+            if not dry_run:
+                _persist_review(conn, addon, "ambiguous parent", None)
             continue
         parent_norm = next(gnorm for gid, gnorm in library if gid == parent)
         _apply_addon_to_parent(conn, report, parent, parent_norm, titles, addon, dry_run=dry_run)

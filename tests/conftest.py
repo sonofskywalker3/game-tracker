@@ -11,6 +11,11 @@ def temp_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test_games.db"
     monkeypatch.setattr(models, "DB_PATH", db_path)
     models.init_db()
+    conn = models.get_db()
+    models.migrate_dlc(conn)
+    models.migrate_dlc_external_ids(conn)
+    models.migrate_dlc_review_queue(conn)
+    conn.close()
     return db_path
 
 
