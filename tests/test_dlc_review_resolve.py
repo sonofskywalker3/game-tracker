@@ -190,3 +190,15 @@ def test_dismiss_marks_dismissed_at(conn):
 def test_dismiss_missing_review_id_raises(conn):
     with pytest.raises(ValueError):
         dlc_review.dismiss(conn, 999999)
+
+
+def test_resolve_on_dismissed_row_raises(conn):
+    """A dismissed review row cannot be resolved — the user already said 'not a
+    real add-on'. resolve must raise ValueError rather than silently un-dismiss."""
+    mark_ownership(conn, [{"title": "Q - W", "source": "steam",
+                           "external_id": "42", "source_title": "Q - W"}])
+    review_id = conn.execute("SELECT id FROM dlc_review_queue").fetchone()[0]
+    dlc_review.dismiss(conn, review_id)
+    gid = _add_game(conn, "Q")
+    with pytest.raises(ValueError, match="dismissed"):
+        dlc_review.resolve(conn, review_id, picked_game_id=gid)

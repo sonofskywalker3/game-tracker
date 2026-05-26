@@ -1,4 +1,4 @@
-"""Direct tests for dlc_ownership._apply_addon_to_parent.
+"""Direct tests for dlc_ownership.apply_addon_to_parent.
 
 The helper is the inner per-addon block extracted from mark_ownership and is
 reused by dlc_review.resolve to land a user-picked decision (forced parent,
@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-from dlc_ownership import OwnershipReport, _apply_addon_to_parent
+from dlc_ownership import OwnershipReport, apply_addon_to_parent
 from models import normalize_title
 
 
@@ -75,7 +75,7 @@ def test_reconciles_by_name_when_parent_is_forced(conn):
     addon = {"title": "The Witcher 3 - Hearts of Stone", "source": "steam",
              "external_id": "378649", "source_title": "Hearts of Stone"}
     parent_norm = normalize_title("The Witcher 3")
-    _apply_addon_to_parent(conn, report, gid, parent_norm,
+    apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "The Witcher 3"}, addon, dry_run=False)
     assert report.reconciled == 1
     owned = conn.execute("SELECT owned FROM dlc WHERE id = ?", (dlc_id,)).fetchone()[0]
@@ -92,7 +92,7 @@ def test_creates_when_no_matching_dlc(conn):
     addon = {"title": "Some Game - Season Pass", "source": "nintendo",
              "external_id": "70050000000003", "source_title": "Some Game - Season Pass"}
     parent_norm = normalize_title("Some Game")
-    _apply_addon_to_parent(conn, report, gid, parent_norm,
+    apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "Some Game"}, addon, dry_run=False)
     assert report.created == 1
     row = conn.execute("SELECT name, owned, source FROM dlc WHERE game_id = ?", (gid,)).fetchone()
@@ -110,7 +110,7 @@ def test_forced_dlc_id_flips_that_specific_row(conn):
     addon = {"title": "Game X DLC One", "source": "xbox",
              "external_id": "BFR-1", "source_title": "DLC One"}
     parent_norm = normalize_title("Game X")
-    _apply_addon_to_parent(conn, report, gid, parent_norm,
+    apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "Game X"}, addon, dry_run=False, forced_dlc_id=b_id)
     assert report.reconciled == 1
     assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (b_id,)).fetchone()[0] == 1
@@ -127,7 +127,7 @@ def test_force_create_bypasses_reconcile(conn):
     addon = {"title": "Game Y - Bonus Deluxe", "source": "playstation",
              "external_id": "EP1234-001", "source_title": "Bonus Deluxe"}
     parent_norm = normalize_title("Game Y")
-    _apply_addon_to_parent(conn, report, gid, parent_norm,
+    apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "Game Y"}, addon, dry_run=False, force_create=True)
     assert report.created == 1
     assert report.marked == 1                 # invariant: marked = created + reconciled
@@ -157,7 +157,7 @@ def test_force_create_unique_collision_raises(conn):
              "external_id": "EP1234-001", "source_title": "Bonus"}
     parent_norm = normalize_title("Game Y")
     with pytest.raises(sqlite3.IntegrityError):
-        _apply_addon_to_parent(conn, report, gid, parent_norm,
+        apply_addon_to_parent(conn, report, gid, parent_norm,
                                {gid: "Game Y"}, addon, dry_run=False, force_create=True)
     # The existing row is unchanged:
     assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (existing,)).fetchone()[0] == 0
@@ -172,7 +172,7 @@ def test_dry_run_writes_nothing(conn):
     addon = {"title": "Game Z - Extra", "source": "steam",
              "external_id": "999", "source_title": "Extra"}
     parent_norm = normalize_title("Game Z")
-    _apply_addon_to_parent(conn, report, gid, parent_norm,
+    apply_addon_to_parent(conn, report, gid, parent_norm,
                            {gid: "Game Z"}, addon, dry_run=True)
     assert report.created == 1
     assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id = ?", (gid,)).fetchone()[0] == 0
