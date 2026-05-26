@@ -479,6 +479,40 @@ def migrate_dlc_external_ids(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_dlc_review_queue(conn: sqlite3.Connection) -> None:
+    """Create the dlc_review_queue table + indexes if missing. Idempotent.
+
+    Persists OwnershipReport.review items across scrapes so the resolution modal
+    can resolve them at any time. UPSERT key is (source, external_id) via the
+    partial unique index (null source/ext rows are allowed for legacy paths).
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dlc_review_queue (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            addon_title   TEXT    NOT NULL,
+            source        TEXT,
+            external_id   TEXT,
+            source_title  TEXT,
+            reason        TEXT    NOT NULL,
+            game_id       INTEGER,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at   TIMESTAMP,
+            dismissed_at  TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_dlc_review_vendor_id
+            ON dlc_review_queue(source, external_id)
+            WHERE source IS NOT NULL AND external_id IS NOT NULL
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dlc_review_open
+            ON dlc_review_queue(resolved_at, dismissed_at)
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -521,6 +555,9 @@ def migrate_db():
 
     # Add the not-duplicates table (dedup workstream)
     migrate_not_duplicates(conn)
+
+    # Add the dlc_review_queue table (DLC resolution modal)
+    migrate_dlc_review_queue(conn)
 
     # Add the dlc table + games.igdb_id (DLC tracking)
     migrate_dlc(conn)
