@@ -81,7 +81,7 @@ def _record_ext_id(conn: sqlite3.Connection, dlc_id: int, ext: str, name: str) -
 
 
 def _reconcile_or_create(conn: sqlite3.Connection, game_id: int, name: str,
-                         dlc_appid: int) -> tuple[int, bool]:
+                         dlc_appid: int) -> tuple[int | None, bool]:
     """Return (dlc_id, created). Reconcile by Steam appid -> by normalized-name
     equality (recording the appid) -> else create a steam-sourced row (owned=0)."""
     ext = str(dlc_appid)
@@ -102,6 +102,10 @@ def _reconcile_or_create(conn: sqlite3.Connection, game_id: int, name: str,
     except sqlite3.IntegrityError:
         existing = conn.execute(
             "SELECT id FROM dlc WHERE game_id=? AND name=?", (game_id, name)).fetchone()
+        if existing is None:           # impossible in single-writer scrape; fail safe
+            logger.error("steam dlc insert conflict but row not found: game=%s name=%r",
+                         game_id, name)
+            return None, False
         _record_ext_id(conn, existing[0], ext, name)
         return existing[0], False
     new_id = cur.lastrowid
@@ -158,8 +162,12 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
             if not name:
                 continue
             dlc_id, created = _reconcile_or_create(conn, game_id, name, dlc_appid)
+            if dlc_id is None:          # unreachable name-conflict race; skip safely
+                report.errors += 1
+                continue
             if created:
                 report.catalogue_added += 1
             if dlc_appid in owned_app_ids:
                 _mark_owned(conn, report, dlc_id)
+        conn.commit()                  # commit per game (mirrors igdb_dlc.enrich_missing)
     return report

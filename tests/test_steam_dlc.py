@@ -138,3 +138,19 @@ def test_enrich_missing_skips_steam_games(temp_db, monkeypatch):
     igdb_dlc.enrich_missing(conn, client_id="c", token="t")
     assert oid in seen and sid not in seen
     conn.close()
+
+
+def test_enrich_and_mark_skips_game_on_fetch_error(temp_db):
+    import requests
+    conn = models.get_db()
+    _seed_steam_game(conn)
+    conn.commit()
+
+    def boom(appid):
+        raise requests.ConnectionError("network down")
+
+    rep = steam_dlc.enrich_and_mark(conn, set(), fetch=boom)
+    conn.commit()
+    assert rep.errors == 1 and rep.games == 0 and rep.catalogue_added == 0
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 0
+    conn.close()
