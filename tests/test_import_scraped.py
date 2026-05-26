@@ -348,6 +348,35 @@ def test_partition_imports_games_and_marks_addon_ownership(temp_db):
     conn.close()
 
 
+def test_main_runs_steam_dlc_for_steam_files(temp_db, monkeypatch, tmp_path):
+    import steam_dlc
+
+    fake = {
+        620: {"type": "game", "name": "Portal 2", "dlc": [10, 20]},
+        10: {"type": "dlc", "name": "DLC A"},
+        20: {"type": "dlc", "name": "DLC B"},
+    }
+    monkeypatch.setattr(steam_dlc, "fetch_appdetails", lambda appid, **kw: fake.get(appid))
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+
+    scrape = tmp_path / "steam_20260525.json"
+    scrape.write_text(json.dumps({"source": "steam", "games": [
+        {"title": "Portal 2", "platform": "Steam", "source": "steam",
+         "external_id": "620", "kind": "game"},
+        {"title": "10", "platform": "Steam", "source": "steam",
+         "external_id": "10", "kind": "addon"},
+    ]}), encoding="utf-8")
+
+    import_scraped.main([str(scrape), "--auto-fuzzy"])
+
+    conn = models.get_db()
+    rows = {r["name"]: r["owned"] for r in conn.execute(
+        "SELECT d.name, d.owned FROM dlc d JOIN games g ON g.id = d.game_id "
+        "WHERE g.title = 'Portal 2'")}
+    assert rows == {"DLC A": 1, "DLC B": 0}   # appid 10 owned, 20 not
+    conn.close()
+
+
 def test_main_runs_ownership_after_enrichment(temp_db, monkeypatch, tmp_path):
     # Mock IGDB enrichment so importing the base game populates a DLC row.
     def fake_enrich_missing(conn, *, client_id, token):
