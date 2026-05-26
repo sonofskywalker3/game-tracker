@@ -82,7 +82,7 @@ def resolve(
     titles = {parent: parent_title_row["title"]}
 
     report = OwnershipReport()
-    dlc_ownership._apply_addon_to_parent(
+    dlc_ownership.apply_addon_to_parent(
         conn, report, parent, parent_norm, titles, addon,
         dry_run=False,
         forced_dlc_id=picked_dlc_id,

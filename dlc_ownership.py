@@ -177,7 +177,7 @@ def _flip(conn: sqlite3.Connection, report: OwnershipReport, dlc_id: int, title:
         conn.execute("UPDATE dlc SET owned = 1 WHERE id = ?", (dlc_id,))
 
 
-def _apply_addon_to_parent(
+def apply_addon_to_parent(
     conn: sqlite3.Connection,
     report: OwnershipReport,
     parent: int,
@@ -301,5 +301,5 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
                 _persist_review(conn, addon, "ambiguous parent", None)
             continue
         parent_norm = next(gnorm for gid, gnorm in library if gid == parent)
-        _apply_addon_to_parent(conn, report, parent, parent_norm, titles, addon, dry_run=dry_run)
+        apply_addon_to_parent(conn, report, parent, parent_norm, titles, addon, dry_run=dry_run)
     return report
