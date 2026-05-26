@@ -417,6 +417,36 @@ def api_pin_igdb(game_id):
                     'report': report})
 
 
+@app.route('/api/games/<int:game_id>/steam', methods=['POST'])
+def api_pin_steam(game_id):
+    """Pin a game's Steam identity from a store.steampowered.com/app/<appid> URL.
+
+    Writes game_external_ids(source='steam', external_id=str(appid), source_title=<title>).
+    Does NOT run DLC enrichment (Steam's per-DLC appdetails is rate-limited at
+    200/5min; DLC defers to the next Steam scrape per SP3 decision).
+    """
+    import steam_dlc
+    data    = request.get_json(silent=True) or {}
+    appid   = steam_dlc.appid_from_steam_url((data.get('url') or '').strip())
+    if not appid:
+        return jsonify({'error': 'Not a Steam store URL'}), 400
+    conn     = get_db()
+    game_row = conn.execute(
+        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game_row:
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    conn.execute(
+        "INSERT OR IGNORE INTO game_external_ids "
+        "    (game_id, source, external_id, source_title) "
+        "VALUES (?, 'steam', ?, ?)",
+        (game_id, str(appid), game_row['title']))
+    conn.commit()
+    game = dict(game_row)
+    conn.close()
+    return jsonify({'appid': appid, 'game': game})
+
+
 @app.route('/api/games/<int:game_id>', methods=['PUT'])
 def api_update_game(game_id):
     """Update game rating, status, priority, title, cover_url, etc."""
