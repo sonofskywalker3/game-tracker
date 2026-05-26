@@ -10,6 +10,8 @@ CONFIG_PATH = Path(__file__).parent / "config.json"
 DEFAULT_CONFIG = {
     "twitch_client_id": "",
     "twitch_client_secret": "",
+    "steam_api_key": "",
+    "steam_id": "",
 }
 
 
@@ -39,4 +41,15 @@ def get_twitch_credentials():
 
     if client_id and client_secret:
         return client_id, client_secret
+    return None, None
+
+
+def get_steam_credentials():
+    """Get Steam Web API key + SteamID64 if configured."""
+    config = load_config()
+    api_key = config.get("steam_api_key", "").strip()
+    steam_id = config.get("steam_id", "").strip()
+
+    if api_key and steam_id:
+        return api_key, steam_id
     return None, None
