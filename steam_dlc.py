@@ -124,7 +124,7 @@ def _mark_owned(conn: sqlite3.Connection, report: SteamReport, dlc_id: int) -> N
 
 
 def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
-                    fetch=fetch_appdetails) -> SteamReport:
+                    fetch=None) -> SteamReport:
     """Populate each owned Steam game's DLC catalogue and mark owned by appid.
 
     For every game with a `steam` external id: fetch its catalogue, reconcile-or-
@@ -132,6 +132,8 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
     in owned_app_ids. 0 -> 1 only, idempotent. A per-app fetch error is logged and
     skipped. `fetch(appid) -> data|None` is injected for offline tests.
     """
+    if fetch is None:
+        fetch = fetch_appdetails
     report = SteamReport()
     steam_games = conn.execute(
         "SELECT g.id AS game_id, gx.external_id AS appid "
