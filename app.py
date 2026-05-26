@@ -417,7 +417,7 @@ def api_dlc_review_list():
         candidates = {"games": [], "dlc": []}
         if it["reason"] == "ambiguous parent":
             # Re-derive: longest equal-length prefix winners (mirrors parent_of).
-            addon = dlc_ownership._norm(it["addon_title"])
+            addon = dlc_ownership.norm(it["addon_title"])
             best_len = 0
             winners: list[int] = []
             for gid, gnorm in library:
@@ -451,8 +451,8 @@ def api_dlc_review_list():
             rows = [(r["id"], r["name"])
                     for r in conn.execute(
                         "SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
-            rem = dlc_ownership._remainder(it["addon_title"], parent_norm)
-            equal = [r for r in rows if dlc_ownership._norm(r[1]) == rem]
+            rem = dlc_ownership.remainder(it["addon_title"], parent_norm)
+            equal = [r for r in rows if dlc_ownership.norm(r[1]) == rem]
             candidates["dlc"] = [{"id": dlc_id, "name": name} for dlc_id, name in equal]
         out.append({
             "id": it["id"],

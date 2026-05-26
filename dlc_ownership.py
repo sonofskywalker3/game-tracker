@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 AMBIGUOUS = "__ambiguous__"
 
 
-def _norm(title: str | None) -> str:
+def norm(title: str | None) -> str:
     """Normalized match key (normalize_title(clean_title(...)))."""
     return models.normalize_title(models.clean_title(title or ""))
 
@@ -38,7 +38,7 @@ def parent_of(addon_title: str, library: list[tuple[int, str]]) -> int | str | N
     game_ids). A normalized game title matches when it equals the normalized
     add-on title or is a whole-word prefix of it.
     """
-    addon = _norm(addon_title)
+    addon = norm(addon_title)
     if not addon:
         return None
     best_len = 0
@@ -58,9 +58,9 @@ def parent_of(addon_title: str, library: list[tuple[int, str]]) -> int | str | N
     return next(iter(winners))
 
 
-def _remainder(addon_title: str, parent_norm: str) -> str:
+def remainder(addon_title: str, parent_norm: str) -> str:
     """The normalized add-on title with the parent's normalized prefix removed."""
-    addon = _norm(addon_title)
+    addon = norm(addon_title)
     if addon == parent_norm:
         return ""
     prefix = parent_norm + " "
@@ -79,7 +79,7 @@ def match_equal(remainder: str, dlc_rows: list[tuple[int, str]]) -> int | str | 
     rem = (remainder or "").strip()
     if not rem:
         return None
-    equal = [dlc_id for dlc_id, name in dlc_rows if _norm(name) == rem]
+    equal = [dlc_id for dlc_id, name in dlc_rows if norm(name) == rem]
     if len(equal) == 1:
         return equal[0]
     if len(equal) > 1:
@@ -227,7 +227,7 @@ def apply_addon_to_parent(
         # (b) reconcile by normalized-name equality
         rows = [(r["id"], r["name"])
                 for r in conn.execute("SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
-        match = match_equal(_remainder(title, parent_norm), rows)
+        match = match_equal(remainder(title, parent_norm), rows)
         if match is AMBIGUOUS:
             report.review.append(Match(title, game_id=parent, reason="ambiguous dlc"))
             if not dry_run:
