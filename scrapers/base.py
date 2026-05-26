@@ -26,7 +26,7 @@ PROFILE_DIR = PROJECT_ROOT / ".pw-profile"   # persistent Playwright login sessi
 RECON_DIR = PROJECT_ROOT / ".recon"          # raw captured HTML (personal; gitignored)
 SCRAPE_DIR = PROJECT_ROOT / "scraped"        # normalized JSON output (gitignored)
 
-VALID_SOURCES = frozenset({"playstation", "xbox", "nintendo"})
+VALID_SOURCES = frozenset({"playstation", "xbox", "nintendo", "steam"})
 
 # Prefer a real installed browser (vendor logins like Nintendo block bundled
 # Chromium's automation fingerprint); fall back to bundled Chromium.
