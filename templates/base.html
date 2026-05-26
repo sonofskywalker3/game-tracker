@@ -156,6 +156,10 @@
                     </button>
                     <div class="border-t border-gray-700 pt-4 mt-2">
                         <div class="text-sm font-medium text-gray-400 mb-2">Or sync a whole library</div>
+                        <div id="dlc-review-entry" class="flex items-center justify-between gap-2 mb-3 hidden">
+                            <span class="text-sm text-gray-300">DLC review (<span id="dlc-review-count">0</span>)</span>
+                            <button onclick="openDlcReviewModal()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded text-white text-sm">Open</button>
+                        </div>
                         <div id="scrape-vendors" class="flex gap-2">
                             <button onclick="startScrape('playstation')" class="scrape-vendor-btn flex-1 px-3 py-2 bg-surface hover:bg-surface-lighter rounded-lg text-white text-sm transition-colors">PlayStation</button>
                             <button onclick="startScrape('xbox')" class="scrape-vendor-btn flex-1 px-3 py-2 bg-surface hover:bg-surface-lighter rounded-lg text-white text-sm transition-colors">Xbox</button>
@@ -186,6 +190,21 @@
                 </div>
                 <div id="dedup-body" class="space-y-6">
                     <div class="text-gray-400 text-sm">Scanning your library…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DLC Review Modal -->
+    <div id="dlc-review-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-white">Resolve DLC review <span id="dlc-review-count-header" class="text-gray-400 text-base"></span></h2>
+                    <button onclick="closeDlcReviewModal()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div id="dlc-review-body" class="space-y-3">
+                    <div class="text-gray-400 text-sm">Loading…</div>
                 </div>
             </div>
         </div>
@@ -1296,7 +1315,7 @@
             if (review.length) {
                 const rows = review.map(r =>
                     `<div class="pl-3 text-yellow-400">${escapeHtml(r.title)} <span class="text-gray-500">[${escapeHtml(r.reason)}]</span></div>`).join('');
-                html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Needs review (${review.length})</summary>
+                html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Needs review (${review.length}) — <button type="button" onclick="event.preventDefault(); openDlcReviewModal();" class="text-accent hover:underline">resolve</button></summary>
                          <div class="mt-1 max-h-48 overflow-y-auto">${rows}</div></details>`;
             }
             el.innerHTML = html || '<div class="text-gray-500">No DLC changes.</div>';
@@ -1333,7 +1352,166 @@
                     setScrapeButtonsDisabled(false);
                 }
             });
+            // Populate the DLC review badge in parallel.
+            api.get('/api/dlc/review/count').then(r => {
+                const n = (r && r.count) || 0;
+                const entry = document.getElementById('dlc-review-entry');
+                document.getElementById('dlc-review-count').textContent = n;
+                entry.classList.toggle('hidden', n === 0);
+            });
         }
+
+        // ---- DLC review modal ----
+        let dlcReviewBusy = false;
+
+        function openDlcReviewModal() {
+            showModalEl('dlc-review-modal');
+            document.getElementById('dlc-review-body').innerHTML =
+                '<div class="text-gray-400 text-sm">Loading…</div>';
+            loadDlcReview();
+        }
+        function closeDlcReviewModal() { hideModalEl('dlc-review-modal'); }
+
+        async function loadDlcReview() {
+            const data = await api.get('/api/dlc/review');
+            renderDlcReview(data);
+        }
+
+        function renderDlcReview(data) {
+            const body = document.getElementById('dlc-review-body');
+            const header = document.getElementById('dlc-review-count-header');
+            const items = (data && data.items) || [];
+            header.textContent = items.length ? `(${items.length})` : '';
+            if (!items.length) {
+                body.innerHTML = '<div class="text-gray-400 text-sm">Nothing to review. 🎉</div>';
+                refreshDlcReviewBadge(0);
+                return;
+            }
+            body.innerHTML = items.map(it => dlcReviewCard(it)).join('');
+        }
+
+        function refreshDlcReviewBadge(n) {
+            const entry = document.getElementById('dlc-review-entry');
+            const cnt = document.getElementById('dlc-review-count');
+            if (cnt) cnt.textContent = n;
+            if (entry) entry.classList.toggle('hidden', n === 0);
+        }
+
+        function dlcReviewCard(it) {
+            const reason = escapeHtml(it.reason);
+            const vendor = escapeHtml(it.source || 'unknown');
+            const actions = dlcReviewActions(it);
+            return `<div class="bg-surface rounded-lg p-3" id="dlc-review-row-${it.id}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="text-white text-sm font-medium truncate">${escapeHtml(it.addon_title)}</div>
+                        <div class="mt-1 flex items-center gap-2 flex-wrap">
+                            <span class="px-2 py-0.5 bg-surface-light rounded text-xs text-gray-300">${vendor}</span>
+                            <span class="px-2 py-0.5 bg-yellow-900/40 text-yellow-300 rounded text-xs">${reason}</span>
+                        </div>
+                    </div>
+                    <button onclick="dismissDlcReview(${it.id})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Dismiss</button>
+                </div>
+                <div class="mt-3">${actions}</div>
+            </div>`;
+        }
+
+        function gameTileHtml(it, g) {
+            const plats = (g.platforms || []).join(', ') || '—';
+            return `<button type="button" onclick="resolveDlcReview(${it.id}, {game_id: ${g.id}})"
+                class="flex items-center gap-2 w-full text-left bg-surface-light hover:bg-surface-lighter rounded p-2">
+                <img src="${g.cover_url || ''}" onerror="this.style.display='none'" class="w-8 h-10 object-cover rounded bg-surface">
+                <div class="min-w-0">
+                    <div class="text-white text-sm truncate">${escapeHtml(g.title)}</div>
+                    <div class="text-gray-500 text-xs">${escapeHtml(plats)}</div>
+                </div>
+            </button>`;
+        }
+
+        function dlcReviewActions(it) {
+            if (it.reason === 'ambiguous parent') {
+                const tiles = (it.candidates.games || []).map(g => gameTileHtml(it, g)).join('');
+                return `<div class="space-y-1">${tiles}</div>
+                    <div class="mt-2 text-xs text-gray-400">None of these — search instead:</div>
+                    ${searchInputHtml(it)}`;
+            }
+            if (it.reason === 'ambiguous dlc') {
+                const tiles = (it.candidates.dlc || []).map(d => `
+                    <button type="button" onclick="resolveDlcReview(${it.id}, {dlc_id: ${d.id}})"
+                        class="block w-full text-left bg-surface-light hover:bg-surface-lighter rounded px-3 py-2 text-white text-sm">
+                        ${escapeHtml(d.name)}
+                    </button>`).join('');
+                return `<div class="space-y-1">${tiles}</div>
+                    <button type="button" onclick="resolveDlcReview(${it.id}, {create_new_dlc: true})"
+                        class="mt-2 text-accent hover:underline text-xs">None of these — create a new DLC row instead</button>`;
+            }
+            // "no parent game"
+            return searchInputHtml(it);
+        }
+
+        function searchInputHtml(it) {
+            return `<div>
+                <input type="text" oninput="dlcReviewSearch(${it.id}, this.value)" placeholder="Search games by title…"
+                       class="w-full bg-surface-light rounded border border-gray-600 px-2 py-1 text-white text-sm focus:border-accent focus:outline-none">
+                <div id="dlc-review-search-${it.id}" class="mt-1 space-y-1"></div>
+            </div>`;
+        }
+
+        const _dlcReviewTimers = {};
+        function dlcReviewSearch(reviewId, query) {
+            clearTimeout(_dlcReviewTimers[reviewId]);
+            _dlcReviewTimers[reviewId] = setTimeout(async () => {
+                const out = document.getElementById(`dlc-review-search-${reviewId}`);
+                if (!out) return;
+                const q = (query || '').trim();
+                if (q.length < 2) { out.innerHTML = ''; return; }
+                const results = await api.get(`/api/games/search?q=${encodeURIComponent(q)}`);
+                if (!results.length) { out.innerHTML = '<div class="text-xs text-gray-500">No matches</div>'; return; }
+                out.innerHTML = results.map(g => gameTileHtml({id: reviewId}, g)).join('');
+            }, 250);
+        }
+
+        async function resolveDlcReview(reviewId, body) {
+            if (dlcReviewBusy) return;
+            dlcReviewBusy = true;
+            try {
+                const res = await api.post(`/api/dlc/review/${reviewId}/resolve`, body);
+                if (!res.ok) {
+                    alert((res.data && res.data.error) || 'Resolve failed');
+                    return;
+                }
+                document.getElementById(`dlc-review-row-${reviewId}`)?.remove();
+                refreshDlcReviewBadge(res.data.count);
+                const remaining = document.querySelectorAll('#dlc-review-body > div').length;
+                if (remaining === 0) {
+                    document.getElementById('dlc-review-body').innerHTML =
+                        '<div class="text-gray-400 text-sm">Nothing to review. 🎉</div>';
+                    document.getElementById('dlc-review-count-header').textContent = '';
+                }
+            } finally {
+                dlcReviewBusy = false;
+            }
+        }
+
+        async function dismissDlcReview(reviewId) {
+            if (dlcReviewBusy) return;
+            dlcReviewBusy = true;
+            try {
+                const res = await api.post(`/api/dlc/review/${reviewId}/dismiss`, {});
+                if (!res.ok) {
+                    alert((res.data && res.data.error) || 'Dismiss failed');
+                    return;
+                }
+                document.getElementById(`dlc-review-row-${reviewId}`)?.remove();
+                refreshDlcReviewBadge(res.data.count);
+            } finally {
+                dlcReviewBusy = false;
+            }
+        }
+
+        document.getElementById('dlc-review-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'dlc-review-modal') closeDlcReviewModal();
+        });
 
         document.getElementById('add-game-modal').addEventListener('click', (e) => {
             if (e.target.id === 'add-game-modal') closeAddGameModal();
