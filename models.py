@@ -205,6 +205,7 @@ def init_db():
         ("Nintendo Switch", "Switch", "modern_console"),
         ("Xbox", "Xbox", "modern_console"),
         ("PC", "PC", "pc"),
+        ("Steam", "Steam", "pc"),
     ]
     conn.executemany(
         "INSERT OR IGNORE INTO platforms (name, short_name, category) VALUES (?, ?, ?)",

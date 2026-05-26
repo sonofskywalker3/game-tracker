@@ -7,7 +7,7 @@ def test_scrape_status_shape(client):
 
 
 def test_scrape_start_bad_vendor(client):
-    res = client.post("/api/scrape/start", json={"vendor": "steam"})
+    res = client.post("/api/scrape/start", json={"vendor": "bogus"})
     assert res.status_code == 400
 
 
