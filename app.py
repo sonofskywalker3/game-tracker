@@ -385,6 +385,144 @@ def api_delete_dlc(dlc_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/dlc/review/count')
+def api_dlc_review_count():
+    """Open-queue size (resolved/dismissed excluded). Cheap; drives the badge."""
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
+    ).fetchone()[0]
+    conn.close()
+    return jsonify({'count': n})
+
+
+@app.route('/api/dlc/review')
+def api_dlc_review_list():
+    """Open review items + inlined candidate parents/DLCs (re-derived against
+    the current library, so candidates reflect any merges/renames since the
+    scrape)."""
+    import dlc_ownership
+    conn = get_db()
+    items = conn.execute(
+        "SELECT id, addon_title, source, external_id, source_title, reason, game_id "
+        "FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL "
+        "ORDER BY created_at, id"
+    ).fetchall()
+    library = [(r["id"], r["normalized_title"])
+               for r in conn.execute("SELECT id, normalized_title FROM games")]
+    out = []
+    for it in items:
+        candidates = {"games": [], "dlc": []}
+        if it["reason"] == "ambiguous parent":
+            # Re-derive: longest equal-length prefix winners (mirrors parent_of).
+            addon = dlc_ownership._norm(it["addon_title"])
+            best_len = 0
+            winners: list[int] = []
+            for gid, gnorm in library:
+                if not gnorm:
+                    continue
+                if addon == gnorm or addon.startswith(gnorm + " "):
+                    if len(gnorm) > best_len:
+                        best_len, winners = len(gnorm), [gid]
+                    elif len(gnorm) == best_len:
+                        winners.append(gid)
+            if winners:
+                placeholders = ",".join("?" * len(winners))
+                game_rows = conn.execute(
+                    f"SELECT id, title, cover_url FROM games WHERE id IN ({placeholders})",
+                    winners).fetchall()
+                plat_by_game: dict[int, list[str]] = {gid: [] for gid in winners}
+                for r in conn.execute(
+                    f"SELECT gp.game_id, p.short_name FROM game_platforms gp "
+                    f"JOIN platforms p ON p.id = gp.platform_id "
+                    f"WHERE gp.game_id IN ({placeholders})", winners):
+                    plat_by_game[r["game_id"]].append(r["short_name"])
+                candidates["games"] = [
+                    {"id": r["id"], "title": r["title"], "cover_url": r["cover_url"],
+                     "platforms": plat_by_game.get(r["id"], [])}
+                    for r in game_rows
+                ]
+        elif it["reason"] == "ambiguous dlc" and it["game_id"]:
+            parent = it["game_id"]
+            parent_norm = next(
+                (g for gid, g in library if gid == parent), "") or ""
+            rows = [(r["id"], r["name"])
+                    for r in conn.execute(
+                        "SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
+            rem = dlc_ownership._remainder(it["addon_title"], parent_norm)
+            equal = [r for r in rows if dlc_ownership._norm(r[1]) == rem]
+            candidates["dlc"] = [{"id": dlc_id, "name": name} for dlc_id, name in equal]
+        out.append({
+            "id": it["id"],
+            "addon_title": it["addon_title"],
+            "source": it["source"],
+            "external_id": it["external_id"],
+            "source_title": it["source_title"],
+            "reason": it["reason"],
+            "game_id": it["game_id"],
+            "candidates": candidates,
+        })
+    conn.close()
+    return jsonify({"items": out, "count": len(out)})
+
+
+@app.route('/api/dlc/review/<int:review_id>/resolve', methods=['POST'])
+def api_dlc_review_resolve(review_id):
+    """Apply a user-picked decision to a queued review item."""
+    import dlc_review
+    data = request.get_json(silent=True) or {}
+    picked_game_id = data.get("game_id")
+    picked_dlc_id = data.get("dlc_id")
+    create_new_dlc = bool(data.get("create_new_dlc"))
+    chosen = (picked_game_id is not None) + (picked_dlc_id is not None) + (1 if create_new_dlc else 0)
+    if chosen != 1:
+        return jsonify({"error": "Pick exactly one of game_id, dlc_id, or create_new_dlc"}), 400
+    conn = get_db()
+    try:
+        match = dlc_review.resolve(
+            conn, review_id,
+            picked_game_id=picked_game_id,
+            picked_dlc_id=picked_dlc_id,
+            create_new_dlc=create_new_dlc,
+        )
+    except ValueError as exc:
+        conn.rollback()
+        conn.close()
+        msg = str(exc)
+        # "not found" cases → 404; other ValueErrors → 400.
+        status = 404 if "not found" in msg else 400
+        return jsonify({"error": msg}), status
+    conn.commit()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
+    ).fetchone()[0]
+    conn.close()
+    return jsonify({"ok": True, "marked": match.reason in ("created", "reconciled"),
+                    "count": count})
+
+
+@app.route('/api/dlc/review/<int:review_id>/dismiss', methods=['POST'])
+def api_dlc_review_dismiss(review_id):
+    """Mark a review item dismissed (not a real add-on)."""
+    import dlc_review
+    conn = get_db()
+    try:
+        dlc_review.dismiss(conn, review_id)
+    except ValueError as exc:
+        conn.close()
+        return jsonify({"error": str(exc)}), 404
+    conn.commit()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
+    ).fetchone()[0]
+    conn.close()
+    return jsonify({"ok": True, "count": count})
+
+
 @app.route('/api/games/<int:game_id>/dlc/refresh', methods=['POST'])
 def api_refresh_dlc(game_id):
     """Re-fetch a game's DLC from IGDB (by stored id, or by title if unset)."""
