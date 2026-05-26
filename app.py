@@ -298,6 +298,37 @@ def api_game(game_id):
     return jsonify(result)
 
 
+@app.route('/api/games/search')
+def api_games_search():
+    """Library typeahead: ?q=<term> -> up to 10 games with id, title, cover_url,
+    platforms. Returns [] for queries shorter than 2 chars."""
+    query = (request.args.get('q') or '').strip()
+    if len(query) < 2:
+        return jsonify([])
+    conn = get_db()
+    like = f"%{query}%"
+    rows = conn.execute(
+        "SELECT id, title, cover_url FROM games "
+        "WHERE title LIKE ? COLLATE NOCASE OR normalized_title LIKE ? COLLATE NOCASE "
+        "ORDER BY title COLLATE NOCASE LIMIT 10",
+        (like, like)).fetchall()
+    game_ids = [r["id"] for r in rows]
+    plat_by_game: dict[int, list[str]] = {gid: [] for gid in game_ids}
+    if game_ids:
+        placeholders = ",".join("?" * len(game_ids))
+        for r in conn.execute(
+            f"SELECT gp.game_id, p.short_name FROM game_platforms gp "
+            f"JOIN platforms p ON p.id = gp.platform_id "
+            f"WHERE gp.game_id IN ({placeholders})", game_ids):
+            plat_by_game[r["game_id"]].append(r["short_name"])
+    conn.close()
+    return jsonify([
+        {"id": r["id"], "title": r["title"], "cover_url": r["cover_url"],
+         "platforms": plat_by_game.get(r["id"], [])}
+        for r in rows
+    ])
+
+
 @app.route('/api/dlc/<int:dlc_id>/owned', methods=['POST'])
 def api_set_dlc_owned(dlc_id):
     """Toggle ownership of a DLC entry."""
