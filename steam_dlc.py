@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -26,6 +27,23 @@ logger = logging.getLogger(__name__)
 APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 CACHE_DIR = Path(__file__).parent / ".steam_cache"
 REQUEST_DELAY_S = 1.5  # keep under ~200 appdetails / 5 min per IP
+
+_STEAM_APP_URL = re.compile(
+    r"https?://store\.steampowered\.com/app/(\d+)",
+    re.IGNORECASE,
+)
+
+
+def appid_from_steam_url(url: str | None) -> int | None:
+    """Extract the appid from a store.steampowered.com/app/<appid> URL, else None.
+
+    Mirrors igdb_dlc.slug_from_igdb_url: case-insensitive, ignores trailing path
+    segments and query strings, strips surrounding whitespace.
+    """
+    if not url:
+        return None
+    match = _STEAM_APP_URL.search(url.strip())
+    return int(match.group(1)) if match else None
 
 
 def parse_catalogue(data: dict) -> list[int]:
