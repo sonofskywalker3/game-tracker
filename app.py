@@ -288,6 +288,12 @@ def api_game(game_id):
         (game_id,)).fetchall()
     result['dlc'] = [{**dict(d), 'owned': bool(d['owned'])} for d in dlc]
 
+    # External IDs (used by the 'Change cover' button)
+    ext_rows = conn.execute(
+        "SELECT source, external_id FROM game_external_ids WHERE game_id = ?",
+        (game_id,)).fetchall()
+    result["external_ids"] = {r["source"]: r["external_id"] for r in ext_rows}
+
     conn.close()
     return jsonify(result)
 
