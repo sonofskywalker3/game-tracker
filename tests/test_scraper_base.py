@@ -27,7 +27,7 @@ def test_write_and_read_roundtrip(tmp_path):
 
 def test_write_rejects_unknown_source(tmp_path):
     with pytest.raises(ValueError):
-        write_scrape("steam", [], out_dir=tmp_path)
+        write_scrape("fake_vendor", [], out_dir=tmp_path)
 
 
 def test_scrapedgame_kind_defaults_to_game():
