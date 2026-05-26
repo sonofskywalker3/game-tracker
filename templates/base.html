@@ -809,17 +809,22 @@
                                    onblur="renameGame(${game.id}, this.value)">
                         </div>
 
-                        <!-- Cover URL -->
+                        <!-- Source link -->
                         <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-1">Cover Art URL</label>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">
+                                Source link
+                                ${game.igdb_id ? `<span class="ml-2 px-2 py-0.5 bg-surface rounded text-xs text-gray-400">IGDB #${game.igdb_id}</span>` : ''}
+                                ${(game.external_ids && game.external_ids.steam) ? `<span class="ml-2 px-2 py-0.5 bg-surface rounded text-xs text-gray-400">Steam ${game.external_ids.steam}</span>` : ''}
+                            </label>
                             <div class="flex gap-2">
-                                <input type="text" id="cover-url-${game.id}" value="${coverUrl}" placeholder="https://… or an IGDB game URL"
+                                <input type="text" id="source-link-${game.id}" value="" placeholder="Paste an IGDB or Steam URL to pin this game's source"
                                        class="flex-1 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
-                                <button onclick="setCoverUrl(${game.id}, document.getElementById('cover-url-${game.id}').value)"
+                                <button onclick="setSourceLink(${game.id}, document.getElementById('source-link-${game.id}').value)"
                                         class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm transition-colors">
                                     Save
                                 </button>
                             </div>
+                            <p id="source-link-err-${game.id}" class="text-xs text-red-400 mt-1 hidden"></p>
                             <p class="text-xs text-gray-500 mt-1">
                                 ${(() => {
                                     const plats = (game.platforms || []).map(p => p.short_name);
@@ -827,10 +832,11 @@
                                     if (plats.includes('PS4') || plats.includes('PS5')) links.push('<a href="https://store.playstation.com/en-us/search/' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">PSN</a>');
                                     if (plats.includes('Switch')) links.push('<a href="https://www.nintendo.com/us/search/#q=' + encodeURIComponent(game.title) + '&sort=df&f=corePlatforms&corePlatforms=Nintendo+Switch" target="_blank" class="text-accent hover:underline">Nintendo</a>');
                                     if (plats.includes('Xbox')) links.push('<a href="https://www.xbox.com/en-US/search?q=' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">Xbox</a>');
-                                    return links.join(' · ');
+                                    links.push('<a href="https://store.steampowered.com/search/?term=' + encodeURIComponent(game.title) + '" target="_blank" class="text-accent hover:underline">Steam</a>');
+                                    return links.join(' &middot; ');
                                 })()}
                             </p>
-                            <p class="text-xs text-gray-500 mt-1">Tip: paste an IGDB game URL above to set the right cover + DLC.</p>
+                            <p class="text-xs text-gray-500 mt-1">Paste an IGDB or Steam URL above to pin this game's source. Use the cover field below to set a literal image URL.</p>
                         </div>
 
                         <!-- Status & Priority row -->
@@ -1041,14 +1047,32 @@
             if (typeof refreshGameList === 'function') refreshGameList();
         }
 
-        async function setCoverUrl(gameId, url) {
-            const v = url.trim();
-            // An IGDB game URL pins identity (cover + DLC); anything else is a literal cover URL.
-            if (/https?:\/\/(www\.)?igdb\.com\/games\//i.test(v)) {
+        const IGDB_URL_RE = /^https?:\/\/(www\.)?igdb\.com\/games\//i;
+        const STEAM_URL_RE = /^https?:\/\/store\.steampowered\.com\/app\/\d+/i;
+
+        function showSourceLinkError(gameId, msg) {
+            const el = document.getElementById(`source-link-err-${gameId}`);
+            if (!el) return;
+            if (msg) { el.textContent = msg; el.classList.remove('hidden'); }
+            else { el.textContent = ''; el.classList.add('hidden'); }
+        }
+
+        async function setSourceLink(gameId, url) {
+            const v = (url || '').trim();
+            showSourceLinkError(gameId, '');
+            if (!v) {
+                showSourceLinkError(gameId, 'Paste an IGDB or Steam URL, or leave empty.');
+                return;
+            }
+            if (IGDB_URL_RE.test(v)) {
                 const res = await api.post(`/api/games/${gameId}/igdb`, { url: v });
-                if (res && !res.ok) alert(res.data?.error || 'Could not resolve that IGDB URL');
+                if (!res.ok) { showSourceLinkError(gameId, res.data?.error || 'Could not resolve that IGDB URL'); return; }
+            } else if (STEAM_URL_RE.test(v)) {
+                const res = await api.post(`/api/games/${gameId}/steam`, { url: v });
+                if (!res.ok) { showSourceLinkError(gameId, res.data?.error || 'Could not record that Steam URL'); return; }
             } else {
-                await api.put(`/api/games/${gameId}`, { cover_url: v });
+                showSourceLinkError(gameId, "Only IGDB or Steam URLs are accepted here. Use the cover image field below for a literal image URL.");
+                return;
             }
             loadGameModal(gameId);
             if (typeof refreshGameList === 'function') refreshGameList();
