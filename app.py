@@ -1522,7 +1522,7 @@ def api_igdb_search():
 
         igdb_query = f'''
             search "{query}";
-            fields name, cover.url;
+            fields name, slug, cover.url;
             limit 8;
         '''
 
@@ -1543,9 +1543,12 @@ def api_igdb_search():
                 if not cover_url.startswith('http'):
                     cover_url = 'https:' + cover_url
 
+            slug = game.get('slug') or ''
             games.append({
                 'name': game.get('name', ''),
-                'cover_url': cover_url
+                'slug': slug,
+                'cover_url': cover_url,
+                'igdb_url': f'https://www.igdb.com/games/{slug}' if slug else '',
             })
 
         return jsonify(games)
