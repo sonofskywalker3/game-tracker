@@ -15,6 +15,10 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_dlc(conn)
     models.migrate_dlc_external_ids(conn)
     models.migrate_dlc_review_queue(conn)
+    models.migrate_slots(conn)
+    models.migrate_slot_history(conn)
+    models.migrate_game_signals(conn)
+    models.seed_default_slots(conn)
     conn.close()
     return db_path
 
