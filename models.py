@@ -563,6 +563,29 @@ def migrate_slot_history(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_game_signals(conn: sqlite3.Connection) -> None:
+    """Add HowLongToBeat + override signal columns to games. Idempotent.
+
+    Session-tolerance and the default latency tolerance are NOT stored — they are
+    derived at scoring time (slot_signals.py) so retuning the lookup tables re-scores
+    everything without a migration. Only the raw HLTB durations and the manual
+    overrides live here.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    additions = [
+        ("hltb_id", "TEXT"),
+        ("hltb_main_minutes", "INTEGER"),
+        ("hltb_main_extra_minutes", "INTEGER"),
+        ("hltb_completionist_minutes", "INTEGER"),
+        ("time_to_beat_override_minutes", "INTEGER"),
+        ("input_lag_override", "INTEGER"),
+    ]
+    for name, decl in additions:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE games ADD COLUMN {name} {decl}")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
