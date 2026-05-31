@@ -5,10 +5,10 @@ import sqlite3
 
 import pytest
 
-from models import migrate_slots, migrate_slot_history  # noqa: F401  # Task 2 adds this
+from models import migrate_slots
 
 
-def _columns(conn, table):
+def _columns(conn: sqlite3.Connection, table: str) -> dict[str, str]:
     return {row[1]: row[2] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
