@@ -50,3 +50,8 @@ def test_network_error_degrades_to_none():
     import requests
     with patch("hltb.requests.post", side_effect=requests.RequestException("boom")):
         assert hltb.fetch_durations("Hades") is None
+
+
+def test_null_data_field_degrades_to_none():
+    with patch("hltb.requests.post", return_value=_fake_response({"data": None})):
+        assert hltb.fetch_durations("Hades") is None

@@ -53,7 +53,7 @@ def fetch_durations(title: str) -> dict | None:
     try:
         resp = requests.post(SEARCH_URL, json=payload, headers=HEADERS, timeout=TIMEOUT_SECONDS)
         resp.raise_for_status()
-        data = resp.json().get("data", [])
+        data = resp.json().get("data") or []
     except (requests.RequestException, ValueError) as exc:
         logger.warning("HLTB search failed for %r: %s", title, exc)
         return None
@@ -61,8 +61,9 @@ def fetch_durations(title: str) -> dict | None:
     match = _best_match(data, title)
     if not match:
         return None
+    game_id = match.get("game_id")
     return {
-        "hltb_id": str(match.get("game_id")),
+        "hltb_id": str(game_id) if game_id is not None else None,
         "hltb_main_minutes": _minutes(match.get("comp_main")),
         "hltb_main_extra_minutes": _minutes(match.get("comp_plus")),
         "hltb_completionist_minutes": _minutes(match.get("comp_100")),
