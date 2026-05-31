@@ -513,6 +513,33 @@ def migrate_dlc_review_queue(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_slots(conn: sqlite3.Connection) -> None:
+    """Create the slots table if missing. Idempotent.
+
+    A slot is a user-defined play context (label + constraints). It always holds
+    at most one current game + a plaintext goal. Constraints (platforms, session
+    window, latency) drive deterministic eligibility now and the SP2 chat prompt
+    later. current_game_id is SET NULL on game delete so a deleted game never
+    orphans a slot.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS slots (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            label                TEXT    NOT NULL,
+            sort_order           INTEGER NOT NULL DEFAULT 0,
+            platforms            TEXT,          -- JSON array of platform short_names
+            max_session_minutes  INTEGER,       -- upper bound on a comfortable sitting
+            min_session_minutes  INTEGER,       -- lower bound
+            requires_low_latency INTEGER NOT NULL DEFAULT 0,
+            context_notes        TEXT,          -- owner's own words; feeds SP2 prompt
+            current_game_id      INTEGER,
+            goal                 TEXT,
+            FOREIGN KEY (current_game_id) REFERENCES games(id) ON DELETE SET NULL
+        )
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
