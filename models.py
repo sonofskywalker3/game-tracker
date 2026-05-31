@@ -296,6 +296,41 @@ KNOWN_EDITION_SUFFIXES = (
     "Nintendo Switch Edition",
 )
 
+# Seed slots: the owner's four context slots. Inserted only when the slots table
+# is empty (seed-once); fully user-editable afterward. platforms are platform
+# short_names (see the platforms table). See the gamer-persona memory.
+SEED_SLOTS = (
+    {"label": "Switch · Quick",      "sort_order": 0, "platforms": ["Switch"],
+     "max_session_minutes": 60, "min_session_minutes": None, "requires_low_latency": 0,
+     "context_notes": "Couch, short sitting, kids in bed. Clean stopping points."},
+    {"label": "Switch · Long",       "sort_order": 1, "platforms": ["Switch"],
+     "max_session_minutes": None, "min_session_minutes": 60, "requires_low_latency": 0,
+     "context_notes": "Couch, longer Switch session."},
+    {"label": "Garage · Console",    "sort_order": 2, "platforms": ["PS", "Xbox"],
+     "max_session_minutes": None, "min_session_minutes": None, "requires_low_latency": 1,
+     "context_notes": "Needs the real garage setup; reflex/low-latency; worth the trip."},
+    {"label": "Long · Stream-safe",  "sort_order": 3, "platforms": ["PS", "Xbox"],
+     "max_session_minutes": None, "min_session_minutes": 60, "requires_low_latency": 0,
+     "context_notes": "Turn-based / lag-tolerant. Garage or Shield-streamed to the couch."},
+)
+
+
+def seed_default_slots(conn: sqlite3.Connection) -> None:
+    """Insert the seed slots only if the slots table is empty. Idempotent; never
+    clobbers user-defined slots."""
+    existing = conn.execute("SELECT COUNT(*) FROM slots").fetchone()[0]
+    if existing:
+        return
+    for s in SEED_SLOTS:
+        conn.execute(
+            "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
+            "min_session_minutes, requires_low_latency, context_notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (s["label"], s["sort_order"], json.dumps(s["platforms"]),
+             s["max_session_minutes"], s["min_session_minutes"],
+             s["requires_low_latency"], s["context_notes"]))
+    conn.commit()
+
 
 def strip_leading_tag(title):
     """Strip a leading region/language parenthetical like '(English) '."""
@@ -637,6 +672,12 @@ def migrate_db():
 
     # Add the dlc_external_ids table (vendor add-on ids; DLC source-of-truth rework)
     migrate_dlc_external_ids(conn)
+
+    # Add the Slate tables (picks-tab revamp foundation)
+    migrate_slots(conn)
+    migrate_slot_history(conn)
+    migrate_game_signals(conn)
+    seed_default_slots(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
     # symbols, leading region tags, edition suffixes, etc.). Display-only:
