@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from models import migrate_slots
+from models import migrate_slots, migrate_slot_history
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> dict[str, str]:
@@ -45,3 +45,27 @@ def test_slots_current_game_fk_set_null_on_delete(conn):
     conn.execute("DELETE FROM games WHERE id = 1")
     g = conn.execute("SELECT current_game_id FROM slots WHERE label='S'").fetchone()[0]
     assert g is None
+
+
+def test_history_creates_table_and_columns(conn):
+    migrate_slot_history(conn)
+    cols = _columns(conn, "slot_history")
+    assert set(cols) == {
+        "id", "slot_id", "game_id", "goal",
+        "pinned_at", "removed_at", "outcome",
+    }
+
+
+def test_history_is_idempotent(conn):
+    migrate_slot_history(conn)
+    migrate_slot_history(conn)  # must not raise
+
+
+def test_history_accepts_outcomes(conn):
+    migrate_slot_history(conn)
+    for outcome in ("beat", "completed", "dropped", "shelved"):
+        conn.execute(
+            "INSERT INTO slot_history (slot_id, game_id, outcome) VALUES (1, 1, ?)",
+            (outcome,))
+    n = conn.execute("SELECT COUNT(*) FROM slot_history").fetchone()[0]
+    assert n == 4

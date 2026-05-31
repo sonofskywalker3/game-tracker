@@ -540,6 +540,29 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_slot_history(conn: sqlite3.Connection) -> None:
+    """Create the slot_history table if missing. Idempotent.
+
+    One row per game that has passed through a slot — the "what did I just finish"
+    + momentum + genre-fatigue memory. outcome is one of beat/completed/dropped/shelved.
+    No FK constraints on slot_id/game_id: history must survive slot or game deletion.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS slot_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            slot_id    INTEGER NOT NULL,
+            game_id    INTEGER NOT NULL,
+            goal       TEXT,
+            pinned_at  TIMESTAMP,
+            removed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            outcome    TEXT    NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_slot_history_removed ON slot_history(removed_at)")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
