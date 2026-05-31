@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from models import migrate_slots, migrate_slot_history
+from models import migrate_slots, migrate_slot_history, migrate_game_signals
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> dict[str, str]:
@@ -69,3 +69,17 @@ def test_history_accepts_outcomes(conn):
             (outcome,))
     n = conn.execute("SELECT COUNT(*) FROM slot_history").fetchone()[0]
     assert n == 4
+
+
+def test_game_signals_adds_columns(conn):
+    migrate_game_signals(conn)
+    cols = _columns(conn, "games")
+    for c in ("hltb_id", "hltb_main_minutes", "hltb_main_extra_minutes",
+              "hltb_completionist_minutes", "time_to_beat_override_minutes",
+              "input_lag_override"):
+        assert c in cols
+
+
+def test_game_signals_is_idempotent(conn):
+    migrate_game_signals(conn)
+    migrate_game_signals(conn)  # must not raise (column-exists guard)
