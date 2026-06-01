@@ -10,7 +10,7 @@ import json
 import sqlite3
 
 from recommendation import calculate_tag_affinity
-from slot_signals import session_tolerant, latency_tolerant
+from slot_signals import session_tolerant, latency_tolerant, effective_time_to_beat_minutes
 
 # Statuses that mean "not a candidate to start" (already done or actively elsewhere).
 FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
@@ -19,6 +19,9 @@ FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
 SESSION_MISMATCH_PENALTY = 25.0
 STARTED_BOOST = 1000.0
+TTB_REFERENCE_MINUTES = 1200   # 20h: pivot between "short" and "long"
+TTB_WEIGHT = 0.02              # score points per minute of deviation
+TTB_TERM_CAP = 20.0
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -120,9 +123,23 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
             reasons.append("Similar to what you just finished")
         # Session-tolerance penalty for short-session slots
         max_session = slot.get("max_session_minutes")
+        min_session = slot.get("min_session_minutes")
         if max_session is not None and not session_tolerant(tag_names):
             score -= SESSION_MISMATCH_PENALTY
             reasons.append("May not suit a short session")
+        # Directional time-to-beat term
+        ttb = effective_time_to_beat_minutes(game)
+        if ttb is not None:
+            if max_session is not None:
+                term = max(-TTB_TERM_CAP, min(TTB_TERM_CAP, (TTB_REFERENCE_MINUTES - ttb) * TTB_WEIGHT))
+                if term:
+                    score += term
+                    reasons.append("Short play" if term > 0 else "Long for a quick session")
+            elif min_session is not None:
+                term = max(-TTB_TERM_CAP, min(TTB_TERM_CAP, (ttb - TTB_REFERENCE_MINUTES) * TTB_WEIGHT))
+                if term:
+                    score += term
+                    reasons.append("Meaty play" if term > 0 else "Short for a long session")
         # Boost in-progress games to the top when prioritize_started is enabled
         if slot.get("prioritize_started") and game["status"] == "playing":
             score += STARTED_BOOST
