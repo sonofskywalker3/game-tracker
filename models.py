@@ -595,6 +595,11 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
     cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
     if "prioritize_started" not in cols:
         conn.execute("ALTER TABLE slots ADD COLUMN prioritize_started INTEGER NOT NULL DEFAULT 1")
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
+    if "focus_series_id" not in cols:
+        conn.execute(
+            "ALTER TABLE slots ADD COLUMN focus_series_id INTEGER "
+            "REFERENCES series(id) ON DELETE SET NULL")
     conn.commit()
 
 
