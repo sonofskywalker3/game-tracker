@@ -192,11 +192,68 @@
         grid.innerHTML = games.map(gameCardHtml).join('');
     }
 
-    // Placeholder; the full settings editor is added in the next task.
+    const SLOT_PLATFORMS = ['Switch', 'PS', 'Xbox', 'Steam', 'PC'];
+
     function toggleSlotSettings(slotId) {
         const el = document.getElementById('slot-settings-' + slotId);
-        if (el) el.classList.toggle('hidden');
+        if (!el) return;
+        if (!el.classList.contains('hidden')) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+        const slot = _slateData.find(s => s.id === slotId);
+        if (!slot) return;
+        let plats = [];
+        try { plats = JSON.parse(slot.platforms || '[]'); } catch (e) { plats = []; }
+        const checks = SLOT_PLATFORMS.map(p =>
+            `<label class="text-xs text-gray-300 mr-3 whitespace-nowrap"><input type="checkbox" data-plat="${p}" ${plats.includes(p) ? 'checked' : ''} class="accent-accent"> ${p}</label>`
+        ).join('');
+        el.innerHTML = `
+            <div class="bg-surface-light border border-gray-700 rounded-lg p-3 mb-3 space-y-2">
+                <input type="text" data-f="label" value="${escapeHtml(slot.label || '')}"
+                       class="w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white text-sm" placeholder="Label">
+                <div class="flex flex-wrap">${checks}</div>
+                <div class="flex gap-2 items-center text-xs text-gray-400">
+                    <label>max <input type="number" data-f="max_session_minutes" value="${slot.max_session_minutes ?? ''}" class="w-16 bg-surface rounded border border-gray-600 px-1 py-1 text-white"> min</label>
+                    <label>min <input type="number" data-f="min_session_minutes" value="${slot.min_session_minutes ?? ''}" class="w-16 bg-surface rounded border border-gray-600 px-1 py-1 text-white"> min</label>
+                </div>
+                <div class="flex flex-col gap-1 text-xs text-gray-300">
+                    <label><input type="checkbox" data-f="streamable_only" ${slot.streamable_only ? 'checked' : ''} class="accent-accent"> Streamable games only</label>
+                    <label><input type="checkbox" data-f="prioritize_started" ${slot.prioritize_started ? 'checked' : ''} class="accent-accent"> Prioritize started games</label>
+                </div>
+                <textarea data-f="context_notes" rows="2" placeholder="Notes (used by the AI later)"
+                          class="w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white text-xs">${escapeHtml(slot.context_notes || '')}</textarea>
+                <div class="flex gap-2">
+                    <button onclick="saveSlot(${slotId})" class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs">Save</button>
+                    <button onclick="deleteSlot(${slotId})" class="px-2 py-1 bg-surface rounded text-red-300 hover:text-red-200 text-xs">Delete</button>
+                </div>
+            </div>`;
+        el.classList.remove('hidden');
     }
+
+    function _slotSettingsPayload(slotId) {
+        const el = document.getElementById('slot-settings-' + slotId);
+        const val = f => el.querySelector(`[data-f="${f}"]`);
+        const platforms = Array.from(el.querySelectorAll('input[data-plat]')).filter(c => c.checked).map(c => c.dataset.plat);
+        const maxv = val('max_session_minutes').value;
+        const minv = val('min_session_minutes').value;
+        return {
+            label: val('label').value,
+            platforms,
+            max_session_minutes: maxv === '' ? null : parseInt(maxv, 10),
+            min_session_minutes: minv === '' ? null : parseInt(minv, 10),
+            streamable_only: val('streamable_only').checked ? 1 : 0,
+            prioritize_started: val('prioritize_started').checked ? 1 : 0,
+            context_notes: val('context_notes').value,
+        };
+    }
+
+    async function saveSlot(slotId) {
+        await api.patch(`/api/slots/${slotId}`, _slotSettingsPayload(slotId));
+        loadSlate();
+    }
+    async function deleteSlot(slotId) {
+        await api.delete(`/api/slots/${slotId}`);
+        loadSlate();
+    }
+
     async function addSlot() {
         await api.post('/api/slots', { label: 'New slot', platforms: [] });
         loadSlate();
