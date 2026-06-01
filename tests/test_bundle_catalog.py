@@ -36,3 +36,19 @@ def test_load_bundle_catalog_malformed_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(models, "BUNDLE_CATALOG_PATH", tmp_path / "bundle_catalog.json")
     monkeypatch.setattr(models, "BUNDLE_CATALOG_DEFAULT_PATH", bad)
     assert models.load_bundle_catalog() == {}
+
+
+def test_migrate_collection_name_adds_column(temp_db):
+    conn = models.get_db()
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()}
+    assert "collection_name" in cols
+    conn.close()
+
+
+def test_migrate_collection_name_idempotent(temp_db):
+    conn = models.get_db()
+    models.migrate_collection_name(conn)
+    models.migrate_collection_name(conn)  # must not raise
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()}
+    assert "collection_name" in cols
+    conn.close()
