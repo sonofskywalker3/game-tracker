@@ -53,3 +53,68 @@ def test_migrate_game_traits_idempotent(temp_db):
     cols = {c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()}
     assert TRAIT_COLUMNS <= cols
     conn.close()
+
+
+def _add_game(conn, title):
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(title)))
+    gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return gid
+
+
+def _traits(conn, gid):
+    r = conn.execute(
+        "SELECT session_length, session_length_source, series_role, series_role_source "
+        "FROM games WHERE id = ?", (gid,)).fetchone()
+    return dict(r)
+
+
+def test_apply_traits_catalog_sets_catalog_values(monkeypatch, temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Celeste")
+    monkeypatch.setattr(models, "load_game_traits",
+                        lambda: {"celeste": {"session_length": "short", "series_role": "mainline"}})
+    models.apply_traits_catalog(conn)
+    t = _traits(conn, gid)
+    assert t == {"session_length": "short", "session_length_source": "catalog",
+                 "series_role": "mainline", "series_role_source": "catalog"}
+    conn.close()
+
+
+def test_apply_traits_catalog_skips_manual(monkeypatch, temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Celeste")
+    conn.execute("UPDATE games SET session_length = 'long', session_length_source = 'manual' "
+                 "WHERE id = ?", (gid,))
+    conn.commit()
+    monkeypatch.setattr(models, "load_game_traits",
+                        lambda: {"celeste": {"session_length": "short", "series_role": "mainline"}})
+    models.apply_traits_catalog(conn)
+    t = _traits(conn, gid)
+    assert t["session_length"] == "long" and t["session_length_source"] == "manual"  # locked, untouched
+    assert t["series_role"] == "mainline" and t["series_role_source"] == "catalog"    # unlocked, set
+    conn.close()
+
+
+def test_apply_traits_catalog_absent_is_noop(monkeypatch, temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Celeste")
+    monkeypatch.setattr(models, "load_game_traits", lambda: {})
+    models.apply_traits_catalog(conn)
+    assert _traits(conn, gid) == {"session_length": None, "session_length_source": None,
+                                  "series_role": None, "series_role_source": None}
+    conn.close()
+
+
+def test_apply_traits_catalog_single_game(monkeypatch, temp_db):
+    conn = models.get_db()
+    a = _add_game(conn, "Celeste")
+    b = _add_game(conn, "Hades")
+    monkeypatch.setattr(models, "load_game_traits",
+                        lambda: {"celeste": {"session_length": "short"},
+                                 "hades": {"session_length": "short"}})
+    models.apply_traits_catalog(conn, game_id=a)
+    assert _traits(conn, a)["session_length"] == "short"
+    assert _traits(conn, b)["session_length"] is None  # other game untouched
+    conn.close()
