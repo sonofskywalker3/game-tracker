@@ -145,7 +145,7 @@ def test_curated_status_migrates_and_deletes_parent(monkeypatch, temp_db):
     conn.close()
 
 
-def test_cli_apply_bundle_catalog_dry_run(monkeypatch, temp_db, capsys):
+def test_cli_apply_bundle_catalog_dry_run(monkeypatch, temp_db):
     # Point the global DB at the temp DB so main() operates on it.
     import models as m
     conn = models.get_db()
