@@ -36,3 +36,8 @@ def test_tile_and_modal_have_collection_markup():
     assert "collection-badge" in html          # tile badge
     assert "game.collection_name" in html       # gated on the field
     assert "Part of" in html                     # modal launch cue
+
+    with open("templates/index.html", encoding="utf-8") as f:
+        index_html = f.read()
+    assert "collection-badge" in index_html       # library tiles render the badge too
+    assert "game.collection_name" in index_html
