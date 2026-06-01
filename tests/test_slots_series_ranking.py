@@ -40,7 +40,7 @@ def test_same_series_as_last_history_game_is_boosted(temp_db):
                  (sid, ff_done))
     conn.commit()
     ff_next = _add_game(conn, "FF IX", series_id=ff, priority=5)
-    other = _add_game(conn, "Random RPG", series_id=None, priority=5)
+    other = _add_game(conn, "Random RPG", series_id=None, priority=9)  # higher priority; only the series boost should flip it
     ids = [c["game"]["id"] for c in slots.rank_candidates(conn, _slot(conn, "Switch · Long"))]
     assert ids.index(ff_next) < ids.index(other)
     conn.close()
