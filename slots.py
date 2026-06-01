@@ -114,7 +114,7 @@ OUTCOME_STATUS: dict[str, str] = {"beat": "completed", "complete": "100", "dropp
 
 def pin_game(conn: sqlite3.Connection, slot_id: int, game_id: int,
              goal: str | None = None) -> None:
-    """Assign a game (+ goal) to a slot, recording when it was pinned."""
+    """Assign a game (+ goal) to a slot. Replaces any current game in that slot."""
     conn.execute(
         "UPDATE slots SET current_game_id = ?, goal = ? WHERE id = ?",
         (game_id, goal, slot_id))
