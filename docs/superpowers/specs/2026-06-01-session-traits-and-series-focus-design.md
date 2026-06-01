@@ -43,9 +43,13 @@ a series and route its mainline/spin-off entries to long/short slots respectivel
    Keyed by `normalized_title`.
 4. **Quick/Long keys off `session_length`** (clean split): `long` games are **excluded
    from Quick** and **favored in Long**; `short` ranks well in Quick and is still allowed
-   in Long; `null` is neutral (not excluded). **Total play-time drops out of the slot
-   axis** (HLTB hours stay as displayed info / future "quick win" use; the directional
-   TTB term added earlier is removed).
+   in Long; `null` is neutral (not excluded). **Total play-time is demoted from the
+   slot-fit axis but NOT discarded** — it stays first-class data. Session-tolerance is
+   *how long a sitting*; time-to-beat is *how long the whole game* — a separate, legit
+   mood ("a game I can beat in 3 long sessions" vs "chip away at for months"). So the
+   directional TTB term is removed from `rank_candidates`'s session-fit scoring, but the
+   effective time-to-beat is surfaced in every candidate's payload (for the UI) and
+   included in the SP2 chat prompt so length-based moods are answerable.
 5. **Focus-series slot setting** (`slots.focus_series_id`, nullable, freely editable):
    when set, the slot boosts that series' games AND routes by role — short-session slot
    (`max_session_minutes` set) favors `spinoff`, long-session slot (`min_session_minutes`
@@ -103,7 +107,10 @@ Phase B path.) Never downgrades a manual choice.
 ## Ranking changes (`slots.py rank_candidates`)
 
 - **Remove** the directional time-to-beat term (TTB_REFERENCE/WEIGHT/CAP) from the slot
-  axis. Keep HLTB columns for display.
+  session-fit scoring. But **include `effective_time_to_beat_minutes(game)` in each
+  returned candidate dict** (e.g. `candidate["time_to_beat_minutes"]`) so the UI can show
+  it and the SP2 chat can reason over it. Time-to-beat remains a real signal, just not
+  the Quick/Long driver.
 - **session_length hard filter / boost:**
   - Quick (`max_session_minutes` set): **skip candidates with `session_length == 'long'`**
     (clean split — they live only in Long). Boost `session_length == 'short'`
@@ -182,6 +189,12 @@ else is ignored server-side.
   + catalog export. Delivers the corrected ranking on the whole seeded library.
 - **Phase B (later):** real-time on-add AI classification via the Anthropic key (with the
   Settings-UI key work; first bite of the SP2 API integration).
+
+**Per-game decision signals available to the SP2 chat** (so it can answer mood-based
+asks): `session_length`, `series_role`, **effective time-to-beat (minutes)**, platforms,
+genres/tags, priority, status, and the slot's `context_notes`. Time-to-beat in particular
+lets the chat handle length moods ("beat in 3 sessions" vs "months-long") that the fixed
+slots don't encode.
 
 ## Open items to confirm at implementation time
 - Whether a `GET /api/series` (or equivalent) already exists for the Focus-series picker;
