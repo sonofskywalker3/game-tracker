@@ -636,8 +636,8 @@ def api_update_game(game_id):
     data = request.json
 
     try:
-        # Update game table fields (title, cover_url)
-        if 'title' in data or 'cover_url' in data:
+        # Update game table fields (title, cover_url, time_to_beat_override_minutes)
+        if 'title' in data or 'cover_url' in data or 'time_to_beat_override_minutes' in data:
             game_updates = []
             game_params = []
             if 'title' in data:
@@ -648,6 +648,10 @@ def api_update_game(game_id):
             if 'cover_url' in data:
                 game_updates.append("cover_url = ?")
                 game_params.append(data['cover_url'] if data['cover_url'] else None)
+            if 'time_to_beat_override_minutes' in data:
+                game_updates.append("time_to_beat_override_minutes = ?")
+                v = data['time_to_beat_override_minutes']
+                game_params.append(int(v) if v not in (None, "") else None)
             game_updates.append("updated_at = CURRENT_TIMESTAMP")
             game_params.append(game_id)
             conn.execute(f"UPDATE games SET {', '.join(game_updates)} WHERE id = ?", game_params)
@@ -1644,6 +1648,19 @@ def api_slot_goal(slot_id: int):
     conn = get_db()
     conn.execute("UPDATE slots SET goal = ? WHERE id = ?", (data.get('goal'), slot_id))
     conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/dismiss', methods=['POST'])
+def api_slot_dismiss(slot_id: int):
+    """Hide a suggested game from this slot until its game is replaced."""
+    data = request.get_json() or {}
+    game_id = data.get('game_id')
+    if not game_id:
+        return jsonify({'error': 'game_id required'}), 400
+    conn = get_db()
+    slots.dismiss_suggestion(conn, slot_id, game_id)
     conn.close()
     return jsonify({'ok': True})
 
