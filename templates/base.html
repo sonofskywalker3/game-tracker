@@ -748,6 +748,11 @@
             if (typeof refreshGameList === 'function') refreshGameList();
         }
 
+        async function saveTimeToBeat(gameId, hoursValue) {
+            const mins = hoursValue === '' ? null : Math.round(parseFloat(hoursValue) * 60);
+            await api.put(`/api/games/${gameId}`, { time_to_beat_override_minutes: mins });
+        }
+
         // Global platforms list
         let allPlatforms = [];
 
@@ -797,6 +802,7 @@
             const modal = document.getElementById('game-modal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+            if (typeof refreshGameList === 'function') refreshGameList();
         }
 
         document.getElementById('game-modal').addEventListener('click', (e) => {
@@ -930,6 +936,22 @@
                                        onchange="setPriority(${game.id}, this.value); document.getElementById('priority-value').textContent = this.value"
                                        class="w-full accent-accent mt-2">
                             </div>
+                        </div>
+
+                        <!-- Hours to beat (manual override; feeds Quick/Long ranking) -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">
+                                Hours to beat
+                                <span class="text-xs text-gray-500" id="ttb-hint-${game.id}">${
+                                    (game.time_to_beat_override_minutes != null) ? '(manual)'
+                                    : (game.hltb_main_minutes != null) ? '(from HowLongToBeat)' : ''
+                                }</span>
+                            </label>
+                            <input type="number" min="0" step="0.5" id="ttb-input-${game.id}"
+                                   value="${(() => { const m = game.time_to_beat_override_minutes ?? game.hltb_main_minutes; return m != null ? (m / 60) : ''; })()}"
+                                   placeholder="e.g. 12"
+                                   class="w-32 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none"
+                                   onchange="saveTimeToBeat(${game.id}, this.value)">
                         </div>
 
                         <!-- Platforms & Rating row -->
