@@ -14,7 +14,7 @@ import slots
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
-    reclean_display_titles, DB_PATH, add_series_pattern,
+    reclean_display_titles, DB_PATH, add_series_pattern, apply_traits_catalog,
 )
 from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials
@@ -232,6 +232,7 @@ def api_create_game():
             )
 
     conn.commit()
+    apply_traits_catalog(conn, game_id)
     conn.close()
 
     return jsonify({'success': True, 'game_id': game_id}), 201
@@ -629,6 +630,12 @@ def api_pin_steam(game_id):
     return jsonify({'appid': appid, 'game': game})
 
 
+TRAIT_ENUMS = {
+    "session_length": {"short", "long"},
+    "series_role": {"mainline", "spinoff"},
+}
+
+
 @app.route('/api/games/<int:game_id>', methods=['PUT'])
 def api_update_game(game_id):
     """Update game rating, status, priority, title, cover_url, etc."""
@@ -636,8 +643,9 @@ def api_update_game(game_id):
     data = request.json
 
     try:
-        # Update game table fields (title, cover_url, time_to_beat_override_minutes)
-        if 'title' in data or 'cover_url' in data or 'time_to_beat_override_minutes' in data:
+        # Update game table fields (title, cover_url, time_to_beat_override_minutes, traits)
+        if ('title' in data or 'cover_url' in data or 'time_to_beat_override_minutes' in data
+                or 'session_length' in data or 'series_role' in data):
             game_updates = []
             game_params = []
             if 'title' in data:
@@ -652,6 +660,17 @@ def api_update_game(game_id):
                 game_updates.append("time_to_beat_override_minutes = ?")
                 v = data['time_to_beat_override_minutes']
                 game_params.append(int(v) if v not in (None, "") else None)
+            for trait in ('session_length', 'series_role'):
+                if trait in data:
+                    v = data[trait]
+                    if v in (None, ""):
+                        game_updates.append(f"{trait} = NULL")
+                        game_updates.append(f"{trait}_source = NULL")
+                    elif v in TRAIT_ENUMS[trait]:
+                        game_updates.append(f"{trait} = ?")
+                        game_params.append(v)
+                        game_updates.append(f"{trait}_source = 'manual'")
+                    # invalid enum value: ignored
             game_updates.append("updated_at = CURRENT_TIMESTAMP")
             game_params.append(game_id)
             conn.execute(f"UPDATE games SET {', '.join(game_updates)} WHERE id = ?", game_params)
