@@ -5,29 +5,29 @@
 
 {% block content %}
 <div class="space-y-8">
-    <!-- Hero Section -->
-    <div class="text-center py-8">
-        <h1 class="text-3xl font-bold text-white mb-2">What Should You Play Next?</h1>
-        <p class="text-gray-400">Personalized recommendations based on your ratings and preferences</p>
-    </div>
-
-    <!-- Quick Picks Section -->
-    <div id="quick-picks" class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Filled by JS -->
-    </div>
-
-    <!-- Top Recommendations -->
-    <div class="bg-surface-light rounded-xl p-6">
-        <h2 class="text-xl font-bold text-white mb-4 flex items-center">
-            <span class="text-2xl mr-2">🎯</span>
-            Top Recommendations
-        </h2>
-        <div id="recommendations-list" class="space-y-4">
-            <!-- Filled by JS -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-white mb-1">What Should You Play Next?</h1>
+            <p class="text-gray-400">Your slate — one game per context.</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="refreshHltb()" class="text-sm px-3 py-2 bg-surface-light rounded-lg text-gray-300 hover:bg-surface-lighter">↻ Refresh play-times</button>
+            <button onclick="openSlotSettings()" class="text-sm px-3 py-2 bg-surface-light rounded-lg text-gray-300 hover:bg-surface-lighter">⚙ Slots</button>
         </div>
     </div>
 
-    <!-- Needs Rating Section -->
+    <div id="slate" class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Filled by JS -->
+    </div>
+
+    <div id="recently-finished" class="hidden bg-surface-light rounded-xl p-6">
+        <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="text-2xl mr-2">🏁</span> Recently Finished
+        </h2>
+        <div id="recently-finished-list" class="flex flex-wrap gap-3"></div>
+    </div>
+
+    <!-- Needs Rating Section (retained) -->
     <div id="needs-rating-section" class="hidden bg-surface-light rounded-xl p-6">
         <h2 class="text-xl font-bold text-white mb-4 flex items-center">
             <span class="text-2xl mr-2">📝</span>
@@ -38,178 +38,159 @@
             <!-- Filled by JS -->
         </div>
     </div>
-
-    <!-- Tip -->
-    <div class="bg-surface-light/50 rounded-xl p-4 border border-gray-700/50">
-        <p class="text-sm text-gray-400">
-            <span class="text-accent font-medium">Tip:</span>
-            Rate more games to improve recommendations! The more you rate, the better we can match games to your taste.
-        </p>
-    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    async function loadRecommendations() {
-        const [recData, games] = await Promise.all([
-            api.get('/api/recommendations?limit=10'),
-            api.get('/api/games')
+    async function loadSlate() {
+        const [slotsResp, games] = await Promise.all([
+            api.get('/api/slots'),
+            api.get('/api/games'),
         ]);
-
-        renderQuickPicks(recData.quick_picks);
-        renderRecommendations(recData.recommendations);
-
-        // Find games that aren't in backlog and don't have a rating
+        renderSlate(slotsResp.slots || []);
+        renderRecentlyFinished(slotsResp.recently_finished || []);
         const needsRating = games.filter(g =>
-            g.status && g.status !== 'backlog' && g.status !== 'wishlist' && !g.rating
-        );
+            g.status && g.status !== 'backlog' && g.status !== 'wishlist' && !g.rating);
         renderNeedsRating(needsRating);
     }
 
-    function renderQuickPicks(picks) {
-        const container = document.getElementById('quick-picks');
+    function slotChip(slot) {
+        const parts = [];
+        let plats = [];
+        try { plats = JSON.parse(slot.platforms || '[]'); } catch (e) { plats = []; }
+        if (plats.length) parts.push(plats.join('/'));
+        if (slot.max_session_minutes) parts.push('<' + slot.max_session_minutes + 'm');
+        else if (slot.min_session_minutes) parts.push(slot.min_session_minutes + 'm+');
+        if (slot.streamable_only) parts.push('stream-safe');
+        return parts.join(' · ');
+    }
 
-        const categories = [
-            { key: 'continue_playing', title: 'Continue Playing', icon: '▶️', color: 'blue' },
-            { key: 'critically_acclaimed', title: 'Critically Acclaimed', icon: '⭐', color: 'yellow' },
-            { key: 'quick_session', title: 'Quick Session', icon: '⚡', color: 'green' },
-            { key: 'hidden_gems', title: 'Hidden Gems', icon: '💎', color: 'purple' }
-        ];
-
-        container.innerHTML = categories.map(cat => {
-            const games = picks[cat.key] || [];
-            if (!games.length) return '';
-
-            return `
-                <div class="bg-surface-light rounded-xl p-4">
-                    <h3 class="font-medium text-white mb-3 flex items-center">
-                        <span class="mr-2">${cat.icon}</span>
-                        ${cat.title}
-                    </h3>
-                    <div class="space-y-2">
-                        ${games.map(game => `
-                            <div class="flex items-center space-x-3 p-2 rounded-lg hover:bg-surface-lighter cursor-pointer transition-colors"
-                                 onclick="openModal(${game.id})">
-                                ${game.cover_url ? `
-                                    <img src="${game.cover_url}" alt="${game.title}"
-                                         class="w-10 h-10 object-cover rounded">
-                                ` : `
-                                    <div class="w-10 h-10 cover-placeholder rounded flex items-center justify-center text-lg">🎮</div>
-                                `}
-                                <span class="text-sm text-gray-300 truncate flex-1">${game.title}</span>
-                            </div>
-                        `).join('')}
-                    </div>
+    function renderSlate(slots) {
+        const el = document.getElementById('slate');
+        el.innerHTML = slots.map(slot => {
+            const g = slot.current_game;
+            const body = g ? filledSlot(slot, g) : emptySlot(slot);
+            return `<div class="bg-surface-light rounded-xl p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="font-medium text-white">${escapeHtml(slot.label)}</h3>
                 </div>
-            `;
+                <p class="text-xs text-gray-500 mb-3">${escapeHtml(slotChip(slot))}</p>
+                ${body}
+            </div>`;
         }).join('');
     }
 
-    function renderRecommendations(recs) {
-        const container = document.getElementById('recommendations-list');
+    function filledSlot(slot, g) {
+        const cover = g.cover_url
+            ? `<img src="${g.cover_url}" alt="" class="w-14 h-14 object-cover rounded">`
+            : `<div class="w-14 h-14 cover-placeholder rounded flex items-center justify-center">🎮</div>`;
+        return `
+          <div class="flex items-start space-x-3 cursor-pointer" onclick="openModal(${g.id})">
+            ${cover}
+            <div class="flex-1 min-w-0">
+                <p class="text-sm text-white truncate">${escapeHtml(g.title)}</p>
+                <p class="text-xs text-accent">${escapeHtml(slot.goal || 'set a goal')}</p>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2 text-xs">
+            <button onclick="slotOutcome(${slot.id}, 'beat')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Beat</button>
+            <button onclick="slotOutcome(${slot.id}, 'complete')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Complete</button>
+            <button onclick="slotOutcome(${slot.id}, 'dropped')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Dropped</button>
+            <button onclick="editGoal(${slot.id})" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Edit goal</button>
+            <button onclick="slotOutcome(${slot.id}, 'swap')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Swap</button>
+          </div>`;
+    }
 
-        if (!recs.length) {
-            container.innerHTML = `
-                <div class="text-center py-8 text-gray-400">
-                    <p>No recommendations yet.</p>
-                    <p class="text-sm mt-2">Add some games to your backlog and rate them to get personalized suggestions!</p>
-                </div>
-            `;
-            return;
-        }
+    function emptySlot(slot) {
+        const cands = (slot.candidates || []).slice(0, 5);
+        const list = cands.map(c => `
+              <button onclick="pinGame(${slot.id}, ${c.game.id})"
+                      class="w-full text-left text-sm text-gray-300 hover:bg-surface-lighter rounded px-2 py-1 truncate">
+                ${escapeHtml(c.game.title)}
+              </button>`).join('') || '<p class="text-xs text-gray-500">No eligible games.</p>';
+        return `
+          <p class="text-sm text-gray-400 mb-2">Empty — pick one to pin:</p>
+          <div class="space-y-1">${list}</div>`;
+    }
 
-        container.innerHTML = recs.map((rec, index) => {
-            const game = rec.game;
-            const criticScore = game.metacritic_score || game.opencritic_score;
-
-            return `
-                <div class="flex items-start space-x-4 p-4 rounded-xl hover:bg-surface-lighter cursor-pointer transition-colors"
-                     onclick="openModal(${game.id})">
-                    <!-- Rank -->
-                    <div class="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold flex-shrink-0">
-                        ${index + 1}
-                    </div>
-
-                    <!-- Cover -->
-                    ${game.cover_url ? `
-                        <img src="${game.cover_url}" alt="${game.title}"
-                             class="w-16 h-16 object-cover rounded-lg flex-shrink-0">
-                    ` : `
-                        <div class="w-16 h-16 cover-placeholder rounded-lg flex items-center justify-center text-2xl flex-shrink-0">🎮</div>
-                    `}
-
-                    <!-- Info -->
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <h3 class="font-medium text-white">${game.title}</h3>
-                                <div class="mt-1 flex items-center space-x-2 text-sm">
-                                    ${criticScore ? `
-                                        <span class="${criticScore >= 75 ? 'text-green-400' : criticScore >= 50 ? 'text-yellow-400' : 'text-red-400'}">
-                                            ${criticScore} critic score
-                                        </span>
-                                    ` : ''}
-                                    ${game.priority && game.priority !== 5 ? `
-                                        <span class="text-gray-500">Priority: ${game.priority}/10</span>
-                                    ` : ''}
-                                </div>
-                            </div>
-                            <div class="text-right flex-shrink-0">
-                                <div class="text-lg font-bold text-accent">${rec.score}</div>
-                                <div class="text-xs text-gray-500">score</div>
-                            </div>
-                        </div>
-
-                        <!-- Reasons -->
-                        ${rec.reasons.length ? `
-                            <div class="mt-2 flex flex-wrap gap-2">
-                                ${rec.reasons.map(r => `
-                                    <span class="text-xs px-2 py-1 bg-surface rounded-full text-gray-400">${r}</span>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        }).join('');
+    function renderRecentlyFinished(items) {
+        const section = document.getElementById('recently-finished');
+        const list = document.getElementById('recently-finished-list');
+        if (!items || !items.length) { section.classList.add('hidden'); return; }
+        section.classList.remove('hidden');
+        list.innerHTML = items.map(it => `
+            <div class="flex items-center gap-2 bg-surface rounded-lg px-3 py-2 cursor-pointer hover:bg-surface-lighter"
+                 onclick="openModal(${it.game_id})">
+                ${it.cover_url ? `<img src="${it.cover_url}" class="w-8 h-8 object-cover rounded">`
+                               : `<div class="w-8 h-8 cover-placeholder rounded flex items-center justify-center text-sm">🎮</div>`}
+                <span class="text-sm text-gray-300">${escapeHtml(it.title)}</span>
+                <span class="text-xs text-gray-500">${escapeHtml(it.outcome)}</span>
+            </div>`).join('');
     }
 
     function renderNeedsRating(games) {
         const section = document.getElementById('needs-rating-section');
         const container = document.getElementById('needs-rating-list');
-
-        if (!games.length) {
-            section.classList.add('hidden');
-            return;
-        }
-
+        if (!games.length) { section.classList.add('hidden'); return; }
         section.classList.remove('hidden');
         container.innerHTML = games.map(game => `
             <div class="bg-surface rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-accent transition-all"
                  onclick="openModal(${game.id})">
                 <div class="aspect-[3/4] relative">
-                    ${game.cover_url ? `
-                        <img src="${game.cover_url}" alt="${game.title}" class="w-full h-full object-cover">
-                    ` : `
-                        <div class="w-full h-full flex items-center justify-center bg-surface-lighter text-2xl">🎮</div>
-                    `}
+                    ${game.cover_url ? `<img src="${game.cover_url}" alt="${escapeHtml(game.title)}" class="w-full h-full object-cover">`
+                                     : `<div class="w-full h-full flex items-center justify-center bg-surface-lighter text-2xl">🎮</div>`}
                     <div class="absolute bottom-1 right-1">
                         <span class="status-badge status-${game.status} text-xs">${game.status === '100' ? '100%' : game.status === 'completed' ? 'done' : game.status}</span>
                     </div>
                 </div>
                 <div class="p-2">
-                    <p class="text-xs text-white truncate" title="${game.title}">${game.title}</p>
+                    <p class="text-xs text-white truncate" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</p>
                 </div>
             </div>
         `).join('');
     }
 
-    function refreshGameList() {
-        loadRecommendations();
+    async function pinGame(slotId, gameId) {
+        const goal = prompt('Goal for this game? (e.g. "beat it", "get the plat")', 'beat it');
+        if (goal === null) return;
+        await api.post(`/api/slots/${slotId}/pin`, { game_id: gameId, goal });
+        loadSlate();
     }
 
-    // Initialize
-    document.addEventListener('DOMContentLoaded', loadRecommendations);
+    async function slotOutcome(slotId, outcome) {
+        if (outcome === 'beat') {
+            const chase = confirm('Beaten! Chase 100%/plat? OK = keep it slotted, Cancel = shelve it.');
+            let new_goal = null;
+            if (chase) { new_goal = prompt('New goal?', 'get the plat'); if (new_goal === null) return; }
+            await api.post(`/api/slots/${slotId}/outcome`, { outcome: 'beat', chase, new_goal });
+        } else {
+            if (outcome === 'dropped' && !confirm('Drop this game?')) return;
+            await api.post(`/api/slots/${slotId}/outcome`, { outcome });
+        }
+        loadSlate();
+    }
+
+    async function editGoal(slotId) {
+        const goal = prompt('New goal?');
+        if (goal === null) return;
+        await api.patch(`/api/slots/${slotId}/goal`, { goal });
+        loadSlate();
+    }
+
+    async function refreshHltb() {
+        const res = await api.post('/api/hltb/refresh', {});
+        const r = res.data || {};
+        alert(`Updated play-times: ${r.matched || 0} matched, ${r.missed || 0} missed.`);
+        loadSlate();
+    }
+
+    function openSlotSettings() {
+        alert('Slot settings coming in the next step.');  // replaced in Task 13
+    }
+
+    function refreshGameList() { loadSlate(); }  // keep modal callback contract
+
+    document.addEventListener('DOMContentLoaded', loadSlate);
 </script>
 {% endblock %}
