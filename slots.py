@@ -107,3 +107,95 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
 
     out.sort(key=lambda x: x["score"], reverse=True)
     return out[:limit]
+
+
+OUTCOME_STATUS: dict[str, str] = {"beat": "completed", "complete": "100", "dropped": "dropped"}
+
+
+def pin_game(conn: sqlite3.Connection, slot_id: int, game_id: int,
+             goal: str | None = None) -> None:
+    """Assign a game (+ goal) to a slot, recording when it was pinned."""
+    conn.execute(
+        "UPDATE slots SET current_game_id = ?, goal = ? WHERE id = ?",
+        (game_id, goal, slot_id))
+    conn.commit()
+
+
+def _set_status(conn: sqlite3.Connection, game_id: int, status: str) -> None:
+    conn.execute("""
+        INSERT INTO user_ratings (game_id, status) VALUES (?, ?)
+        ON CONFLICT(game_id) DO UPDATE SET status = excluded.status,
+            updated_at = CURRENT_TIMESTAMP
+    """, (game_id, status))
+
+
+def _log_history(conn: sqlite3.Connection, slot_id: int, game_id: int,
+                 goal: str | None, outcome: str) -> None:
+    conn.execute(
+        "INSERT INTO slot_history (slot_id, game_id, goal, outcome) VALUES (?, ?, ?, ?)",
+        (slot_id, game_id, goal, outcome))
+
+
+def _clear_slot(conn: sqlite3.Connection, slot_id: int) -> None:
+    conn.execute("UPDATE slots SET current_game_id = NULL, goal = NULL WHERE id = ?", (slot_id,))
+
+
+def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
+                  chase: bool = False, new_goal: str | None = None) -> None:
+    """Apply a slot outcome.
+
+    outcome:
+      'beat'     -> status 'completed'. chase=True keeps the game slotted with
+                    new_goal; chase=False frees the slot + logs history 'shelved'.
+      'complete' -> status '100', free slot, history 'completed'.
+      'dropped'  -> status 'dropped', free slot, history 'dropped'.
+      'swap'     -> free slot, NO history, NO status change.
+    """
+    slot = conn.execute("SELECT current_game_id, goal FROM slots WHERE id = ?",
+                        (slot_id,)).fetchone()
+    if slot is None or slot["current_game_id"] is None:
+        return
+    game_id: int = slot["current_game_id"]
+    goal: str | None = slot["goal"]
+
+    if outcome == "swap":
+        _clear_slot(conn, slot_id)
+        conn.commit()
+        return
+
+    if outcome == "beat":
+        _set_status(conn, game_id, OUTCOME_STATUS["beat"])
+        if chase:
+            conn.execute("UPDATE slots SET goal = ? WHERE id = ?", (new_goal, slot_id))
+        else:
+            _log_history(conn, slot_id, game_id, goal, "shelved")
+            _clear_slot(conn, slot_id)
+        conn.commit()
+        return
+
+    if outcome in ("complete", "dropped"):
+        _set_status(conn, game_id, OUTCOME_STATUS[outcome])
+        history_outcome = "completed" if outcome == "complete" else "dropped"
+        _log_history(conn, slot_id, game_id, goal, history_outcome)
+        _clear_slot(conn, slot_id)
+        conn.commit()
+        return
+
+    raise ValueError(f"unknown outcome: {outcome!r}")
+
+
+def get_slots_state(conn: sqlite3.Connection, candidate_limit: int = 8) -> list[dict]:
+    """Full slate state: each slot dict + its current_game dict + ranked candidates."""
+    slot_rows = conn.execute("SELECT * FROM slots ORDER BY sort_order, id").fetchall()
+    state = []
+    for row in slot_rows:
+        slot = dict(row)
+        current_game = None
+        if slot["current_game_id"]:
+            g = conn.execute("SELECT * FROM games WHERE id = ?",
+                             (slot["current_game_id"],)).fetchone()
+            current_game = dict(g) if g else None
+        slot["current_game"] = current_game
+        slot["candidates"] = rank_candidates(conn, slot, limit=candidate_limit)
+        state.append(slot)
+    return state
