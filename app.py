@@ -81,6 +81,7 @@ def api_games():
             g.id,
             g.title,
             g.cover_url,
+            g.collection_name,
             g.metacritic_score,
             g.opencritic_score,
             ur.status,
@@ -312,7 +313,7 @@ def api_games_search():
     conn = get_db()
     like = f"%{query}%"
     rows = conn.execute(
-        "SELECT id, title, cover_url FROM games "
+        "SELECT id, title, cover_url, collection_name FROM games "
         "WHERE title LIKE ? COLLATE NOCASE OR normalized_title LIKE ? COLLATE NOCASE "
         "ORDER BY title COLLATE NOCASE LIMIT 10",
         (like, like)).fetchall()
@@ -328,6 +329,7 @@ def api_games_search():
     conn.close()
     return jsonify([
         {"id": r["id"], "title": r["title"], "cover_url": r["cover_url"],
+         "collection_name": r["collection_name"],
          "platforms": plat_by_game.get(r["id"], [])}
         for r in rows
     ])
