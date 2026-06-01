@@ -12,3 +12,11 @@ def test_recommendations_has_slate_and_needs_rating(client):
     assert 'id="slate"' in body
     assert 'id="needs-rating-grid"' in body
     assert "loadSlate" in body
+
+
+def test_slot_settings_has_focus_series_picker():
+    with open("templates/recommendations.html", encoding="utf-8") as f:
+        html = f.read()
+    assert "focus_series_id" in html
+    assert "Focus series" in html
+    assert "/api/series" in html
