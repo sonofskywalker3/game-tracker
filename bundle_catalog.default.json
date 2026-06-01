@@ -1,1 +1,146 @@
-{}
+{
+  "advance wars 12 reboot camp": {
+    "type": "compilation",
+    "constituents": ["Advance Wars", "Advance Wars 2: Black Hole Rising"]
+  },
+  "assassins creed the ezio collection": {
+    "type": "compilation",
+    "constituents": ["Assassin's Creed II", "Assassin's Creed: Brotherhood", "Assassin's Creed: Revelations"]
+  },
+  "atari 50 the anniversary celebration": {
+    "type": "anthology",
+    "constituents": []
+  },
+  "bioshock the collection": {
+    "type": "compilation",
+    "constituents": ["BioShock", "BioShock 2", "BioShock Infinite"]
+  },
+  "capcom beat em up bundle": {
+    "type": "compilation",
+    "constituents": ["Final Fight", "Captain Commando", "The King of Dragons", "Knights of the Round", "Warriors of Fate", "Armored Warriors", "Battle Circuit"]
+  },
+  "castlevania advance collection": {
+    "type": "compilation",
+    "constituents": ["Castlevania: Circle of the Moon", "Castlevania: Harmony of Dissonance", "Castlevania: Aria of Sorrow", "Castlevania: Dracula X"]
+  },
+  "castlevania anniversary collection": {
+    "type": "compilation",
+    "constituents": ["Castlevania", "Castlevania II: Simon's Quest", "Castlevania III: Dracula's Curse", "Super Castlevania IV", "Castlevania: The Adventure", "Castlevania II: Belmont's Revenge", "Castlevania: Bloodlines", "Kid Dracula"]
+  },
+  "collection of saga final fantasy legend": {
+    "type": "compilation",
+    "constituents": ["The Final Fantasy Legend", "Final Fantasy Legend II", "Final Fantasy Legend III"]
+  },
+  "devil may cry hd collection": {
+    "type": "compilation",
+    "constituents": ["Devil May Cry", "Devil May Cry 2", "Devil May Cry 3: Dante's Awakening"]
+  },
+  "diablo prime evil collection": {
+    "type": "compilation",
+    "constituents": ["Diablo II: Resurrected", "Diablo III: Eternal Collection"]
+  },
+  "digimon story cyber sleuth complete edition": {
+    "type": "compilation",
+    "constituents": ["Digimon Story: Cyber Sleuth", "Digimon Story: Cyber Sleuth - Hacker's Memory"]
+  },
+  "dragon quest i ii hd2d remake": {
+    "type": "compilation",
+    "constituents": ["Dragon Quest I HD-2D Remake", "Dragon Quest II HD-2D Remake"]
+  },
+  "final fantasy xx2 hd remaster": {
+    "type": "compilation",
+    "constituents": ["Final Fantasy X", "Final Fantasy X-2"]
+  },
+  "grand theft auto the trilogy the definitive edition": {
+    "type": "compilation",
+    "constituents": ["Grand Theft Auto III", "Grand Theft Auto: Vice City", "Grand Theft Auto: San Andreas"]
+  },
+  "grandia hd collection": {
+    "type": "compilation",
+    "constituents": ["Grandia", "Grandia II"]
+  },
+  "hackgu last recode": {
+    "type": "compilation",
+    "constituents": [".hack//G.U. Vol.1//Rebirth", ".hack//G.U. Vol.2//Reminisce", ".hack//G.U. Vol.3//Redemption", ".hack//G.U. Vol.4//Reconnection"]
+  },
+  "halo the master chief collection": {
+    "type": "compilation",
+    "constituents": ["Halo: Combat Evolved Anniversary", "Halo 2: Anniversary", "Halo 3", "Halo 3: ODST", "Halo 4", "Halo: Reach"]
+  },
+  "lego harry potter collection": {
+    "type": "compilation",
+    "constituents": ["LEGO Harry Potter: Years 1-4", "LEGO Harry Potter: Years 5-7"]
+  },
+  "mega man legacy collection": {
+    "type": "compilation",
+    "constituents": ["Mega Man", "Mega Man 2", "Mega Man 3", "Mega Man 4", "Mega Man 5", "Mega Man 6"]
+  },
+  "mega man legacy collection 2": {
+    "type": "compilation",
+    "constituents": ["Mega Man 7", "Mega Man 8", "Mega Man 9", "Mega Man 10"]
+  },
+  "mega man x legacy collection": {
+    "type": "compilation",
+    "constituents": ["Mega Man X", "Mega Man X2", "Mega Man X3", "Mega Man X4"]
+  },
+  "mega man x legacy collection 2": {
+    "type": "compilation",
+    "constituents": ["Mega Man X5", "Mega Man X6", "Mega Man X7", "Mega Man X8"]
+  },
+  "megaman battle network legacy collection vol1": {
+    "type": "compilation",
+    "constituents": ["Mega Man Battle Network", "Mega Man Battle Network 2", "Mega Man Battle Network 3 White", "Mega Man Battle Network 3 Blue"]
+  },
+  "megaman battle network legacy collection vol2": {
+    "type": "compilation",
+    "constituents": ["Mega Man Battle Network 4 Red Sun", "Mega Man Battle Network 4 Blue Moon", "Mega Man Battle Network 5 Team ProtoMan", "Mega Man Battle Network 5 Team Colonel", "Mega Man Battle Network 6 Cybeast Gregar", "Mega Man Battle Network 6 Cybeast Falzar"]
+  },
+  "megaman zerozx legacy collection": {
+    "type": "compilation",
+    "constituents": ["Mega Man Zero", "Mega Man Zero 2", "Mega Man Zero 3", "Mega Man Zero 4", "Mega Man ZX", "Mega Man ZX Advent"]
+  },
+  "metal gear solid v the definitive experience": {
+    "type": "compilation",
+    "constituents": ["Metal Gear Solid V: Ground Zeroes", "Metal Gear Solid V: The Phantom Pain"]
+  },
+  "monster hunter stories collection": {
+    "type": "compilation",
+    "constituents": ["Monster Hunter Stories", "Monster Hunter Stories 2: Wings of Ruin"]
+  },
+  "phoenix wright ace attorney trilogy": {
+    "type": "compilation",
+    "constituents": ["Phoenix Wright: Ace Attorney", "Phoenix Wright: Ace Attorney - Justice for All", "Phoenix Wright: Ace Attorney - Trials and Tribulations"]
+  },
+  "pikmin 12 bundle": {
+    "type": "entitlement",
+    "constituents": ["Pikmin 1", "Pikmin 2"]
+  },
+  "prinny presents nis classics volume 3 la pucelle ragnarok rhapsody a musical adventure": {
+    "type": "compilation",
+    "constituents": ["La Pucelle: Ragnarok", "Rhapsody: A Musical Adventure"]
+  },
+  "prototype biohazard bundle": {
+    "type": "entitlement",
+    "constituents": ["Prototype", "Prototype 2"]
+  },
+  "sega vintage collection monster world": {
+    "type": "compilation",
+    "constituents": ["Wonder Boy in Monster World", "Wonder Boy III: Monster Lair", "Monster World IV"]
+  },
+  "uncharted legacy of thieves collection": {
+    "type": "compilation",
+    "constituents": ["Uncharted 4: A Thief's End", "Uncharted: The Lost Legacy"]
+  },
+  "uncharted the nathan drake collection": {
+    "type": "compilation",
+    "constituents": ["Uncharted: Drake's Fortune", "Uncharted 2: Among Thieves", "Uncharted 3: Drake's Deception"]
+  },
+  "voice of cards trilogy": {
+    "type": "compilation",
+    "constituents": ["Voice of Cards: The Isle Dragon Roars", "Voice of Cards: The Forsaken Maiden", "Voice of Cards: The Beasts of Burden"]
+  },
+  "watch dogs 1 watch dogs 2 gold editions bundle": {
+    "type": "entitlement",
+    "constituents": ["Watch Dogs", "Watch Dogs 2"]
+  }
+}
