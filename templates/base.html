@@ -768,6 +768,11 @@
             await api.put(`/api/games/${gameId}`, { time_to_beat_override_minutes: mins });
         }
 
+        async function saveTrait(gameId, field, value) {
+            await api.put(`/api/games/${gameId}`, { [field]: value === '' ? null : value });
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
         // Global platforms list
         let allPlatforms = [];
 
@@ -967,6 +972,34 @@
                                    placeholder="e.g. 12"
                                    class="w-32 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none"
                                    onchange="saveTimeToBeat(${game.id}, this.value)">
+                        </div>
+
+                        <!-- Session length + Series role (manual override; locks the row) -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">
+                                    Session length
+                                    <span class="text-xs text-gray-500">${game.session_length_source ? '(' + game.session_length_source + ')' : ''}</span>
+                                </label>
+                                <select onchange="saveTrait(${game.id}, 'session_length', this.value)"
+                                        class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                    <option value="" ${!game.session_length ? 'selected' : ''}>—</option>
+                                    <option value="short" ${game.session_length === 'short' ? 'selected' : ''}>Short sessions</option>
+                                    <option value="long" ${game.session_length === 'long' ? 'selected' : ''}>Long sessions</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">
+                                    Series role
+                                    <span class="text-xs text-gray-500">${game.series_role_source ? '(' + game.series_role_source + ')' : ''}</span>
+                                </label>
+                                <select onchange="saveTrait(${game.id}, 'series_role', this.value)"
+                                        class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                    <option value="" ${!game.series_role ? 'selected' : ''}>—</option>
+                                    <option value="mainline" ${game.series_role === 'mainline' ? 'selected' : ''}>Mainline</option>
+                                    <option value="spinoff" ${game.series_role === 'spinoff' ? 'selected' : ''}>Spin-off</option>
+                                </select>
+                            </div>
                         </div>
 
                         <!-- Platforms & Rating row -->

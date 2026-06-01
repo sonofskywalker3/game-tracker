@@ -53,3 +53,13 @@ def test_create_applies_catalog(monkeypatch, client):
     g = client.get(f"/api/games/{gid}").get_json()
     assert g["session_length"] == "short"
     assert g["session_length_source"] == "catalog"
+
+
+def test_game_modal_template_has_trait_selectors():
+    with open("templates/base.html", encoding="utf-8") as f:
+        html = f.read()
+    assert "saveTrait(" in html
+    assert "'session_length'" in html
+    assert "'series_role'" in html
+    assert "Session length" in html
+    assert "Series role" in html
