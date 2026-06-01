@@ -684,6 +684,42 @@ def migrate_game_traits(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+TRAIT_FIELDS = ("session_length", "series_role")
+
+
+def apply_traits_catalog(conn: sqlite3.Connection, game_id: int | None = None) -> None:
+    """Set catalog trait values on games not already manually locked. Idempotent.
+
+    Resolution: a `manual` source LOCKS the row (skipped here). Otherwise the catalog
+    value (keyed by normalized_title) is written with source='catalog', overwriting a
+    prior catalog/ai/null value. A missing catalog or absent entry is a safe no-op.
+    game_id=None processes every game (startup); a specific id processes one (on add).
+    """
+    catalog = load_game_traits()
+    if not catalog:
+        return
+    sql = ("SELECT id, normalized_title, session_length_source, series_role_source "
+           "FROM games")
+    params: tuple = ()
+    if game_id is not None:
+        sql += " WHERE id = ?"
+        params = (game_id,)
+    for row in conn.execute(sql, params).fetchall():
+        entry = catalog.get(row["normalized_title"])
+        if not entry:
+            continue
+        for trait in TRAIT_FIELDS:
+            if row[f"{trait}_source"] == "manual":
+                continue  # locked
+            value = entry.get(trait)
+            if value is None:
+                continue
+            conn.execute(
+                f"UPDATE games SET {trait} = ?, {trait}_source = 'catalog' WHERE id = ?",
+                (value, row["id"]))
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -742,6 +778,7 @@ def migrate_db():
     migrate_slot_dismissals(conn)
     migrate_game_signals(conn)
     migrate_game_traits(conn)
+    apply_traits_catalog(conn)
     seed_default_slots(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
