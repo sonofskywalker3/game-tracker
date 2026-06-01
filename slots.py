@@ -1,8 +1,10 @@
 """The Slate engine: per-slot eligibility/ranking + pin/outcome lifecycle.
 
 Ranking reuses recommendation.calculate_tag_affinity for taste signal and layers
-slot-specific hard filters (platform, latency) + a session/length fit nudge +
-a genre-fatigue penalty from recent slot_history.
+slot-specific hard filters (platform, latency, session_length) + a session-fit and
+focus-series boost + a genre-fatigue penalty from recent slot_history. Effective
+time-to-beat is surfaced per candidate (data for the UI + chat) but no longer drives
+the Quick/Long axis.
 """
 from __future__ import annotations
 
@@ -10,19 +12,18 @@ import json
 import sqlite3
 
 from recommendation import calculate_tag_affinity
-from slot_signals import session_tolerant, latency_tolerant, effective_time_to_beat_minutes
+from slot_signals import latency_tolerant, effective_time_to_beat_minutes
 
 # Statuses that mean "not a candidate to start" (already done or actively elsewhere).
 FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
 # Recent-history window for genre-fatigue penalty.
 FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
-SESSION_MISMATCH_PENALTY = 25.0
 STARTED_BOOST = 1000.0
-TTB_REFERENCE_MINUTES = 1200   # 20h: pivot between "short" and "long"
-TTB_WEIGHT = 0.02              # score points per minute of deviation
-TTB_TERM_CAP = 20.0
-SERIES_BOOST = 30.0
+SERIES_BOOST = 30.0            # recent-series auto-boost (slot's last play)
+SESSION_FIT_BOOST = 25.0      # session_length matches the slot's session window
+FOCUS_SERIES_BOOST = 30.0     # candidate is in the slot's focus_series_id
+ROLE_BOOST = 20.0             # mainline->long slot / spinoff->short slot routing
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -135,25 +136,22 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         if tag_names & fatigue_tags:
             score -= FATIGUE_PENALTY
             reasons.append("Similar to what you just finished")
-        # Session-tolerance penalty for short-session slots
+        # Session-tolerance fit, keyed off the per-game session_length trait
+        # (catalog/ai/manual). null is always neutral; only 'long' is excluded from
+        # a short-session (Quick) slot.
         max_session = slot.get("max_session_minutes")
         min_session = slot.get("min_session_minutes")
-        if max_session is not None and not session_tolerant(tag_names):
-            score -= SESSION_MISMATCH_PENALTY
-            reasons.append("May not suit a short session")
-        # Directional time-to-beat term
-        ttb = effective_time_to_beat_minutes(game)
-        if ttb is not None:
-            if max_session is not None:
-                term = max(-TTB_TERM_CAP, min(TTB_TERM_CAP, (TTB_REFERENCE_MINUTES - ttb) * TTB_WEIGHT))
-                if term:
-                    score += term
-                    reasons.append("Short play" if term > 0 else "Long for a quick session")
-            elif min_session is not None:
-                term = max(-TTB_TERM_CAP, min(TTB_TERM_CAP, (ttb - TTB_REFERENCE_MINUTES) * TTB_WEIGHT))
-                if term:
-                    score += term
-                    reasons.append("Meaty play" if term > 0 else "Short for a long session")
+        session_length = game["session_length"]
+        if max_session is not None:
+            if session_length == "long":
+                continue                       # clean split: long games live only in Long slots
+            if session_length == "short":
+                score += SESSION_FIT_BOOST
+                reasons.append("Fits a quick session")
+        elif min_session is not None:
+            if session_length == "long":
+                score += SESSION_FIT_BOOST
+                reasons.append("Worth a long sitting")
         # Boost in-progress games to the top when prioritize_started is enabled
         if slot.get("prioritize_started") and game["status"] == "playing":
             score += STARTED_BOOST
@@ -163,7 +161,8 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
             score += SERIES_BOOST
             reasons.append("Next in this series")
 
-        out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons})
+        out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons,
+                    "time_to_beat_minutes": effective_time_to_beat_minutes(game)})
 
     out.sort(key=lambda x: x["score"], reverse=True)
     return out[:limit]

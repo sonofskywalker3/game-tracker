@@ -86,15 +86,21 @@ def test_higher_priority_ranks_first(temp_db):
     conn.close()
 
 
-def test_short_session_slot_penalizes_long_form(temp_db):
+def test_short_session_slot_excludes_long_session_length(temp_db):
     conn = models.get_db()
-    # "Switch · Quick" has max_session_minutes=60. A long-form JRPG should rank
-    # below a short-session Puzzle game even at equal priority.
-    puzzle = _add_game(conn, "Puzzler", "Switch", tags=("Puzzle",), priority=5)
-    jrpg = _add_game(conn, "Epic JRPG", "Switch", tags=("JRPG",), priority=5)
-    cands = slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))
-    ids = [c["game"]["id"] for c in cands]
-    assert ids.index(puzzle) < ids.index(jrpg)   # puzzle ranks higher
+    # "Switch · Quick" has max_session_minutes=60. The Quick/Long split now keys off
+    # the per-game session_length trait, not genre tags: a 'long' game is excluded,
+    # a 'short' game qualifies.
+    short = _add_game(conn, "Short One", "Switch", tags=("Puzzle",))
+    long_ = _add_game(conn, "Long One", "Switch", tags=("Puzzle",))
+    conn.execute("UPDATE games SET session_length='short', session_length_source='catalog' "
+                 "WHERE id=?", (short,))
+    conn.execute("UPDATE games SET session_length='long', session_length_source='catalog' "
+                 "WHERE id=?", (long_,))
+    conn.commit()
+    ids = [c["game"]["id"] for c in slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))]
+    assert short in ids
+    assert long_ not in ids
     conn.close()
 
 
