@@ -1,3 +1,5 @@
+"""Time-to-beat is retained as first-class candidate data but no longer orders the
+Quick/Long axis (that is now session_length). See the session-traits spec."""
 import models
 import slots
 
@@ -22,25 +24,23 @@ def _slot(conn, label):
     return dict(conn.execute("SELECT * FROM slots WHERE label=?", (label,)).fetchone())
 
 
-def _rank(conn, label):
-    return [c["game"]["id"] for c in slots.rank_candidates(conn, _slot(conn, label))]
-
-
-def test_quick_slot_ranks_short_game_above_long(temp_db):
+def test_time_to_beat_surfaced_per_candidate(temp_db):
     conn = models.get_db()
-    short = _add_game(conn, "Short Game", hltb_main=300)
-    long_ = _add_game(conn, "Long Game", hltb_main=2400)
-    ids = _rank(conn, "Switch · Quick")
-    assert ids.index(short) < ids.index(long_)
+    gid = _add_game(conn, "Timed Game", hltb_main=900)
+    cand = next(c for c in slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))
+                if c["game"]["id"] == gid)
+    assert cand["time_to_beat_minutes"] == 900
     conn.close()
 
 
-def test_long_slot_ranks_long_game_above_short(temp_db):
+def test_time_to_beat_does_not_order_quick_slot(temp_db):
     conn = models.get_db()
+    # Two null-session_length games differing only in HLTB length both qualify and
+    # neither is excluded — TTB is no longer the slot axis.
     short = _add_game(conn, "Short Game", hltb_main=300)
     long_ = _add_game(conn, "Long Game", hltb_main=2400)
-    ids = _rank(conn, "Switch · Long")
-    assert ids.index(long_) < ids.index(short)
+    ids = [c["game"]["id"] for c in slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))]
+    assert short in ids and long_ in ids
     conn.close()
 
 
@@ -48,6 +48,6 @@ def test_unknown_ttb_is_neutral(temp_db):
     conn = models.get_db()
     a = _add_game(conn, "A", hltb_main=None)
     b = _add_game(conn, "B", hltb_main=None)
-    ids = _rank(conn, "Switch · Quick")
+    ids = [c["game"]["id"] for c in slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))]
     assert a in ids and b in ids
     conn.close()
