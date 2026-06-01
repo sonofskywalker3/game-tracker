@@ -20,7 +20,7 @@ FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
 FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
 STARTED_BOOST = 1000.0
-SERIES_BOOST = 30.0            # recent-series auto-boost (slot's last play)
+SERIES_BOOST = 30.0           # recent-series auto-boost (slot's last play)
 SESSION_FIT_BOOST = 25.0      # session_length matches the slot's session window
 FOCUS_SERIES_BOOST = 30.0     # candidate is in the slot's focus_series_id
 ROLE_BOOST = 20.0             # mainline->long slot / spinoff->short slot routing
@@ -152,6 +152,18 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
             if session_length == "long":
                 score += SESSION_FIT_BOOST
                 reasons.append("Worth a long sitting")
+        # Focus-series boost + role routing (when the slot focuses a series).
+        focus_series_id = slot.get("focus_series_id")
+        if focus_series_id is not None and game["series_id"] == focus_series_id:
+            score += FOCUS_SERIES_BOOST
+            reasons.append("In this slot's focus series")
+            role = game["series_role"]
+            if max_session is not None and role == "spinoff":
+                score += ROLE_BOOST
+                reasons.append("Spin-off suits a short slot")
+            elif min_session is not None and role == "mainline":
+                score += ROLE_BOOST
+                reasons.append("Mainline for a long sitting")
         # Boost in-progress games to the top when prioritize_started is enabled
         if slot.get("prioritize_started") and game["status"] == "playing":
             score += STARTED_BOOST
