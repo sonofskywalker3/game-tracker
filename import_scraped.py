@@ -697,7 +697,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         return
 
     if not args.paths:
-        parser.error("paths are required unless --cleanup-bundles is given")
+        parser.error("paths are required unless --cleanup-bundles or --apply-bundle-catalog is given")
 
     if args.accept_fuzzy:
         confirm = _auto_confirm
