@@ -1,3 +1,6 @@
+import models
+
+
 def test_get_slots_returns_four(client):
     resp = client.get("/api/slots")
     assert resp.status_code == 200
@@ -36,3 +39,45 @@ def test_delete_slot(client):
     resp = client.delete(f"/api/slots/{sid}")
     assert resp.status_code == 200
     assert len(client.get("/api/slots").get_json()["slots"]) == 3
+
+
+def _add_backlog_game(title):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(title)))
+    gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (gid,))
+    conn.commit()
+    conn.close()
+    return gid
+
+
+def test_pin_and_outcome_flow(client):
+    gid = _add_backlog_game("Hades")
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    assert client.post(f"/api/slots/{sid}/pin", json={"game_id": gid, "goal": "beat it"}).status_code == 200
+    state = client.get("/api/slots").get_json()["slots"]
+    pinned = next(s for s in state if s["id"] == sid)
+    assert pinned["current_game"]["id"] == gid
+    assert pinned["goal"] == "beat it"
+    # complete it -> slot frees
+    assert client.post(f"/api/slots/{sid}/outcome", json={"outcome": "complete"}).status_code == 200
+    pinned = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert pinned["current_game"] is None
+
+
+def test_edit_goal(client):
+    gid = _add_backlog_game("Celeste")
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    client.post(f"/api/slots/{sid}/pin", json={"game_id": gid, "goal": "beat"})
+    assert client.patch(f"/api/slots/{sid}/goal", json={"goal": "C-sides"}).status_code == 200
+    pinned = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert pinned["goal"] == "C-sides"
+
+
+def test_hltb_refresh_route(client, monkeypatch):
+    import hltb
+    monkeypatch.setattr(hltb, "enrich_missing", lambda conn: {"matched": 3, "missed": 1})
+    resp = client.post("/api/hltb/refresh")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"matched": 3, "missed": 1}
