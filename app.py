@@ -2,12 +2,14 @@
 Game Tracker - Flask Application
 """
 import difflib
+import json
 import logging
 import sqlite3
 from collections import Counter
 import requests
 import dedup
 import import_scraped
+import slots
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
@@ -1536,6 +1538,69 @@ def api_recommendations():
         'recommendations': recs,
         'quick_picks': quick_picks
     })
+
+
+@app.route('/api/slots')
+def api_slots():
+    """Full slate state: slot definitions + current games + ranked candidates."""
+    conn = get_db()
+    state = slots.get_slots_state(conn)
+    conn.close()
+    return jsonify({'slots': state})
+
+
+@app.route('/api/slots', methods=['POST'])
+def api_create_slot():
+    """Create a new slot."""
+    data = request.get_json() or {}
+    conn = get_db()
+    next_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots").fetchone()[0]
+    conn.execute(
+        "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
+        "min_session_minutes, streamable_only, context_notes) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (data.get('label', 'New slot'), next_order,
+         json.dumps(data.get('platforms', [])),
+         data.get('max_session_minutes'), data.get('min_session_minutes'),
+         1 if data.get('streamable_only') else 0, data.get('context_notes')))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True}), 201
+
+
+@app.route('/api/slots/<int:slot_id>', methods=['PATCH'])
+def api_update_slot(slot_id: int):
+    """Update a slot's definition (label / constraints / notes)."""
+    data = request.get_json() or {}
+    fields, params = [], []
+    for key in ('label', 'max_session_minutes', 'min_session_minutes', 'context_notes', 'sort_order'):
+        if key in data:
+            fields.append(f"{key} = ?")
+            params.append(data[key])
+    if 'platforms' in data:
+        fields.append("platforms = ?")
+        params.append(json.dumps(data['platforms']))
+    if 'streamable_only' in data:
+        fields.append("streamable_only = ?")
+        params.append(1 if data['streamable_only'] else 0)
+    if not fields:
+        return jsonify({'error': 'no fields'}), 400
+    params.append(slot_id)
+    conn = get_db()
+    conn.execute(f"UPDATE slots SET {', '.join(fields)} WHERE id = ?", params)
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>', methods=['DELETE'])
+def api_delete_slot(slot_id: int):
+    """Delete a slot definition."""
+    conn = get_db()
+    conn.execute("DELETE FROM slots WHERE id = ?", (slot_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/tags')
