@@ -511,6 +511,75 @@ def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
     return results
 
 
+_VALID_BUNDLE_TYPES = ("compilation", "entitlement", "anthology")
+
+
+def apply_bundle_catalog(conn: sqlite3.Connection, *, dry_run: bool = False) -> list[dict]:
+    """Expand catalogued multi-game products that exist in the DB. Catalog-keyed
+    sibling of cleanup_bundles (which is keyed by vendor id).
+
+    For each entry in models.load_bundle_catalog() whose parent (matched by
+    normalized_title) is owned:
+      - anthology  -> no-op (kept; A2 handles its contents list);
+      - compilation/entitlement -> ensure constituents exist on the parent's
+        platform(s) (reusing the importer), migrate the parent's curation fill-only,
+        then delete the parent (uncurated -> 'deleted'; curated+splittable ->
+        'migrated_deleted'; un-splittable rating/notes/hours -> 'kept_ambiguous').
+      - compilation -> additionally stamp collection_name = parent title on each
+        constituent (the badge + 'Part of X' cue). entitlement constituents stay plain.
+    Idempotent (a removed parent is skipped next run). Honors dry_run. Returns a report.
+    """
+    catalog = models.load_bundle_catalog()
+    results: list[dict] = []
+    for norm_title, entry in catalog.items():
+        ptype = entry.get("type")
+        if ptype not in _VALID_BUNDLE_TYPES:
+            continue  # unknown type: never guessed
+        parent = conn.execute(
+            "SELECT id, title FROM games WHERE normalized_title = ?", (norm_title,)).fetchone()
+        if not parent:
+            continue
+        parent_id, parent_title = parent["id"], parent["title"]
+        if ptype == "anthology":
+            results.append({"title": parent_title, "type": "anthology", "action": "kept",
+                            "constituents_created": 0, "migrated": {}})
+            continue
+
+        constituents = tuple(entry.get("constituents") or ())
+        platforms = [r[0] for r in conn.execute(
+            "SELECT p.short_name FROM game_platforms gp JOIN platforms p ON p.id = gp.platform_id "
+            "WHERE gp.game_id = ?", (parent_id,))] or [None]
+        synth = [_constituent_game({"platform": pf}, title, "catalog")
+                 for title in constituents for pf in platforms]
+        stats = import_games(conn, synth, "catalog", dry_run=dry_run, confirm_fn=_safe_auto_confirm)
+
+        ids = _resolve_constituent_ids(conn, constituents)
+        if ptype == "compilation" and not dry_run:
+            for cid in ids:
+                conn.execute("UPDATE games SET collection_name = ? WHERE id = ?",
+                             (parent_title, cid))
+
+        curated = _is_curated(conn, parent_id)
+        migrated: dict = {}
+        if not curated:
+            action = "deleted"
+            if not dry_run:
+                conn.execute("DELETE FROM games WHERE id = ?", (parent_id,))
+        else:
+            migrated = _migrate_bundle_curation(conn, parent_id, ids, dry_run=dry_run)
+            if migrated["ambiguous"]:
+                action = "kept_ambiguous"
+            else:
+                action = "migrated_deleted"
+                if not dry_run:
+                    conn.execute("DELETE FROM games WHERE id = ?", (parent_id,))
+        results.append({"title": parent_title, "type": ptype, "action": action,
+                        "constituents_created": stats.new_games, "migrated": migrated})
+    if not dry_run:
+        conn.commit()
+    return results
+
+
 def run_dlc_enrichment(conn: sqlite3.Connection) -> Optional[dict]:
     """Enrich never-enriched games with IGDB DLC. Returns totals, or None if no
     Twitch credentials are configured (enrichment skipped)."""
