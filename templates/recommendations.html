@@ -38,6 +38,20 @@
             <!-- Filled by JS -->
         </div>
     </div>
+
+    <div id="slot-settings-modal" class="hidden fixed inset-0 bg-black/60 z-50 items-center justify-center p-4">
+        <div class="bg-surface-light rounded-xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-white">Slot settings</h2>
+                <button onclick="closeSlotSettings()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="slot-settings-list" class="space-y-4"></div>
+            <div class="mt-4 flex justify-between">
+                <button onclick="addSlot()" class="text-sm px-3 py-2 bg-surface rounded-lg text-gray-300 hover:bg-surface-lighter">+ Add slot</button>
+                <button onclick="closeSlotSettings()" class="text-sm px-3 py-2 bg-accent rounded-lg text-white">Done</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -165,7 +179,8 @@
             if (chase) { new_goal = prompt('New goal?', 'get the plat'); if (new_goal === null) return; }
             await api.post(`/api/slots/${slotId}/outcome`, { outcome: 'beat', chase, new_goal });
         } else {
-            if (outcome === 'dropped' && !confirm('Drop this game?')) return;
+            const prompts = { dropped: 'Drop this game?', swap: 'Clear this slot without recording an outcome?' };
+            if (prompts[outcome] && !confirm(prompts[outcome])) return;
             await api.post(`/api/slots/${slotId}/outcome`, { outcome });
         }
         loadSlate();
@@ -185,8 +200,70 @@
         loadSlate();
     }
 
-    function openSlotSettings() {
-        alert('Slot settings coming in the next step.');  // replaced in Task 13
+    const SLOT_PLATFORMS = ['Switch', 'PS', 'Xbox', 'Steam', 'PC'];
+
+    async function openSlotSettings() {
+        const { slots } = await api.get('/api/slots');
+        renderSlotSettings(slots);
+        showModalEl('slot-settings-modal');
+    }
+    function closeSlotSettings() { hideModalEl('slot-settings-modal'); loadSlate(); }
+
+    function renderSlotSettings(slots) {
+        const list = document.getElementById('slot-settings-list');
+        list.innerHTML = slots.map(s => {
+            let plats = [];
+            try { plats = JSON.parse(s.platforms || '[]'); } catch (e) { plats = []; }
+            const checks = SLOT_PLATFORMS.map(p => `
+                <label class="text-xs text-gray-300 mr-3">
+                    <input type="checkbox" data-slot="${s.id}" data-plat="${p}" ${plats.includes(p) ? 'checked' : ''}> ${p}
+                </label>`).join('');
+            return `<div class="bg-surface rounded-lg p-3 space-y-2" data-slot-row="${s.id}">
+                <input class="w-full bg-surface-light rounded px-2 py-1 text-white text-sm" data-f="label" value="${escapeHtml(s.label || '')}">
+                <div>${checks}</div>
+                <div class="flex gap-2 text-xs text-gray-400 items-center">
+                    <label>max min <input type="number" class="w-16 bg-surface-light rounded px-1 py-1 text-white" data-f="max_session_minutes" value="${s.max_session_minutes ?? ''}"></label>
+                    <label>min min <input type="number" class="w-16 bg-surface-light rounded px-1 py-1 text-white" data-f="min_session_minutes" value="${s.min_session_minutes ?? ''}"></label>
+                    <label><input type="checkbox" data-f="streamable_only" ${s.streamable_only ? 'checked' : ''}> Streamable games only</label>
+                </div>
+                <textarea class="w-full bg-surface-light rounded px-2 py-1 text-white text-xs" data-f="context_notes" rows="2" placeholder="notes (used by the AI later)">${escapeHtml(s.context_notes || '')}</textarea>
+                <div class="flex gap-2">
+                    <button onclick="saveSlot(${s.id})" class="text-xs px-2 py-1 bg-accent rounded text-white">Save</button>
+                    <button onclick="deleteSlotConfirm(${s.id})" class="text-xs px-2 py-1 bg-surface-light rounded text-red-300 hover:text-red-200">Delete</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function _slotRowPayload(slotId) {
+        const row = document.querySelector(`[data-slot-row="${slotId}"]`);
+        const val = f => row.querySelector(`[data-f="${f}"]`);
+        const platforms = Array.from(row.querySelectorAll('input[data-plat]'))
+            .filter(c => c.checked).map(c => c.dataset.plat);
+        const maxv = val('max_session_minutes').value;
+        const minv = val('min_session_minutes').value;
+        return {
+            label: val('label').value,
+            platforms,
+            max_session_minutes: maxv === '' ? null : parseInt(maxv, 10),
+            min_session_minutes: minv === '' ? null : parseInt(minv, 10),
+            streamable_only: val('streamable_only').checked ? 1 : 0,
+            context_notes: val('context_notes').value,
+        };
+    }
+
+    async function saveSlot(slotId) {
+        await api.patch(`/api/slots/${slotId}`, _slotRowPayload(slotId));
+        openSlotSettings();
+    }
+    async function addSlot() {
+        await api.post('/api/slots', { label: 'New slot', platforms: [] });
+        openSlotSettings();
+    }
+    async function deleteSlotConfirm(slotId) {
+        if (!confirm('Delete this slot?')) return;
+        await api.delete(`/api/slots/${slotId}`);
+        openSlotSettings();
     }
 
     function refreshGameList() { loadSlate(); }  // keep modal callback contract

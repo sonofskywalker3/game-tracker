@@ -98,3 +98,15 @@ def test_get_slots_state_includes_current_game_and_candidates(temp_db):
     assert "candidates" in state[0]
     assert "current_game" in state[0]
     conn.close()
+
+
+def test_recently_finished_lists_outcomes(temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Hades")
+    sid = _slot_id(conn, "Switch · Quick")
+    slots.pin_game(conn, sid, gid, "beat it")
+    slots.apply_outcome(conn, sid, "complete")
+    rf = slots.recently_finished(conn)
+    assert rf[0]["title"] == "Hades"
+    assert rf[0]["outcome"] == "completed"
+    conn.close()

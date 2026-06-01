@@ -5,3 +5,4 @@ def test_recommendations_page_renders(client):
     body = resp.get_data(as_text=True)
     assert 'id="slate"' in body
     assert "loadSlate" in body
+    assert 'id="slot-settings-modal"' in body

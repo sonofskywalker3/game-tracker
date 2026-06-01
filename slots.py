@@ -184,6 +184,16 @@ def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
     raise ValueError(f"unknown outcome: {outcome!r}")
 
 
+def recently_finished(conn: sqlite3.Connection, limit: int = 6) -> list[dict]:
+    """Most-recently removed slot_history rows joined to game title/cover."""
+    rows = conn.execute("""
+        SELECT h.outcome, h.removed_at, g.id AS game_id, g.title, g.cover_url
+        FROM slot_history h JOIN games g ON g.id = h.game_id
+        ORDER BY h.removed_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_slots_state(conn: sqlite3.Connection, candidate_limit: int = 8) -> list[dict]:
     """Full slate state: each slot dict + its current_game dict + ranked candidates."""
     slot_rows = conn.execute("SELECT * FROM slots ORDER BY sort_order, id").fetchall()

@@ -1546,8 +1546,9 @@ def api_slots():
     """Full slate state: slot definitions + current games + ranked candidates."""
     conn = get_db()
     state = slots.get_slots_state(conn)
+    recent = slots.recently_finished(conn)
     conn.close()
-    return jsonify({'slots': state})
+    return jsonify({'slots': state, 'recently_finished': recent})
 
 
 @app.route('/api/slots', methods=['POST'])
