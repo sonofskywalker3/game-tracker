@@ -5,7 +5,7 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent / "games.db"
 SERIES_PATTERNS_PATH = Path(__file__).parent / "series_patterns.json"           # per-user (gitignored)
 SERIES_PATTERNS_DEFAULT_PATH = Path(__file__).parent / "series_patterns.default.json"  # committed seed
-GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                 # per-user (gitignored)
+GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                  # per-user (gitignored)
 GAME_TRAITS_DEFAULT_PATH = Path(__file__).parent / "game_traits.default.json"  # committed seed
 
 
@@ -664,6 +664,26 @@ def migrate_game_signals(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_game_traits(conn: sqlite3.Connection) -> None:
+    """Add the session-tolerance + series-role trait columns to games. Idempotent.
+
+    Each trait carries a `*_source` of catalog/ai/manual (manual LOCKS the row against
+    catalog re-sync and AI). Values are short/long for session_length and
+    mainline/spinoff for series_role; null is always a safe, neutral value.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    additions = [
+        ("session_length", "TEXT"),
+        ("session_length_source", "TEXT"),
+        ("series_role", "TEXT"),
+        ("series_role_source", "TEXT"),
+    ]
+    for name, decl in additions:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE games ADD COLUMN {name} {decl}")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -721,6 +741,7 @@ def migrate_db():
     migrate_slot_history(conn)
     migrate_slot_dismissals(conn)
     migrate_game_signals(conn)
+    migrate_game_traits(conn)
     seed_default_slots(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
