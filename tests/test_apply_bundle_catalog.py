@@ -125,3 +125,21 @@ def test_ambiguous_curation_keeps_parent(monkeypatch, temp_db):
     assert any(r["action"] == "kept_ambiguous" for r in report)
     assert "Mega Man" in _titles(conn)
     conn.close()
+
+
+def test_curated_status_migrates_and_deletes_parent(monkeypatch, temp_db):
+    # Curated-but-splittable parent (non-default status, no rating/notes/hours):
+    # status migrates fill-only onto constituents, then the parent is deleted.
+    conn = models.get_db()
+    _add_parent(conn, "Mega Man Legacy Collection", status="wishlist")
+    monkeypatch.setattr(models, "load_bundle_catalog", lambda: {
+        "mega man legacy collection": {"type": "compilation",
+                                       "constituents": ["Mega Man", "Mega Man 2"]}})
+    report = imp.apply_bundle_catalog(conn)
+    assert "Mega Man Legacy Collection" not in _titles(conn)            # parent deleted
+    assert any(r["action"] == "migrated_deleted" for r in report)
+    status = conn.execute(
+        "SELECT status FROM user_ratings WHERE game_id = "
+        "(SELECT id FROM games WHERE title='Mega Man')").fetchone()
+    assert status and status[0] == "wishlist"                          # status migrated
+    conn.close()
