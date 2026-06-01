@@ -771,6 +771,7 @@
         async function saveTrait(gameId, field, value) {
             await api.put(`/api/games/${gameId}`, { [field]: value === '' ? null : value });
             if (typeof refreshGameList === 'function') refreshGameList();
+            if (typeof loadGameModal === 'function') loadGameModal(gameId);
         }
 
         // Global platforms list
