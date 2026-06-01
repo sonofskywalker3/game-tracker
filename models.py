@@ -5,11 +5,23 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent / "games.db"
 SERIES_PATTERNS_PATH = Path(__file__).parent / "series_patterns.json"           # per-user (gitignored)
 SERIES_PATTERNS_DEFAULT_PATH = Path(__file__).parent / "series_patterns.default.json"  # committed seed
+GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                 # per-user (gitignored)
+GAME_TRAITS_DEFAULT_PATH = Path(__file__).parent / "game_traits.default.json"  # committed seed
 
 
 def load_series_patterns() -> dict:
     """Load the prefix->series-name table (per-user file, else committed seed)."""
     path = SERIES_PATTERNS_PATH if SERIES_PATTERNS_PATH.exists() else SERIES_PATTERNS_DEFAULT_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def load_game_traits() -> dict:
+    """Load the normalized_title->traits catalog (per-user file, else committed seed)."""
+    path = GAME_TRAITS_PATH if GAME_TRAITS_PATH.exists() else GAME_TRAITS_DEFAULT_PATH
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)

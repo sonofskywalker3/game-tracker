@@ -9,6 +9,7 @@ config.json
 
 # ---- Personal library data (kept local-only) ----
 series_patterns.json
+game_traits.json
 excluded_games.json
 games.db
 games.db.bak*
