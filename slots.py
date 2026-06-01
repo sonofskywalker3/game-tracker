@@ -10,13 +10,14 @@ import json
 import sqlite3
 
 from recommendation import calculate_tag_affinity
-from slot_signals import latency_tolerant
+from slot_signals import session_tolerant, latency_tolerant
 
 # Statuses that mean "not a candidate to start" (already done or actively elsewhere).
 FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
 # Recent-history window for genre-fatigue penalty.
 FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
+SESSION_MISMATCH_PENALTY = 25.0
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -46,7 +47,7 @@ def _pinned_game_ids(conn: sqlite3.Connection) -> set[int]:
 def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> list[dict]:
     """Return ranked eligible games for a slot: [{"game", "score", "reasons"}]."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
-    requires_low_latency = bool(slot["requires_low_latency"])
+    streamable_only = bool(slot["streamable_only"])
     affinity = calculate_tag_affinity(conn)
     fatigue_tags = _recent_fatigue_tags(conn)
     pinned = _pinned_game_ids(conn)
@@ -74,12 +75,8 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         # Latency hard filter
         tag_names = _game_tag_names(conn, game["id"])
         tolerant = latency_tolerant(tag_names, game["input_lag_override"])
-        if requires_low_latency and tolerant:
-            # Garage slot: wants games that NEED low latency (lag-sensitive only)
-            continue
-        if not requires_low_latency and not tolerant:
-            # Stream-safe/couch slots: exclude lag-sensitive games
-            continue
+        if streamable_only and not tolerant:
+            continue          # streamed slot: drop lag-sensitive games
 
         score = 50.0
         reasons = []
@@ -100,6 +97,11 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         if tag_names & fatigue_tags:
             score -= FATIGUE_PENALTY
             reasons.append("Similar to what you just finished")
+        # Session-tolerance penalty for short-session slots
+        max_session = slot.get("max_session_minutes")
+        if max_session is not None and not session_tolerant(tag_names):
+            score -= SESSION_MISMATCH_PENALTY
+            reasons.append("May not suit a short session")
 
         out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons})
 

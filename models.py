@@ -301,16 +301,16 @@ KNOWN_EDITION_SUFFIXES = (
 # short_names (see the platforms table). See the gamer-persona memory.
 SEED_SLOTS = (
     {"label": "Switch · Quick",      "sort_order": 0, "platforms": ["Switch"],
-     "max_session_minutes": 60, "min_session_minutes": None, "requires_low_latency": 0,
+     "max_session_minutes": 60, "min_session_minutes": None, "streamable_only": 0,
      "context_notes": "Couch, short sitting, kids in bed. Clean stopping points."},
     {"label": "Switch · Long",       "sort_order": 1, "platforms": ["Switch"],
-     "max_session_minutes": None, "min_session_minutes": 60, "requires_low_latency": 0,
+     "max_session_minutes": None, "min_session_minutes": 60, "streamable_only": 0,
      "context_notes": "Couch, longer Switch session."},
     {"label": "Garage · Console",    "sort_order": 2, "platforms": ["PS", "Xbox"],
-     "max_session_minutes": None, "min_session_minutes": None, "requires_low_latency": 1,
+     "max_session_minutes": None, "min_session_minutes": None, "streamable_only": 0,
      "context_notes": "Needs the real garage setup; reflex/low-latency; worth the trip."},
     {"label": "Long · Stream-safe",  "sort_order": 3, "platforms": ["PS", "Xbox"],
-     "max_session_minutes": None, "min_session_minutes": 60, "requires_low_latency": 0,
+     "max_session_minutes": None, "min_session_minutes": 60, "streamable_only": 1,
      "context_notes": "Turn-based / lag-tolerant. Garage or Shield-streamed to the couch."},
 )
 
@@ -324,11 +324,11 @@ def seed_default_slots(conn: sqlite3.Connection) -> None:
     for s in SEED_SLOTS:
         conn.execute(
             "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
-            "min_session_minutes, requires_low_latency, context_notes) "
+            "min_session_minutes, streamable_only, context_notes) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (s["label"], s["sort_order"], json.dumps(s["platforms"]),
              s["max_session_minutes"], s["min_session_minutes"],
-             s["requires_low_latency"], s["context_notes"]))
+             s["streamable_only"], s["context_notes"]))
     conn.commit()
 
 
@@ -553,9 +553,9 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
 
     A slot is a user-defined play context (label + constraints). It always holds
     at most one current game + a plaintext goal. Constraints (platforms, session
-    window, latency) drive deterministic eligibility now and the SP2 chat prompt
-    later. current_game_id is SET NULL on game delete so a deleted game never
-    orphans a slot.
+    window, streamable_only) drive deterministic eligibility now and the SP2 chat
+    prompt later. current_game_id is SET NULL on game delete so a deleted game
+    never orphans a slot.
     """
     conn.execute("""
         CREATE TABLE IF NOT EXISTS slots (
@@ -565,13 +565,16 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
             platforms            TEXT,          -- JSON array of platform short_names
             max_session_minutes  INTEGER,       -- upper bound on a comfortable sitting
             min_session_minutes  INTEGER,       -- lower bound
-            requires_low_latency INTEGER NOT NULL DEFAULT 0,
+            streamable_only      INTEGER NOT NULL DEFAULT 0,
             context_notes        TEXT,          -- owner's own words; feeds SP2 prompt
             current_game_id      INTEGER,
             goal                 TEXT,
             FOREIGN KEY (current_game_id) REFERENCES games(id) ON DELETE SET NULL
         )
     """)
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
+    if "streamable_only" not in cols:
+        conn.execute("ALTER TABLE slots ADD COLUMN streamable_only INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 

@@ -42,15 +42,14 @@ def test_platform_hard_filter(temp_db):
     conn.close()
 
 
-def test_low_latency_slot_excludes_lag_sensitive(temp_db):
+def test_garage_slot_has_no_latency_filter(temp_db):
     conn = models.get_db()
     fighting = _add_game(conn, "Fighter", "PS", tags=("Fighting",))
     turn = _add_game(conn, "Tactics", "PS", tags=("Strategy",))
-    # Garage · Console requires low latency -> only the lag-sensitive (Fighting) qualifies
     cands = slots.rank_candidates(conn, _slot(conn, "Garage · Console"))
     ids = [c["game"]["id"] for c in cands]
-    assert fighting in ids
-    assert turn not in ids
+    assert fighting in ids   # lag-sensitive OK at the real setup
+    assert turn in ids       # lag-tolerant OK too
     conn.close()
 
 
@@ -84,4 +83,16 @@ def test_higher_priority_ranks_first(temp_db):
     hi = _add_game(conn, "High", "Switch", tags=("Puzzle",), priority=9)
     cands = slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))
     assert cands[0]["game"]["id"] == hi
+    conn.close()
+
+
+def test_short_session_slot_penalizes_long_form(temp_db):
+    conn = models.get_db()
+    # "Switch · Quick" has max_session_minutes=60. A long-form JRPG should rank
+    # below a short-session Puzzle game even at equal priority.
+    puzzle = _add_game(conn, "Puzzler", "Switch", tags=("Puzzle",), priority=5)
+    jrpg = _add_game(conn, "Epic JRPG", "Switch", tags=("JRPG",), priority=5)
+    cands = slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))
+    ids = [c["game"]["id"] for c in cands]
+    assert ids.index(puzzle) < ids.index(jrpg)   # puzzle ranks higher
     conn.close()

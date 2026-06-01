@@ -18,9 +18,13 @@ def conn():
 
 def test_seeds_four_slots(conn):
     seed_default_slots(conn)
-    rows = conn.execute("SELECT label, platforms, requires_low_latency FROM slots ORDER BY sort_order").fetchall()
+    rows = conn.execute("SELECT label, platforms, streamable_only FROM slots ORDER BY sort_order").fetchall()
     labels = [r["label"] for r in rows]
     assert labels == ["Switch · Quick", "Switch · Long", "Garage · Console", "Long · Stream-safe"]
+    by_label = {r["label"]: r["streamable_only"] for r in rows}
+    assert by_label["Long · Stream-safe"] == 1
+    assert by_label["Garage · Console"] == 0
+    assert by_label["Switch · Quick"] == 0
 
 
 def test_seed_is_idempotent(conn):
