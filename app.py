@@ -8,6 +8,7 @@ import sqlite3
 from collections import Counter
 import requests
 import dedup
+import hltb
 import import_scraped
 import slots
 from flask import Flask, render_template, request, jsonify
@@ -1601,6 +1602,53 @@ def api_delete_slot(slot_id: int):
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/pin', methods=['POST'])
+def api_pin_slot(slot_id: int):
+    """Assign a game (+ goal) to a slot."""
+    data = request.get_json() or {}
+    game_id = data.get('game_id')
+    if not game_id:
+        return jsonify({'error': 'game_id required'}), 400
+    conn = get_db()
+    slots.pin_game(conn, slot_id, game_id, data.get('goal'))
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/outcome', methods=['POST'])
+def api_slot_outcome(slot_id: int):
+    """Apply an outcome: beat (+chase/new_goal) / complete / dropped / swap."""
+    data = request.get_json() or {}
+    outcome = data.get('outcome')
+    if outcome not in ('beat', 'complete', 'dropped', 'swap'):
+        return jsonify({'error': 'invalid outcome'}), 400
+    conn = get_db()
+    slots.apply_outcome(conn, slot_id, outcome,
+                        chase=bool(data.get('chase')), new_goal=data.get('new_goal'))
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/goal', methods=['PATCH'])
+def api_slot_goal(slot_id: int):
+    """Edit the plaintext goal for a slot's current game."""
+    data = request.get_json() or {}
+    conn = get_db()
+    conn.execute("UPDATE slots SET goal = ? WHERE id = ?", (data.get('goal'), slot_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/hltb/refresh', methods=['POST'])
+def api_hltb_refresh():
+    """Batch-enrich games lacking HLTB durations."""
+    conn = get_db()
+    result = hltb.enrich_missing(conn)
+    conn.close()
+    return jsonify(result)
 
 
 @app.route('/api/tags')
