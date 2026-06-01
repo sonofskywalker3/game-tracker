@@ -1747,7 +1747,12 @@
                 const traitPayload = {};
                 if (sl) traitPayload.session_length = sl;
                 if (sr) traitPayload.series_role = sr;
-                await api.put(`/api/games/${gameId}`, traitPayload);
+                const traitRes = await api.put(`/api/games/${gameId}`, traitPayload);
+                if (!traitRes.ok) {
+                    errorEl.textContent = (traitRes.data && traitRes.data.error) || 'Could not save traits';
+                    errorEl.classList.remove('hidden');
+                    // Game is still created; proceed.
+                }
             }
 
             // Chain the pin call if we have a source link.
