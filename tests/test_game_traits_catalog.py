@@ -32,3 +32,24 @@ def test_load_game_traits_malformed_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(models, "GAME_TRAITS_PATH", tmp_path / "game_traits.json")
     monkeypatch.setattr(models, "GAME_TRAITS_DEFAULT_PATH", bad)
     assert models.load_game_traits() == {}
+
+
+TRAIT_COLUMNS = {
+    "session_length", "session_length_source", "series_role", "series_role_source",
+}
+
+
+def test_migrate_game_traits_adds_columns(temp_db):
+    conn = models.get_db()
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()}
+    assert TRAIT_COLUMNS <= cols
+    conn.close()
+
+
+def test_migrate_game_traits_idempotent(temp_db):
+    conn = models.get_db()
+    models.migrate_game_traits(conn)
+    models.migrate_game_traits(conn)  # second run must not raise
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()}
+    assert TRAIT_COLUMNS <= cols
+    conn.close()

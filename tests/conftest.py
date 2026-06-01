@@ -19,6 +19,7 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_slot_history(conn)
     models.migrate_slot_dismissals(conn)
     models.migrate_game_signals(conn)
+    models.migrate_game_traits(conn)
     models.seed_default_slots(conn)
     conn.close()
     return db_path
