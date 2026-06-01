@@ -155,6 +155,26 @@
                             <!-- Filled by JS -->
                         </div>
                     </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Session length</label>
+                            <select id="new-game-session-length"
+                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <option value="">—</option>
+                                <option value="short">Short sessions</option>
+                                <option value="long">Long sessions</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Series role</label>
+                            <select id="new-game-series-role"
+                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <option value="">—</option>
+                                <option value="mainline">Mainline</option>
+                                <option value="spinoff">Spin-off</option>
+                            </select>
+                        </div>
+                    </div>
                     <div id="add-game-error" class="text-red-400 text-sm hidden"></div>
                     <button onclick="addNewGame()" class="w-full px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
                         Add Game
@@ -1304,6 +1324,8 @@
             document.getElementById('new-game-title').value = '';
             document.getElementById('new-game-source-link').value = '';
             document.getElementById('new-game-cover-url').value = '';
+            document.getElementById('new-game-session-length').value = '';
+            document.getElementById('new-game-series-role').value = '';
             document.getElementById('new-game-source-link-err').classList.add('hidden');
             document.getElementById('igdb-results').classList.add('hidden');
             document.getElementById('add-game-error').classList.add('hidden');
@@ -1717,6 +1739,16 @@
             }
 
             const gameId = result.data.game_id;
+
+            // Persist any manually chosen traits (reuses the manual PUT path).
+            const sl = document.getElementById('new-game-session-length').value;
+            const sr = document.getElementById('new-game-series-role').value;
+            if (sl || sr) {
+                const traitPayload = {};
+                if (sl) traitPayload.session_length = sl;
+                if (sr) traitPayload.series_role = sr;
+                await api.put(`/api/games/${gameId}`, traitPayload);
+            }
 
             // Chain the pin call if we have a source link.
             if (isIgdb) {
