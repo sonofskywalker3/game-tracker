@@ -143,3 +143,20 @@ def test_curated_status_migrates_and_deletes_parent(monkeypatch, temp_db):
         "(SELECT id FROM games WHERE title='Mega Man')").fetchone()
     assert status and status[0] == "wishlist"                          # status migrated
     conn.close()
+
+
+def test_cli_apply_bundle_catalog_dry_run(monkeypatch, temp_db, capsys):
+    # Point the global DB at the temp DB so main() operates on it.
+    import models as m
+    conn = models.get_db()
+    _add_parent(conn, "Mega Man Legacy Collection")
+    conn.close()
+    monkeypatch.setattr(m, "load_bundle_catalog", lambda: {
+        "mega man legacy collection": {"type": "compilation",
+                                       "constituents": ["Mega Man", "Mega Man 2"]}})
+    imp.main(["--apply-bundle-catalog", "--dry-run"])
+    conn = models.get_db()
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Mega Man Legacy Collection" in titles   # dry run wrote nothing
+    assert "Mega Man" not in titles
+    conn.close()

@@ -648,6 +648,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="preview changes; write nothing")
     parser.add_argument("--cleanup-bundles", action="store_true",
                         help="expand known phantom bundles already in the DB, then exit")
+    parser.add_argument("--apply-bundle-catalog", action="store_true",
+                        help="expand catalogued compilations/entitlement bundles "
+                             "(bundle_catalog.json) already in the DB, then exit")
     parser.add_argument("--include-curated", action="store_true",
                         help="with --cleanup-bundles: also migrate curated phantoms' "
                              "status/series onto constituents, then delete them")
@@ -680,6 +683,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         r["constituents_created"], extra, f"{r['source']}/{r['external_id']}")
         logger.info("DRY RUN — no changes written." if args.dry_run
                     else "bundles processed: %d" % len(report))
+        conn.close()
+        return
+
+    if args.apply_bundle_catalog:
+        report = apply_bundle_catalog(conn, dry_run=args.dry_run)
+        for r in report:
+            logger.info("%s: %s (+%d constituents) [%s]", r["title"], r["action"],
+                        r["constituents_created"], r["type"])
+        logger.info("DRY RUN — no changes written." if args.dry_run
+                    else "bundle-catalog entries processed: %d" % len(report))
         conn.close()
         return
 
