@@ -28,3 +28,11 @@ def test_api_game_detail_includes_collection_name(client):
     gid = _make_collection_game(client)
     g = client.get(f"/api/games/{gid}").get_json()
     assert g["collection_name"] == "Mega Man Legacy Collection"
+
+
+def test_tile_and_modal_have_collection_markup():
+    with open("templates/base.html", encoding="utf-8") as f:
+        html = f.read()
+    assert "collection-badge" in html          # tile badge
+    assert "game.collection_name" in html       # gated on the field
+    assert "Part of" in html                     # modal launch cue
