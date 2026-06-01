@@ -16,7 +16,8 @@ def _columns(conn: sqlite3.Connection, table: str) -> dict[str, str]:
 def conn():
     c = sqlite3.connect(":memory:")
     c.row_factory = sqlite3.Row
-    c.execute("CREATE TABLE games (id INTEGER PRIMARY KEY, title TEXT)")  # FK target
+    c.execute("CREATE TABLE games (id INTEGER PRIMARY KEY, title TEXT)")    # FK target
+    c.execute("CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT)")    # FK target
     yield c
     c.close()
 
@@ -27,7 +28,7 @@ def test_slots_creates_table_and_columns(conn):
     assert set(cols) == {
         "id", "label", "sort_order", "platforms", "max_session_minutes",
         "min_session_minutes", "streamable_only", "prioritize_started",
-        "context_notes", "current_game_id", "goal",
+        "context_notes", "current_game_id", "goal", "focus_series_id",
     }
 
 
