@@ -26,7 +26,7 @@ def test_slots_creates_table_and_columns(conn):
     cols = _columns(conn, "slots")
     assert set(cols) == {
         "id", "label", "sort_order", "platforms", "max_session_minutes",
-        "min_session_minutes", "requires_low_latency", "context_notes",
+        "min_session_minutes", "streamable_only", "context_notes",
         "current_game_id", "goal",
     }
 
