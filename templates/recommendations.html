@@ -225,6 +225,7 @@
                     <label>max min <input type="number" class="w-16 bg-surface-light rounded px-1 py-1 text-white" data-f="max_session_minutes" value="${s.max_session_minutes ?? ''}"></label>
                     <label>min min <input type="number" class="w-16 bg-surface-light rounded px-1 py-1 text-white" data-f="min_session_minutes" value="${s.min_session_minutes ?? ''}"></label>
                     <label><input type="checkbox" data-f="streamable_only" ${s.streamable_only ? 'checked' : ''}> Streamable games only</label>
+                    <label class="ml-3"><input type="checkbox" data-f="prioritize_started" ${s.prioritize_started ? 'checked' : ''}> Prioritize started games</label>
                 </div>
                 <textarea class="w-full bg-surface-light rounded px-2 py-1 text-white text-xs" data-f="context_notes" rows="2" placeholder="notes (used by the AI later)">${escapeHtml(s.context_notes || '')}</textarea>
                 <div class="flex gap-2">
@@ -248,6 +249,7 @@
             max_session_minutes: maxv === '' ? null : parseInt(maxv, 10),
             min_session_minutes: minv === '' ? null : parseInt(minv, 10),
             streamable_only: val('streamable_only').checked ? 1 : 0,
+            prioritize_started: val('prioritize_started').checked ? 1 : 0,
             context_notes: val('context_notes').value,
         };
     }

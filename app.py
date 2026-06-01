@@ -1559,12 +1559,14 @@ def api_create_slot():
     next_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots").fetchone()[0]
     conn.execute(
         "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
-        "min_session_minutes, streamable_only, context_notes) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "min_session_minutes, streamable_only, prioritize_started, context_notes) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (data.get('label', 'New slot'), next_order,
          json.dumps(data.get('platforms', [])),
          data.get('max_session_minutes'), data.get('min_session_minutes'),
-         1 if data.get('streamable_only') else 0, data.get('context_notes')))
+         1 if data.get('streamable_only') else 0,
+         1 if data.get('prioritize_started', 1) else 0,
+         data.get('context_notes')))
     conn.commit()
     conn.close()
     return jsonify({'ok': True}), 201
@@ -1585,6 +1587,9 @@ def api_update_slot(slot_id: int):
     if 'streamable_only' in data:
         fields.append("streamable_only = ?")
         params.append(1 if data['streamable_only'] else 0)
+    if 'prioritize_started' in data:
+        fields.append("prioritize_started = ?")
+        params.append(1 if data['prioritize_started'] else 0)
     if not fields:
         return jsonify({'error': 'no fields'}), 400
     params.append(slot_id)

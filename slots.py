@@ -18,6 +18,7 @@ FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
 FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
 SESSION_MISMATCH_PENALTY = 25.0
+STARTED_BOOST = 1000.0
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -102,6 +103,10 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         if max_session is not None and not session_tolerant(tag_names):
             score -= SESSION_MISMATCH_PENALTY
             reasons.append("May not suit a short session")
+        # Boost in-progress games to the top when prioritize_started is enabled
+        if slot.get("prioritize_started") and game["status"] == "playing":
+            score += STARTED_BOOST
+            reasons.append("Continue playing")
 
         out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons})
 

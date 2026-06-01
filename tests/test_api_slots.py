@@ -81,3 +81,10 @@ def test_hltb_refresh_route(client, monkeypatch):
     resp = client.post("/api/hltb/refresh")
     assert resp.status_code == 200
     assert resp.get_json() == {"matched": 3, "missed": 1}
+
+
+def test_patch_slot_prioritize_started(client):
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    assert client.patch(f"/api/slots/{sid}", json={"prioritize_started": 0}).status_code == 200
+    slot = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert slot["prioritize_started"] == 0
