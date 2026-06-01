@@ -1582,14 +1582,15 @@ def api_create_slot():
     next_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots").fetchone()[0]
     conn.execute(
         "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
-        "min_session_minutes, streamable_only, prioritize_started, context_notes) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "min_session_minutes, streamable_only, prioritize_started, context_notes, "
+        "focus_series_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (data.get('label', 'New slot'), next_order,
          json.dumps(data.get('platforms', [])),
          data.get('max_session_minutes'), data.get('min_session_minutes'),
          1 if data.get('streamable_only') else 0,
          1 if data.get('prioritize_started', 1) else 0,
-         data.get('context_notes')))
+         data.get('context_notes'), data.get('focus_series_id')))
     conn.commit()
     conn.close()
     return jsonify({'ok': True}), 201
@@ -1600,7 +1601,8 @@ def api_update_slot(slot_id: int):
     """Update a slot's definition (label / constraints / notes)."""
     data = request.get_json() or {}
     fields, params = [], []
-    for key in ('label', 'max_session_minutes', 'min_session_minutes', 'context_notes', 'sort_order'):
+    for key in ('label', 'max_session_minutes', 'min_session_minutes', 'context_notes',
+                'sort_order', 'focus_series_id'):
         if key in data:
             fields.append(f"{key} = ?")
             params.append(data[key])
