@@ -5,4 +5,10 @@ def test_recommendations_page_renders(client):
     body = resp.get_data(as_text=True)
     assert 'id="slate"' in body
     assert "loadSlate" in body
-    assert 'id="slot-settings-modal"' in body
+
+
+def test_recommendations_has_slate_and_needs_rating(client):
+    body = client.get("/recommendations").get_data(as_text=True)
+    assert 'id="slate"' in body
+    assert 'id="needs-rating-grid"' in body
+    assert "loadSlate" in body
