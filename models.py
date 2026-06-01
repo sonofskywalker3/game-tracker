@@ -609,6 +609,26 @@ def migrate_slot_history(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_slot_dismissals(conn: sqlite3.Connection) -> None:
+    """Create the slot_dismissals table if missing. Idempotent.
+
+    A dismissed suggestion (slot_id, game_id) is hidden from that slot's candidate
+    list until the slot's current game is replaced (the engine clears the slot's
+    rows then). Cascades away if the slot or game is deleted.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS slot_dismissals (
+            slot_id    INTEGER NOT NULL,
+            game_id    INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (slot_id, game_id),
+            FOREIGN KEY (slot_id) REFERENCES slots(id) ON DELETE CASCADE,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        )
+    """)
+    conn.commit()
+
+
 def migrate_game_signals(conn: sqlite3.Connection) -> None:
     """Add HowLongToBeat + override signal columns to games. Idempotent.
 
@@ -687,6 +707,7 @@ def migrate_db():
     # Add the Slate tables (picks-tab revamp foundation)
     migrate_slots(conn)
     migrate_slot_history(conn)
+    migrate_slot_dismissals(conn)
     migrate_game_signals(conn)
     seed_default_slots(conn)
 
