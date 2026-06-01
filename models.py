@@ -701,6 +701,17 @@ def migrate_game_traits(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_collection_name(conn: sqlite3.Connection) -> None:
+    """Add games.collection_name (the launcher compilation a broken-out game belongs
+    to). Idempotent. Non-null drives the tile 'collection' badge + the detail-view
+    'Part of <name>' launch cue; null is a normal standalone game.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    if "collection_name" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN collection_name TEXT")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length", "series_role")
 
 
@@ -795,6 +806,7 @@ def migrate_db():
     migrate_slot_dismissals(conn)
     migrate_game_signals(conn)
     migrate_game_traits(conn)
+    migrate_collection_name(conn)
     apply_traits_catalog(conn)
     seed_default_slots(conn)
 
