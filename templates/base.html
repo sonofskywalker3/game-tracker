@@ -103,6 +103,11 @@
 
     <!-- Main Content -->
     <main class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Shared stats hero (every page). Aside is page-specific (library fills it). -->
+        <div class="rounded-2xl mb-6 p-5 bg-gradient-to-br from-[#241b3a] via-[#191522] to-[#151515] border border-gray-700/50 flex flex-wrap items-center gap-4">
+            <div id="hero-stats" class="flex gap-6"><!-- renderHeroStats() --></div>
+            <div class="ml-auto">{% block hero_aside %}{% endblock %}</div>
+        </div>
         {% block content %}{% endblock %}
     </main>
 
@@ -1663,6 +1668,30 @@
             loadNavStats();
             openModal(gameId);
         }
+
+        function renderHeroStats(stats) {
+            const done = stats.total_games
+                ? Math.round(((stats.by_status?.completed || 0) + (stats.by_status?.['100'] || 0)) / stats.total_games * 100)
+                : 0;
+            const tiles = [
+                ['total_games', stats.total_games || 0, 'games'],
+                ['completed', stats.by_status?.completed || 0, 'completed'],
+                ['playing', stats.by_status?.playing || 0, 'playing'],
+                ['backlog', stats.by_status?.backlog || 0, 'backlog'],
+                ['done', done + '%', 'done'],
+                ['dlc', `${stats.dlc_owned || 0}/${stats.dlc_total || 0}`, 'DLC'],
+            ];
+            const el = document.getElementById('hero-stats');
+            if (el) el.innerHTML = tiles.map(([, v, label]) =>
+                `<div><div class="text-2xl font-bold text-white leading-none">${v}</div>
+                      <div class="text-xs text-gray-400 mt-1">${label}</div></div>`
+            ).join('');
+        }
+        async function loadHeroStats() {
+            const stats = await api.get('/api/stats');
+            if (stats) renderHeroStats(stats);
+        }
+        document.addEventListener('DOMContentLoaded', loadHeroStats);
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {

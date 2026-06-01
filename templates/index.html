@@ -3,17 +3,13 @@
 {% block title %}Library - Game Tracker{% endblock %}
 {% block nav_library %}text-white bg-surface-lighter{% endblock %}
 
-{% block content %}
-<!-- Stats hero: stats left, mode switcher right -->
-<div class="rounded-2xl mb-6 p-5 bg-gradient-to-br from-[#241b3a] via-[#191522] to-[#151515] border border-gray-700/50 flex flex-wrap items-center gap-4">
-    <div id="hero-stats" class="flex gap-6">
-        <!-- Filled by renderHeroStats() -->
-    </div>
-    <div id="mode-switcher" class="ml-auto flex gap-1.5 bg-black/30 border border-gray-700/60 rounded-xl p-1.5">
-        <!-- Filled by renderModeBar() -->
-    </div>
+{% block hero_aside %}
+<div id="mode-switcher" class="flex gap-1.5 bg-black/30 border border-gray-700/60 rounded-xl p-1.5">
+    <!-- Filled by renderModeBar() -->
 </div>
+{% endblock %}
 
+{% block content %}
 <!-- Filter row -->
 <div class="flex flex-wrap items-center gap-2 mb-6">
     <input type="text" id="search-input" placeholder="Search..."
@@ -192,29 +188,6 @@
         renderModeBar();
         filterAndRenderGames();
         saveViewState();
-    }
-
-    function renderHeroStats(stats) {
-        const done = stats.total_games
-            ? Math.round(((stats.by_status?.completed || 0) + (stats.by_status?.['100'] || 0)) / stats.total_games * 100)
-            : 0;
-        const tiles = [
-            ['total_games', stats.total_games || 0, 'games'],
-            ['completed', stats.by_status?.completed || 0, 'completed'],
-            ['playing', stats.by_status?.playing || 0, 'playing'],
-            ['backlog', stats.by_status?.backlog || 0, 'backlog'],
-            ['done', done + '%', 'done'],
-            ['dlc', `${stats.dlc_owned || 0}/${stats.dlc_total || 0}`, 'DLC'],
-        ];
-        document.getElementById('hero-stats').innerHTML = tiles.map(([, v, label]) =>
-            `<div><div class="text-2xl font-bold text-white leading-none">${v}</div>
-                  <div class="text-xs text-gray-400 mt-1">${label}</div></div>`
-        ).join('');
-    }
-
-    async function loadHeroStats() {
-        const stats = await api.get('/api/stats');
-        if (stats) renderHeroStats(stats);
     }
 
     function toggleDropdown(type) {
@@ -522,7 +495,6 @@
     document.addEventListener('DOMContentLoaded', () => {
         restoreViewState();   // defined in Task 5
         loadPlatforms();
-        loadHeroStats();
         loadGames();
         document.getElementById('sort-select').addEventListener('change', () => {
             filterAndRenderGames();
