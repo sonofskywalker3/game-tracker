@@ -22,6 +22,7 @@ STARTED_BOOST = 1000.0
 TTB_REFERENCE_MINUTES = 1200   # 20h: pivot between "short" and "long"
 TTB_WEIGHT = 0.02              # score points per minute of deviation
 TTB_TERM_CAP = 20.0
+SERIES_BOOST = 30.0
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -40,6 +41,17 @@ def _recent_fatigue_tags(conn: sqlite3.Connection) -> set[str]:
     for r in rows:
         tags |= _game_tag_names(conn, r["game_id"])
     return tags
+
+
+def _slot_recent_series_id(conn: sqlite3.Connection, slot_id: int) -> int | None:
+    """series_id of the most recent game that passed through this slot, or None."""
+    row = conn.execute("""
+        SELECT ur.series_id
+        FROM slot_history h JOIN user_ratings ur ON ur.game_id = h.game_id
+        WHERE h.slot_id = ? AND ur.series_id IS NOT NULL
+        ORDER BY h.removed_at DESC LIMIT 1
+    """, (slot_id,)).fetchone()
+    return row["series_id"] if row else None
 
 
 def _pinned_game_ids(conn: sqlite3.Connection) -> set[int]:
@@ -76,11 +88,13 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
 
     placeholders = ",".join("?" * len(FINISHED_STATUSES))
     rows = conn.execute(f"""
-        SELECT g.*, ur.status, ur.priority, ur.hours_played
+        SELECT g.*, ur.status, ur.priority, ur.hours_played, ur.series_id
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status NOT IN ({placeholders})
     """, tuple(FINISHED_STATUSES)).fetchall()
+
+    recent_series_id = _slot_recent_series_id(conn, slot["id"]) if slot.get("id") else None
 
     out = []
     for game in rows:
@@ -144,6 +158,10 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         if slot.get("prioritize_started") and game["status"] == "playing":
             score += STARTED_BOOST
             reasons.append("Continue playing")
+        # Series momentum: boost games that share a series with the slot's last play
+        if recent_series_id is not None and game["series_id"] == recent_series_id:
+            score += SERIES_BOOST
+            reasons.append("Next in this series")
 
         out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons})
 
