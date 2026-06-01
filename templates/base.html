@@ -270,6 +270,21 @@
                 .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
+        function gameCardHtml(game) {
+            const coverUrl = game.cover_url || '';
+            const cover = coverUrl
+                ? `<img src="${coverUrl}" alt="${escapeHtml(game.title)}" class="w-full h-full object-cover"
+                        onerror="this.parentElement.innerHTML='<div class=\\'cover-placeholder w-full h-full flex items-center justify-center\\'><span class=\\'text-4xl\\'>🎮</span></div>'">`
+                : `<div class="cover-placeholder w-full h-full flex items-center justify-center border-2 border-dashed border-gray-600"><span class="text-4xl">🎮</span></div>`;
+            const plats = (game.platforms || []).map(p => (typeof p === 'string' ? p : p.short_name));
+            const badges = plats.map(p => `<span class="platform-badge platform-${p}">${p}</span>`).join('')
+                + `<span class="status-badge status-${game.status || 'backlog'}">${game.status === '100' ? '100%' : game.status === 'completed' ? 'complete' : (game.status || 'backlog').replace('_',' ')}</span>`;
+            return `<div class="game-card bg-surface-light rounded-lg overflow-hidden cursor-pointer" data-game-id="${game.id}" onclick="openModal(${game.id})">
+                <div class="aspect-[3/4] relative overflow-hidden">${cover}</div>
+                <div class="p-3"><h3 class="font-medium text-sm text-white leading-tight line-clamp-2 min-h-[2.5rem]" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</h3>
+                    <div class="mt-2 flex flex-wrap items-center gap-1">${badges}</div></div></div>`;
+        }
+
         function showModalEl(id) {
             const el = document.getElementById(id);
             el.classList.remove('hidden');
