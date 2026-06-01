@@ -96,3 +96,24 @@ def test_short_session_slot_penalizes_long_form(temp_db):
     ids = [c["game"]["id"] for c in cands]
     assert ids.index(puzzle) < ids.index(jrpg)   # puzzle ranks higher
     conn.close()
+
+
+def test_prioritize_started_boosts_playing_to_top(temp_db):
+    conn = models.get_db()
+    # A high-priority backlog game vs a default-priority PLAYING game.
+    _add_game(conn, "Shiny New", "Switch", tags=("Puzzle",), status="backlog", priority=10)
+    playing = _add_game(conn, "Half Finished", "Switch", tags=("Puzzle",), status="playing", priority=5)
+    cands = slots.rank_candidates(conn, _slot(conn, "Switch · Quick"))
+    assert cands[0]["game"]["id"] == playing      # started game wins despite lower priority
+    conn.close()
+
+
+def test_prioritize_started_off_does_not_boost(temp_db):
+    conn = models.get_db()
+    hi_backlog = _add_game(conn, "Shiny New", "Switch", tags=("Puzzle",), status="backlog", priority=10)
+    _add_game(conn, "Half Finished", "Switch", tags=("Puzzle",), status="playing", priority=5)
+    slot = _slot(conn, "Switch · Quick")
+    slot["prioritize_started"] = 0                # toggle off for this slot dict
+    cands = slots.rank_candidates(conn, slot)
+    assert cands[0]["game"]["id"] == hi_backlog   # priority wins when boost disabled
+    conn.close()
