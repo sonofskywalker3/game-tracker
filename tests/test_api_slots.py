@@ -88,3 +88,28 @@ def test_patch_slot_prioritize_started(client):
     assert client.patch(f"/api/slots/{sid}", json={"prioritize_started": 0}).status_code == 200
     slot = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
     assert slot["prioritize_started"] == 0
+
+
+def _add_switch_backlog_game(title):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(title)))
+    gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='Switch'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)", (gid, pid))
+    conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (gid,))
+    conn.commit()
+    conn.close()
+    return gid
+
+
+def test_dismiss_removes_from_candidates(client):
+    gid = _add_switch_backlog_game("Dismissable")
+    slots_data = client.get("/api/slots").get_json()["slots"]
+    sid = next(s["id"] for s in slots_data if s["label"] == "Switch · Quick")
+    # candidate before dismiss
+    slot = next(s for s in slots_data if s["id"] == sid)
+    assert any(c["game"]["id"] == gid for c in slot["candidates"])
+    assert client.post(f"/api/slots/{sid}/dismiss", json={"game_id": gid}).status_code == 200
+    slot2 = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert all(c["game"]["id"] != gid for c in slot2["candidates"])
