@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 
 import requests
 
@@ -14,11 +15,13 @@ from models import normalize_title
 
 logger = logging.getLogger(__name__)
 
-SEARCH_URL = "https://howlongtobeat.com/api/search"
+BASE_URL = "https://howlongtobeat.com"
+INIT_URL = BASE_URL + "/api/bleed/init"
+SEARCH_URL = BASE_URL + "/api/bleed"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Game-Tracker)",
-    "Referer": "https://howlongtobeat.com/",
-    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Referer": BASE_URL + "/",
+    "Origin": BASE_URL,
 }
 TIMEOUT_SECONDS = 15
 
@@ -39,23 +42,72 @@ def _best_match(candidates: list[dict], query: str) -> dict | None:
     return candidates[0] if candidates else None
 
 
-def fetch_durations(title: str) -> dict | None:
-    """Search HLTB for `title`; return duration dict or None.
-
-    Returns: {"hltb_id", "hltb_main_minutes", "hltb_main_extra_minutes",
-              "hltb_completionist_minutes"} or None if no match / error.
-    """
-    payload = {
+def _search_body(title: str, hp_key: str, hp_val: str) -> dict:
+    """Build the HLTB /api/bleed POST body with honeypot field."""
+    body: dict = {
         "searchType": "games",
         "searchTerms": title.split(),
         "searchPage": 1,
         "size": 20,
+        "searchOptions": {
+            "games": {
+                "userId": 0,
+                "platform": "",
+                "sortCategory": "popular",
+                "rangeCategory": "main",
+                "rangeTime": {"min": None, "max": None},
+                "gameplay": {"perspective": "", "flow": "", "genre": "", "difficulty": ""},
+                "rangeYear": {"min": "", "max": ""},
+                "modifier": "",
+            },
+            "users": {"sortCategory": "postcount"},
+            "lists": {"sortCategory": "follows"},
+            "filter": "",
+            "sort": 0,
+            "randomizer": 0,
+        },
+        "useCache": True,
     }
+    body[hp_key] = hp_val
+    return body
+
+
+def fetch_durations(title: str) -> dict | None:
+    """Search HLTB for `title`; return duration dict or None.
+
+    Performs the /api/bleed/init token handshake then POSTs to /api/bleed.
+    Re-fetches the token once on a 403 response and retries.
+
+    Returns: {"hltb_id", "hltb_main_minutes", "hltb_main_extra_minutes",
+              "hltb_completionist_minutes"} or None if no match / error.
+    """
     try:
-        resp = requests.post(SEARCH_URL, json=payload, headers=HEADERS, timeout=TIMEOUT_SECONDS)
+        session = requests.Session()
+        session.headers.update(HEADERS)
+
+        sec = session.get(f"{INIT_URL}?t={int(time.time() * 1000)}", timeout=TIMEOUT_SECONDS)
+        sec.raise_for_status()
+        init = sec.json()
+        token, hp_key, hp_val = init["token"], init["hpKey"], init["hpVal"]
+
+        def _do_search(tok: str, k: str, v: str) -> requests.Response:
+            return session.post(
+                SEARCH_URL,
+                json=_search_body(title, k, v),
+                headers={"x-auth-token": tok, "x-hp-key": k, "x-hp-val": v},
+                timeout=TIMEOUT_SECONDS,
+            )
+
+        resp = _do_search(token, hp_key, hp_val)
+        if resp.status_code == 403:
+            sec2 = session.get(f"{INIT_URL}?t={int(time.time() * 1000)}", timeout=TIMEOUT_SECONDS)
+            init = sec2.json()
+            token, hp_key, hp_val = init["token"], init["hpKey"], init["hpVal"]
+            resp = _do_search(token, hp_key, hp_val)
+
         resp.raise_for_status()
         data = resp.json().get("data") or []
-    except (requests.RequestException, ValueError) as exc:
+    except (requests.RequestException, ValueError, KeyError) as exc:
         logger.warning("HLTB search failed for %r: %s", title, exc)
         return None
 
