@@ -45,6 +45,23 @@ def _pinned_game_ids(conn: sqlite3.Connection) -> set[int]:
     return {r["current_game_id"] for r in rows}
 
 
+def dismiss_suggestion(conn: sqlite3.Connection, slot_id: int, game_id: int) -> None:
+    """Hide a game from a slot's suggestion list until the slot's game changes."""
+    conn.execute(
+        "INSERT OR IGNORE INTO slot_dismissals (slot_id, game_id) VALUES (?, ?)",
+        (slot_id, game_id))
+    conn.commit()
+
+
+def _clear_dismissals(conn: sqlite3.Connection, slot_id: int) -> None:
+    conn.execute("DELETE FROM slot_dismissals WHERE slot_id = ?", (slot_id,))
+
+
+def _dismissed_game_ids(conn: sqlite3.Connection, slot_id: int) -> set[int]:
+    return {r["game_id"] for r in conn.execute(
+        "SELECT game_id FROM slot_dismissals WHERE slot_id = ?", (slot_id,)).fetchall()}
+
+
 def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> list[dict]:
     """Return ranked eligible games for a slot: [{"game", "score", "reasons"}]."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
@@ -52,6 +69,7 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
     affinity = calculate_tag_affinity(conn)
     fatigue_tags = _recent_fatigue_tags(conn)
     pinned = _pinned_game_ids(conn)
+    dismissed = _dismissed_game_ids(conn, slot["id"]) if slot.get("id") else set()
 
     placeholders = ",".join("?" * len(FINISHED_STATUSES))
     rows = conn.execute(f"""
@@ -64,6 +82,8 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
     out = []
     for game in rows:
         if game["id"] in pinned:
+            continue
+        if game["id"] in dismissed:
             continue
         # Platform hard filter
         game_platforms = {
@@ -123,6 +143,7 @@ def pin_game(conn: sqlite3.Connection, slot_id: int, game_id: int,
     conn.execute(
         "UPDATE slots SET current_game_id = ?, goal = ? WHERE id = ?",
         (game_id, goal, slot_id))
+    _clear_dismissals(conn, slot_id)
     conn.commit()
 
 
@@ -164,6 +185,7 @@ def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
     goal: str | None = slot["goal"]
 
     if outcome == "swap":
+        _clear_dismissals(conn, slot_id)
         _clear_slot(conn, slot_id)
         conn.commit()
         return
@@ -174,6 +196,7 @@ def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
             conn.execute("UPDATE slots SET goal = ? WHERE id = ?", (new_goal, slot_id))
         else:
             _log_history(conn, slot_id, game_id, goal, "shelved")
+            _clear_dismissals(conn, slot_id)
             _clear_slot(conn, slot_id)
         conn.commit()
         return
@@ -182,6 +205,7 @@ def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
         _set_status(conn, game_id, OUTCOME_STATUS[outcome])
         history_outcome = "completed" if outcome == "complete" else "dropped"
         _log_history(conn, slot_id, game_id, goal, history_outcome)
+        _clear_dismissals(conn, slot_id)
         _clear_slot(conn, slot_id)
         conn.commit()
         return
