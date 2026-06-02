@@ -23,6 +23,15 @@ def load_series_patterns() -> dict:
         return {}
 
 
+def match_series_prefix(title: str, known_series: dict) -> str | None:
+    """Return the series name for the longest matching title prefix, else None.
+    Longest-first so a specific prefix beats a shorter one ('Cyberpunk 2077' > 'Cyberpunk')."""
+    for prefix, series_name in sorted(known_series.items(), key=lambda kv: -len(kv[0])):
+        if title.upper().startswith(prefix.upper()):
+            return series_name
+    return None
+
+
 def load_game_traits() -> dict:
     """Load the normalized_title->traits catalog (per-user file, else committed seed)."""
     path = GAME_TRAITS_PATH if GAME_TRAITS_PATH.exists() else GAME_TRAITS_DEFAULT_PATH
@@ -882,11 +891,7 @@ def auto_populate_series():
         # Check against known series patterns, longest prefix first so a specific
         # prefix wins over a shorter one regardless of file order
         # ("Cyberpunk 2077" must beat "Cyberpunk").
-        matched_series = None
-        for prefix, series_name in sorted(known_series.items(), key=lambda kv: -len(kv[0])):
-            if title.upper().startswith(prefix.upper()):
-                matched_series = series_name
-                break
+        matched_series = match_series_prefix(title, known_series)
 
         if matched_series:
             if matched_series not in series_games:
@@ -928,11 +933,12 @@ def auto_populate_series():
                 continue  # Already assigned to a series
 
             conn.execute("""
-                INSERT INTO user_ratings (game_id, series_id, series_order)
-                VALUES (?, ?, ?)
+                INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
+                VALUES (?, ?, ?, 'auto')
                 ON CONFLICT(game_id) DO UPDATE SET
                     series_id = excluded.series_id,
                     series_order = excluded.series_order,
+                    series_source = excluded.series_source,
                     updated_at = CURRENT_TIMESTAMP
             """, (game_id, series_id, order))
             assigned_count += 1
