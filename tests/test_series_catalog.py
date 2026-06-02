@@ -33,3 +33,19 @@ def test_load_series_catalog_malformed_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(models, "SERIES_CATALOG_PATH", tmp_path / "series_catalog.json")
     monkeypatch.setattr(models, "SERIES_CATALOG_DEFAULT_PATH", bad)
     assert models.load_series_catalog() == {}
+
+
+def test_migrate_series_source_adds_column(temp_db):
+    conn = models.get_db()
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(user_ratings)").fetchall()}
+    assert "series_source" in cols
+    conn.close()
+
+
+def test_migrate_series_source_idempotent(temp_db):
+    conn = models.get_db()
+    models.migrate_series_source(conn)
+    models.migrate_series_source(conn)  # second run must not raise
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(user_ratings)").fetchall()}
+    assert "series_source" in cols
+    conn.close()
