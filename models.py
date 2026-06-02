@@ -9,6 +9,8 @@ GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                  #
 GAME_TRAITS_DEFAULT_PATH = Path(__file__).parent / "game_traits.default.json"  # committed seed
 BUNDLE_CATALOG_PATH = Path(__file__).parent / "bundle_catalog.json"            # per-user (gitignored)
 BUNDLE_CATALOG_DEFAULT_PATH = Path(__file__).parent / "bundle_catalog.default.json"  # committed seed
+SERIES_CATALOG_PATH = Path(__file__).parent / "series_catalog.json"            # per-user (gitignored)
+SERIES_CATALOG_DEFAULT_PATH = Path(__file__).parent / "series_catalog.default.json"  # committed seed
 
 
 def load_series_patterns() -> dict:
@@ -34,6 +36,16 @@ def load_game_traits() -> dict:
 def load_bundle_catalog() -> dict:
     """Load the normalized_title->bundle-entry catalog (per-user file, else committed seed)."""
     path = BUNDLE_CATALOG_PATH if BUNDLE_CATALOG_PATH.exists() else BUNDLE_CATALOG_DEFAULT_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def load_series_catalog() -> dict:
+    """Load the normalized_title->series-entry catalog (per-user file, else committed seed)."""
+    path = SERIES_CATALOG_PATH if SERIES_CATALOG_PATH.exists() else SERIES_CATALOG_DEFAULT_PATH
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
