@@ -15,6 +15,7 @@ from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
     reclean_display_titles, DB_PATH, add_series_pattern, apply_traits_catalog,
+    apply_series_catalog,
 )
 from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials
@@ -234,6 +235,7 @@ def api_create_game():
 
     conn.commit()
     apply_traits_catalog(conn, game_id)
+    apply_series_catalog(conn, game_id)
     conn.close()
 
     return jsonify({'success': True, 'game_id': game_id}), 201
@@ -1031,9 +1033,11 @@ def api_series_from_group():
                 continue
             order += 1
             conn.execute(
-                "INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, ?) "
+                "INSERT INTO user_ratings (game_id, series_id, series_order, series_source) "
+                "VALUES (?, ?, ?, 'manual') "
                 "ON CONFLICT(game_id) DO UPDATE SET series_id = excluded.series_id, "
-                "series_order = excluded.series_order, updated_at = CURRENT_TIMESTAMP",
+                "series_order = excluded.series_order, series_source = 'manual', "
+                "updated_at = CURRENT_TIMESTAMP",
                 (gid, series_id, order))
             assigned += 1
         conn.commit()
@@ -1056,7 +1060,8 @@ def api_delete_series(series_id):
     conn = get_db()
 
     # Unlink games from this series
-    conn.execute("UPDATE user_ratings SET series_id = NULL, series_order = NULL WHERE series_id = ?", (series_id,))
+    conn.execute("UPDATE user_ratings SET series_id = NULL, series_order = NULL, "
+                 "series_source = NULL WHERE series_id = ?", (series_id,))
     conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
     conn.commit()
     conn.close()
@@ -1492,11 +1497,12 @@ def api_add_game_to_series(series_id):
 
     # Update the game's series
     conn.execute("""
-        INSERT INTO user_ratings (game_id, series_id, series_order)
-        VALUES (?, ?, ?)
+        INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
+        VALUES (?, ?, ?, 'manual')
         ON CONFLICT(game_id) DO UPDATE SET
             series_id = excluded.series_id,
             series_order = excluded.series_order,
+            series_source = 'manual',
             updated_at = CURRENT_TIMESTAMP
     """, (game_id, series_id, next_order))
 
@@ -1534,7 +1540,7 @@ def api_remove_game_from_series(game_id):
 
     conn.execute("""
         UPDATE user_ratings
-        SET series_id = NULL, series_order = NULL, updated_at = CURRENT_TIMESTAMP
+        SET series_id = NULL, series_order = NULL, series_source = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE game_id = ?
     """, (game_id,))
 

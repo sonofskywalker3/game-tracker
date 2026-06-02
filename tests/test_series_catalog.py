@@ -284,3 +284,15 @@ def test_apply_dry_run_writes_nothing_returns_report(monkeypatch, temp_db):
     assert conn.execute("SELECT COUNT(*) FROM series WHERE name = 'Mega Man'").fetchone()[0] == 0
     assert any(r["series"] == "Mega Man" and r["assigned"] == 2 for r in report)
     conn.close()
+
+
+def test_from_group_stamps_manual(client, temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Some Game")
+    conn.close()
+    resp = client.post("/api/series/from-group", json={"name": "My Series", "game_ids": [gid]})
+    assert resp.status_code == 200
+    conn = models.get_db()
+    src = conn.execute("SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()[0]
+    conn.close()
+    assert src == "manual"
