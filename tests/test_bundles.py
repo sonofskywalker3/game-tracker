@@ -157,14 +157,15 @@ def test_resolve_constituent_ids_finds_existing_skips_missing(temp_db):
 
 
 def _curated_phantom(conn, *, status="backlog", rating=None, notes=None,
-                     series_id=None, hours_played=0, started_at=None,
-                     completed_at=None):
+                     series_id=None, series_source=None, hours_played=0,
+                     started_at=None, completed_at=None):
     """Insert a Pikmin 1+2 phantom with chosen curation; return its game_id."""
     bid = _insert_phantom(conn, "Pikmin 1+2 Bundle", "nintendo", "70070000018036")
     conn.execute(
         "UPDATE user_ratings SET status=?, rating=?, notes=?, series_id=?, "
-        "hours_played=?, started_at=?, completed_at=? WHERE game_id=?",
-        (status, rating, notes, series_id, hours_played, started_at, completed_at, bid))
+        "series_source=?, hours_played=?, started_at=?, completed_at=? WHERE game_id=?",
+        (status, rating, notes, series_id, series_source, hours_played,
+         started_at, completed_at, bid))
     conn.commit()
     return bid
 
@@ -347,4 +348,23 @@ def test_cleanup_include_curated_idempotent(temp_db):
         "WHERE g.title IN ('Pikmin 1','Pikmin 2')")]
     assert statuses == ["completed", "completed"]
     assert results == [] or all(r["action"] != "migrated_deleted" for r in results)
+    conn.close()
+
+
+def test_migrate_series_source_carried_to_constituent(temp_db):
+    """Phantom's series_source='manual' must be copied onto each constituent."""
+    conn = models.get_db()
+    sid = _make_series(conn, "Pikmin")
+    _insert(conn, "Pikmin 1")
+    conn.commit()
+    bid = _curated_phantom(conn, series_id=sid, series_source="manual")
+    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1",))
+    imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
+    conn.commit()
+    src = conn.execute(
+        "SELECT ur.series_source FROM games g "
+        "JOIN user_ratings ur ON ur.game_id = g.id "
+        "WHERE g.title = 'Pikmin 1'"
+    ).fetchone()[0]
+    assert src == "manual"
     conn.close()

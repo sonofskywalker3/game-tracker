@@ -412,7 +412,7 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
     dry_run; the returned report stays accurate for already-existing constituents.
     """
     row = conn.execute(
-        "SELECT status, rating, notes, series_id, started_at, completed_at, hours_played "
+        "SELECT status, rating, notes, series_id, series_source, started_at, completed_at, hours_played "
         "FROM user_ratings WHERE game_id = ?", (bundle_id,)).fetchone()
     report: dict = {"ambiguous": False, "status": None, "series_to": []}
     if not row:
@@ -446,11 +446,11 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
                 report["series_to"].append(cid)
                 if not dry_run:
                     conn.execute(
-                        "INSERT INTO user_ratings (game_id, series_id, series_order) "
-                        "VALUES (?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET "
+                        "INSERT INTO user_ratings (game_id, series_id, series_order, series_source) "
+                        "VALUES (?, ?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET "
                         "series_id = excluded.series_id, series_order = excluded.series_order, "
-                        "updated_at = CURRENT_TIMESTAMP",
-                        (cid, row["series_id"], order))
+                        "series_source = excluded.series_source, updated_at = CURRENT_TIMESTAMP",
+                        (cid, row["series_id"], order, row["series_source"]))
     return report
 
 
