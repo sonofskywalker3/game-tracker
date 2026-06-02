@@ -745,7 +745,7 @@ def migrate_series_source(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-TRAIT_FIELDS = ("session_length", "series_role")
+TRAIT_FIELDS = ("session_length",)
 
 
 def apply_traits_catalog(conn: sqlite3.Connection, game_id: int | None = None) -> None:
@@ -759,8 +759,7 @@ def apply_traits_catalog(conn: sqlite3.Connection, game_id: int | None = None) -
     catalog = load_game_traits()
     if not catalog:
         return
-    sql = ("SELECT id, normalized_title, session_length_source, series_role_source "
-           "FROM games")
+    sql = "SELECT id, normalized_title, session_length_source FROM games"
     params: tuple = ()
     if game_id is not None:
         sql += " WHERE id = ?"
