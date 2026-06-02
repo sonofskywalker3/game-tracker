@@ -11,6 +11,7 @@ config.json
 series_patterns.json
 game_traits.json
 bundle_catalog.json
+series_catalog.json
 excluded_games.json
 games.db
 games.db.bak*
