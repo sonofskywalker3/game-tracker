@@ -65,3 +65,29 @@ def test_add_rejects_blank(tmp_path, monkeypatch):
     monkeypatch.setattr(models, "SERIES_PATTERNS_PATH", tmp_path / "u.json")
     assert models.add_series_pattern("", "x") is False
     assert models.add_series_pattern("x", "  ") is False
+
+
+def test_match_series_prefix_longest_wins():
+    known = {"Cyberpunk": "Cyberpunk", "Cyberpunk 2077": "Cyberpunk 2077"}
+    assert models.match_series_prefix("Cyberpunk 2077: Phantom Liberty", known) == "Cyberpunk 2077"
+    assert models.match_series_prefix("Halo", known) is None
+
+
+def test_auto_populate_stamps_auto_source(temp_db):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Halo: Combat Evolved", "halo combat evolved"),
+         ("Halo 2", "halo 2")],
+    )
+    conn.commit()
+    conn.close()
+
+    models.auto_populate_series()
+
+    conn = models.get_db()
+    sources = [r["series_source"] for r in conn.execute(
+        "SELECT ur.series_source FROM games g JOIN user_ratings ur ON ur.game_id = g.id "
+        "WHERE g.title LIKE 'Halo%'")]
+    conn.close()
+    assert sources and all(s == "auto" for s in sources)
