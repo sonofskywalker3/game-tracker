@@ -831,6 +831,7 @@ def migrate_db():
     migrate_game_signals(conn)
     migrate_game_traits(conn)
     migrate_collection_name(conn)
+    migrate_series_source(conn)
     apply_traits_catalog(conn)
     seed_default_slots(conn)
 
