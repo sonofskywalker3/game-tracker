@@ -193,6 +193,7 @@ def init_db():
             sort_order INTEGER,  -- manual sort order for drag-and-drop reordering
             series_id INTEGER,  -- which series this game belongs to
             series_order INTEGER,  -- order within the series
+            series_source TEXT,  -- provenance of series_id: auto / catalog / manual
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
             FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE SET NULL
@@ -721,6 +722,17 @@ def migrate_collection_name(conn: sqlite3.Connection) -> None:
     cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
     if "collection_name" not in cols:
         conn.execute("ALTER TABLE games ADD COLUMN collection_name TEXT")
+    conn.commit()
+
+
+def migrate_series_source(conn: sqlite3.Connection) -> None:
+    """Add user_ratings.series_source (auto/catalog/manual) so the series catalog can
+    override prefix-auto assignments while never clobbering a manual one. Idempotent.
+    Null is treated as unset (overwritable). See backfill_series_source for existing rows.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(user_ratings)").fetchall()]
+    if "series_source" not in cols:
+        conn.execute("ALTER TABLE user_ratings ADD COLUMN series_source TEXT")
     conn.commit()
 
 
