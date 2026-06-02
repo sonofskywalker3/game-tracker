@@ -969,5 +969,98 @@ def backfill_series_source(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+SERIES_ROLE_VALUES = frozenset({"mainline", "spinoff"})
+
+
+def apply_series_catalog(conn: sqlite3.Connection, game_id: int | None = None,
+                         *, dry_run: bool = False) -> list[dict]:
+    """Default games into series from the per-title catalog. Fill-only, idempotent.
+
+    Pass A (membership+order): bucket catalog-matched games by target series; join an
+    existing series always, create a new series only at >=2 catalog-matched games;
+    write series_id/series_order/series_source='catalog' unless the current source is
+    'manual'. Absent order leaves the existing series_order unchanged. Pass B (role):
+    write games.series_role (source='catalog') unless series_role_source='manual'.
+    Matches by normalized_title. game_id scopes to one game; dry_run writes nothing.
+    Missing catalog/entry/file is a safe no-op. Returns a report list.
+    """
+    catalog = load_series_catalog()
+    if not catalog:
+        return []
+
+    game_sql = "SELECT id, normalized_title FROM games"
+    params: tuple = ()
+    if game_id is not None:
+        game_sql += " WHERE id = ?"
+        params = (game_id,)
+    games = conn.execute(game_sql, params).fetchall()
+
+    # --- Pass A: membership + order ---
+    by_series: dict[str, list[tuple[int, dict]]] = {}
+    for g in games:
+        entry = catalog.get(g["normalized_title"])
+        if entry and entry.get("series"):
+            by_series.setdefault(entry["series"], []).append((g["id"], entry))
+
+    report: list[dict] = []
+    for series_name, members in by_series.items():
+        existing = conn.execute("SELECT id FROM series WHERE name = ?", (series_name,)).fetchone()
+        if existing:
+            series_id, created = existing["id"], False
+        elif len(members) < 2:
+            report.append({"series": series_name, "action": "skipped_singleton",
+                           "created": False, "assigned": 0})
+            continue
+        else:
+            created = True
+            if dry_run:
+                series_id = None
+            else:
+                conn.execute("INSERT INTO series (name) VALUES (?)", (series_name,))
+                series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        assigned = 0
+        for gid, entry in members:
+            cur = conn.execute(
+                "SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
+            if cur and cur["series_source"] == "manual":
+                continue  # locked
+            assigned += 1
+            if dry_run:
+                continue
+            conn.execute("""
+                INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
+                VALUES (?, ?, ?, 'catalog')
+                ON CONFLICT(game_id) DO UPDATE SET
+                    series_id = excluded.series_id,
+                    series_order = COALESCE(excluded.series_order, user_ratings.series_order),
+                    series_source = excluded.series_source,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (gid, series_id, entry.get("order")))
+        report.append({"series": series_name, "action": "created" if created else "joined",
+                       "created": created, "assigned": assigned})
+
+    # --- Pass B: role (independent of membership) ---
+    for g in games:
+        entry = catalog.get(g["normalized_title"])
+        if not entry:
+            continue
+        role = entry.get("role")
+        if role not in SERIES_ROLE_VALUES:
+            continue
+        src = conn.execute(
+            "SELECT series_role_source FROM games WHERE id = ?", (g["id"],)).fetchone()
+        if src and src["series_role_source"] == "manual":
+            continue
+        if not dry_run:
+            conn.execute(
+                "UPDATE games SET series_role = ?, series_role_source = 'catalog' WHERE id = ?",
+                (role, g["id"]))
+
+    if not dry_run:
+        conn.commit()
+    return report
+
+
 if __name__ == "__main__":
     init_db()
