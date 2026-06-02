@@ -950,5 +950,24 @@ def auto_populate_series():
     return created_count, assigned_count
 
 
+def backfill_series_source(conn: sqlite3.Connection) -> None:
+    """Stamp series_source on pre-existing assignments that predate the column.
+    'auto' if the current series equals what prefix-matching would produce for the
+    title, else 'manual' (a human must have set it). Only fills NULL source rows."""
+    known = load_series_patterns()
+    rows = conn.execute("""
+        SELECT ur.game_id, g.title, s.name AS series_name
+        FROM user_ratings ur
+        JOIN games g ON g.id = ur.game_id
+        JOIN series s ON s.id = ur.series_id
+        WHERE ur.series_id IS NOT NULL AND ur.series_source IS NULL
+    """).fetchall()
+    for r in rows:
+        source = "auto" if match_series_prefix(r["title"], known) == r["series_name"] else "manual"
+        conn.execute("UPDATE user_ratings SET series_source = ? WHERE game_id = ?",
+                     (source, r["game_id"]))
+    conn.commit()
+
+
 if __name__ == "__main__":
     init_db()

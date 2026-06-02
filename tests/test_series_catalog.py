@@ -49,3 +49,69 @@ def test_migrate_series_source_idempotent(temp_db):
     cols = {c[1] for c in conn.execute("PRAGMA table_info(user_ratings)").fetchall()}
     assert "series_source" in cols
     conn.close()
+
+
+def _seed_series(conn, name):
+    conn.execute("INSERT INTO series (name) VALUES (?)", (name,))
+    sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return sid
+
+
+def _add_game(conn, title):
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+                 (title, models.normalize_title(title)))
+    gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return gid
+
+
+def _assign(conn, gid, sid, order=0, source=None):
+    conn.execute(
+        "INSERT INTO user_ratings (game_id, series_id, series_order, series_source) "
+        "VALUES (?, ?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET series_id = excluded.series_id, "
+        "series_order = excluded.series_order, series_source = excluded.series_source",
+        (gid, sid, order, source))
+    conn.commit()
+
+
+def test_backfill_marks_prefix_match_as_auto(monkeypatch, temp_db):
+    monkeypatch.setattr(models, "load_series_patterns", lambda: {"Halo": "Halo"})
+    conn = models.get_db()
+    sid = _seed_series(conn, "Halo")
+    gid = _add_game(conn, "Halo 2")
+    _assign(conn, gid, sid, source=None)  # pre-existing, unstamped
+
+    models.backfill_series_source(conn)
+
+    src = conn.execute("SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()[0]
+    assert src == "auto"  # current series == prefix result
+    conn.close()
+
+
+def test_backfill_marks_nonprefix_as_manual(monkeypatch, temp_db):
+    monkeypatch.setattr(models, "load_series_patterns", lambda: {"Halo": "Halo"})
+    conn = models.get_db()
+    sid = _seed_series(conn, "Assassin's Creed")
+    gid = _add_game(conn, "Brotherhood")  # does not start with "Assassin's Creed"
+    _assign(conn, gid, sid, source=None)
+
+    models.backfill_series_source(conn)
+
+    src = conn.execute("SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()[0]
+    assert src == "manual"  # human must have set it
+    conn.close()
+
+
+def test_backfill_leaves_already_stamped_rows(monkeypatch, temp_db):
+    monkeypatch.setattr(models, "load_series_patterns", lambda: {"Halo": "Halo"})
+    conn = models.get_db()
+    sid = _seed_series(conn, "Halo")
+    gid = _add_game(conn, "Halo 2")
+    _assign(conn, gid, sid, source="manual")  # already stamped manual
+
+    models.backfill_series_source(conn)
+
+    src = conn.execute("SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()[0]
+    assert src == "manual"  # untouched
+    conn.close()
