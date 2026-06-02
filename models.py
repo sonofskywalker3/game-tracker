@@ -983,12 +983,14 @@ def apply_series_catalog(conn: sqlite3.Connection, game_id: int | None = None,
     write games.series_role (source='catalog') unless series_role_source='manual'.
     Matches by normalized_title. game_id scopes to one game; dry_run writes nothing.
     Missing catalog/entry/file is a safe no-op. Returns a report list.
+    Report entries are {series, action, created, assigned} where action is 'created', 'joined', or 'skipped_singleton'.
+    When game_id is given (on-add), only existing series are joined; creating a brand-new series is a library-wide decision left to the full pass (game_id=None on startup/bulk apply).
     """
     catalog = load_series_catalog()
     if not catalog:
         return []
 
-    game_sql = "SELECT id, normalized_title FROM games"
+    game_sql = "SELECT id, normalized_title, series_role_source FROM games"
     params: tuple = ()
     if game_id is not None:
         game_sql += " WHERE id = ?"
@@ -1014,7 +1016,7 @@ def apply_series_catalog(conn: sqlite3.Connection, game_id: int | None = None,
         else:
             created = True
             if dry_run:
-                series_id = None
+                series_id = None  # unused in dry-run; the per-member write below is skipped
             else:
                 conn.execute("INSERT INTO series (name) VALUES (?)", (series_name,))
                 series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1048,9 +1050,7 @@ def apply_series_catalog(conn: sqlite3.Connection, game_id: int | None = None,
         role = entry.get("role")
         if role not in SERIES_ROLE_VALUES:
             continue
-        src = conn.execute(
-            "SELECT series_role_source FROM games WHERE id = ?", (g["id"],)).fetchone()
-        if src and src["series_role_source"] == "manual":
+        if g["series_role_source"] == "manual":
             continue
         if not dry_run:
             conn.execute(
