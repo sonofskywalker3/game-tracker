@@ -14,10 +14,10 @@ def test_load_game_traits_reads_default(monkeypatch, tmp_path):
 def test_load_game_traits_prefers_per_user(monkeypatch, tmp_path):
     (tmp_path / "game_traits.default.json").write_text("{}", encoding="utf-8")
     per_user = tmp_path / "game_traits.json"
-    per_user.write_text(json.dumps({"celeste": {"series_role": "mainline"}}), encoding="utf-8")
+    per_user.write_text(json.dumps({"celeste": {"session_length": "short"}}), encoding="utf-8")
     monkeypatch.setattr(models, "GAME_TRAITS_PATH", per_user)
     monkeypatch.setattr(models, "GAME_TRAITS_DEFAULT_PATH", tmp_path / "game_traits.default.json")
-    assert models.load_game_traits() == {"celeste": {"series_role": "mainline"}}
+    assert models.load_game_traits() == {"celeste": {"session_length": "short"}}
 
 
 def test_load_game_traits_missing_is_empty(monkeypatch, tmp_path):
