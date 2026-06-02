@@ -651,6 +651,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--apply-bundle-catalog", action="store_true",
                         help="expand catalogued compilations/entitlement bundles "
                              "(bundle_catalog.json) already in the DB, then exit")
+    parser.add_argument("--apply-series-catalog", action="store_true",
+                        help="default games into series from series_catalog.json "
+                             "(fill-only; never clobbers a manual assignment), then exit")
     parser.add_argument("--include-curated", action="store_true",
                         help="with --cleanup-bundles: also migrate curated phantoms' "
                              "status/series onto constituents, then delete them")
@@ -696,8 +699,18 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         conn.close()
         return
 
+    if args.apply_series_catalog:
+        report = models.apply_series_catalog(conn, dry_run=args.dry_run)
+        for r in report:
+            logger.info("%s: %s (%d games)", r["series"], r["action"], r["assigned"])
+        logger.info("DRY RUN — no changes written." if args.dry_run
+                    else "series-catalog: %d series processed" % len(report))
+        conn.close()
+        return
+
     if not args.paths:
-        parser.error("paths are required unless --cleanup-bundles or --apply-bundle-catalog is given")
+        parser.error("paths are required unless --cleanup-bundles, --apply-bundle-catalog, "
+                     "or --apply-series-catalog is given")
 
     if args.accept_fuzzy:
         confirm = _auto_confirm
