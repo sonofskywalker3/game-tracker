@@ -1,1 +1,2382 @@
-{}
+{
+  "60 seconds": {
+    "order": 1,
+    "role": "mainline",
+    "series": "60 Seconds"
+  },
+  "a kings tale final fantasy xv": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Final Fantasy XV"
+  },
+  "actraiser renaissance": {
+    "order": 3,
+    "role": "mainline",
+    "series": "ActRaiser"
+  },
+  "advance wars": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Advance Wars"
+  },
+  "advance wars 2 black hole rising": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Advance Wars"
+  },
+  "ai the somnium files": {
+    "order": 1,
+    "role": "mainline",
+    "series": "AI: The Somnium Files"
+  },
+  "ai the somnium files nirvana initiative": {
+    "order": 2,
+    "role": "mainline",
+    "series": "AI: The Somnium Files"
+  },
+  "alan wakes american nightmare": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Alan Wake"
+  },
+  "alex kidd in miracle world dx": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Alex Kidd"
+  },
+  "alwas awakening": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Alwa's"
+  },
+  "alwas legacy": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Alwa's"
+  },
+  "animal crossing new horizons": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Animal Crossing"
+  },
+  "assassins creed": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed brotherhood": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed chronicles": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Assassin's Creed Chronicles"
+  },
+  "assassins creed chronicles china": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Assassin's Creed Chronicles"
+  },
+  "assassins creed chronicles india": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Assassin's Creed Chronicles"
+  },
+  "assassins creed chronicles russia": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Assassin's Creed Chronicles"
+  },
+  "assassins creed ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed iii": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed iv black flag": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed mirage": {
+    "order": 12,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed odyssey": {
+    "order": 10,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed origins": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed revelations": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed rogue remastered": {
+    "order": 14,
+    "role": "spinoff",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed shadows": {
+    "order": 13,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed syndicate": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed unity": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "assassins creed valhalla": {
+    "order": 11,
+    "role": "mainline",
+    "series": "Assassin's Creed"
+  },
+  "astro bot rescue mission": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Astro Bot"
+  },
+  "atelier ryza ever darkness the secret hideout": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Atelier Ryza"
+  },
+  "axiom verge": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Axiom Verge"
+  },
+  "axiom verge 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Axiom Verge"
+  },
+  "batman arkham asylum": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Batman: Arkham"
+  },
+  "batman arkham city": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Batman: Arkham"
+  },
+  "batman arkham knight": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Batman: Arkham"
+  },
+  "batman arkham vr": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Batman: Arkham"
+  },
+  "batman return to arkham": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "Batman: Arkham"
+  },
+  "batman the enemy within": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Batman: The Telltale Series"
+  },
+  "bayonetta": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Bayonetta"
+  },
+  "bioshock": {
+    "order": 1,
+    "role": "mainline",
+    "series": "BioShock"
+  },
+  "bioshock 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "BioShock"
+  },
+  "bioshock infinite": {
+    "order": 3,
+    "role": "mainline",
+    "series": "BioShock"
+  },
+  "bioshock infinite the complete edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "BioShock"
+  },
+  "blaster master zero": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Blaster Master Zero"
+  },
+  "blaster master zero 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Blaster Master Zero"
+  },
+  "blaster master zero 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Blaster Master Zero"
+  },
+  "bloodstained curse of the moon": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Bloodstained"
+  },
+  "bloodstained curse of the moon 2": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Bloodstained"
+  },
+  "bloodstained ritual of the night": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Bloodstained"
+  },
+  "blossom tales ii the minotaur prince": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Blossom Tales"
+  },
+  "blossom tales the sleeping king": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Blossom Tales"
+  },
+  "borderlands": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Borderlands"
+  },
+  "borderlands 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Borderlands"
+  },
+  "borderlands 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Borderlands"
+  },
+  "borderlands 3 next level edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Borderlands"
+  },
+  "borderlands 4": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Borderlands"
+  },
+  "borderlands the presequel": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "Borderlands"
+  },
+  "bubble trouble": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Bubble Trouble"
+  },
+  "bubble trouble 2 rebubbled": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Bubble Trouble"
+  },
+  "bubble trouble 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Bubble Trouble"
+  },
+  "bubble trouble adventures": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Bubble Trouble"
+  },
+  "castlevania": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania aria of sorrow": {
+    "order": 12,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania bloodlines": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania circle of the moon": {
+    "order": 10,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania dracula x": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania harmony of despair": {
+    "order": 14,
+    "role": "spinoff",
+    "series": "Castlevania"
+  },
+  "castlevania harmony of dissonance": {
+    "order": 11,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania ii belmonts revenge": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania ii simons quest": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania iii draculas curse": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania requiem symphony of the night rondo of blood": {
+    "order": 13,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania sotn": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "castlevania the adventure": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "cat quest": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Cat Quest"
+  },
+  "cat quest ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Cat Quest"
+  },
+  "chaos on deponia": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Deponia"
+  },
+  "chocobo gp": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Chocobo"
+  },
+  "chrono cross the radical dreamers edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Chrono"
+  },
+  "connection haunted": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Connection Haunted"
+  },
+  "connection haunted server error": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Connection Haunted"
+  },
+  "connection rehaunted": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Connection Haunted"
+  },
+  "cozy grove": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Cozy Grove"
+  },
+  "cozy grove new neighbears": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Cozy Grove"
+  },
+  "crash team racing nitrofueled": {
+    "order": 11,
+    "role": "spinoff",
+    "series": "Crash Bandicoot"
+  },
+  "creepy tale": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Creepy Tale"
+  },
+  "crisis core final fantasy vii reunion": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Final Fantasy VII"
+  },
+  "dadish": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dadish"
+  },
+  "dadish 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Dadish"
+  },
+  "dadish 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Dadish"
+  },
+  "daily dadish": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Dadish"
+  },
+  "danganronpa 12 reload": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Danganronpa"
+  },
+  "danganronpa 2 goodbye despair anniversary edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Danganronpa"
+  },
+  "danganronpa s ultimate summer camp": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "Danganronpa"
+  },
+  "danganronpa trigger happy havoc anniversary edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Danganronpa"
+  },
+  "danganronpa v3 killing harmony anniversary edition": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Danganronpa"
+  },
+  "darksiders genesis": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Darksiders"
+  },
+  "darksiders ii deathinitive edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Darksiders"
+  },
+  "darksiders iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Darksiders"
+  },
+  "darksiders warmastered edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Darksiders"
+  },
+  "day of the tentacle remastered": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Maniac Mansion"
+  },
+  "dead secret": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dead Secret"
+  },
+  "dead space digital deluxe edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dead Space"
+  },
+  "deponia": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Deponia"
+  },
+  "deponia doomsday": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Deponia"
+  },
+  "destiny 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Destiny"
+  },
+  "deus ex human revolution": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Deus Ex"
+  },
+  "deus ex mankind divided digital deluxe edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Deus Ex"
+  },
+  "devil may cry": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Devil May Cry"
+  },
+  "devil may cry 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Devil May Cry"
+  },
+  "devil may cry 3 dantes awakening": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Devil May Cry"
+  },
+  "devil may cry 4 special edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Devil May Cry"
+  },
+  "diablo ii resurrected": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Diablo"
+  },
+  "diablo iii eternal collection": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Diablo"
+  },
+  "diablo iii reaper of souls ultimate evil edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Diablo"
+  },
+  "digimon story cyber sleuth": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Digimon Story Cyber Sleuth"
+  },
+  "digimon story cyber sleuth hackers memory": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Digimon Story Cyber Sleuth"
+  },
+  "dishonored death of the outsider deluxe bundle": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Dishonored"
+  },
+  "dishonored definitive edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Dishonored"
+  },
+  "dissidia final fantasy nt": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Dissidia"
+  },
+  "dont starve": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Don't Starve"
+  },
+  "dont starve together": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Don't Starve"
+  },
+  "doom doom ii": {
+    "order": 1,
+    "role": "mainline",
+    "series": "DOOM"
+  },
+  "doom ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "DOOM"
+  },
+  "dragon age 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Dragon Age"
+  },
+  "dragon ball xenoverse 2": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Dragon Ball Xenoverse"
+  },
+  "dragon quest": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest builders": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Dragon Quest Builders"
+  },
+  "dragon quest builders 2": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Dragon Quest Builders"
+  },
+  "dragon quest i hd2d remake": {
+    "order": 13,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest ii hd2d remake": {
+    "order": 14,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest ii luminaries of the legendary line": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest iii hd2d remake": {
+    "order": 12,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest iii the seeds of salvation": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragon quest treasures": {
+    "order": 15,
+    "role": "spinoff",
+    "series": "Dragon Quest"
+  },
+  "dragon quest xi s echoes of an elusive age definitive edition": {
+    "order": 11,
+    "role": "mainline",
+    "series": "Dragon Quest"
+  },
+  "dragons dogma dark arisen": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dragon's Dogma"
+  },
+  "dying light": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Dying Light"
+  },
+  "edna harvey harveys new eyes": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Edna & Harvey"
+  },
+  "edna harvey the breakout anniversary edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Edna & Harvey"
+  },
+  "enter the gungeon": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Enter the Gungeon"
+  },
+  "everybodys golf vr": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Everybody's Golf"
+  },
+  "evoland legendary edition": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Evoland"
+  },
+  "fallout 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Fallout"
+  },
+  "fallout 4 game of the year edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Fallout"
+  },
+  "fallout new vegas": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "Fallout"
+  },
+  "fantasy life i the girl who steals time": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Fantasy Life"
+  },
+  "fantasy life i the girl who steals time nintendo switch 2 edition": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Fantasy Life"
+  },
+  "final fantasy": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy crystal chronicles": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy Crystal Chronicles"
+  },
+  "final fantasy ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy iv": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy ix": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy legend ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "SaGa"
+  },
+  "final fantasy legend iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "SaGa"
+  },
+  "final fantasy type0 hd": {
+    "order": 17,
+    "role": "spinoff",
+    "series": "Final Fantasy"
+  },
+  "final fantasy v": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy vi": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy vii": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy VII"
+  },
+  "final fantasy vii rebirth": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Final Fantasy VII"
+  },
+  "final fantasy vii remake": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Final Fantasy VII"
+  },
+  "final fantasy vii remake intergrade": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Final Fantasy VII"
+  },
+  "final fantasy viii remastered": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy x": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy X"
+  },
+  "final fantasy x2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Final Fantasy X"
+  },
+  "final fantasy xii the zodiac age": {
+    "order": 12,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fantasy xiii": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy XIII"
+  },
+  "final fantasy xiii2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Final Fantasy XIII"
+  },
+  "final fantasy xiv": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy XIV"
+  },
+  "final fantasy xiv online": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Final Fantasy XIV"
+  },
+  "final fantasy xv": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fantasy XV"
+  },
+  "final fantasy xv multiplayer comrades": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Final Fantasy XV"
+  },
+  "final fantasy xvi": {
+    "order": 16,
+    "role": "mainline",
+    "series": "Final Fantasy"
+  },
+  "final fight": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Final Fight"
+  },
+  "gal guardians demon purge": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "Gal*Gun"
+  },
+  "golf story": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Story (Sidebar Games)"
+  },
+  "goodbye deponia": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Deponia"
+  },
+  "gotta protectors cart of darkness": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Gotta Protectors"
+  },
+  "grand theft auto iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Grand Theft Auto"
+  },
+  "grand theft auto san andreas": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Grand Theft Auto"
+  },
+  "grand theft auto san andreas the definitive edition": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Grand Theft Auto"
+  },
+  "grand theft auto v premium edition": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Grand Theft Auto"
+  },
+  "grand theft auto vice city": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Grand Theft Auto"
+  },
+  "grandia": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Grandia"
+  },
+  "grandia ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Grandia"
+  },
+  "gravity rush 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Gravity Rush"
+  },
+  "gravity rush remastered": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Gravity Rush"
+  },
+  "guacamelee 2 complete": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Guacamelee"
+  },
+  "guacamelee super turbo championship edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Guacamelee"
+  },
+  "hackgu vol1rebirth": {
+    "order": 1,
+    "role": "mainline",
+    "series": ".hack//G.U."
+  },
+  "hackgu vol2reminisce": {
+    "order": 2,
+    "role": "mainline",
+    "series": ".hack//G.U."
+  },
+  "hackgu vol3redemption": {
+    "order": 3,
+    "role": "mainline",
+    "series": ".hack//G.U."
+  },
+  "hackgu vol4reconnection": {
+    "order": 4,
+    "role": "mainline",
+    "series": ".hack//G.U."
+  },
+  "halo 2 anniversary": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo 3": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo 3 odst": {
+    "order": 9,
+    "role": "spinoff",
+    "series": "Halo"
+  },
+  "halo 4": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo 5 guardians": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo combat evolved anniversary": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo infinite": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "halo reach": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Halo"
+  },
+  "hello neighbor": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Hello Neighbor"
+  },
+  "hello neighbor hide and seek": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Hello Neighbor"
+  },
+  "hollow knight": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Hollow Knight"
+  },
+  "holy potatoes a bundle": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Holy Potatoes"
+  },
+  "holy potatoes a weapon shop": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Holy Potatoes"
+  },
+  "holy potatoes were in space": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Holy Potatoes"
+  },
+  "horizon call of the mountain": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Horizon"
+  },
+  "horizon forbidden west": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Horizon"
+  },
+  "horizon zero dawn complete edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Horizon"
+  },
+  "hyrule warriors age of calamity": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Hyrule Warriors"
+  },
+  "infamous first light": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "inFamous"
+  },
+  "infamous second son": {
+    "order": 3,
+    "role": "mainline",
+    "series": "inFamous"
+  },
+  "katamari damacy reroll": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Katamari"
+  },
+  "kaze and the wild masks": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Kaze and the Wild Masks"
+  },
+  "kaze and the wild masks deluxe edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Kaze and the Wild Masks"
+  },
+  "kid dracula": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Kid Dracula"
+  },
+  "kill it with fire vr": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Kill It with Fire"
+  },
+  "kingdom hearts iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Kingdom Hearts"
+  },
+  "kingdom heartsvr experience": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Kingdom Hearts"
+  },
+  "kirby and the forgotten land nintendo switch 2 edition starcrossed world": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Kirby"
+  },
+  "kirbys return to dream land deluxe": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Kirby"
+  },
+  "knack": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Knack"
+  },
+  "legend of mana": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mana"
+  },
+  "legend of zelda breath of the wild": {
+    "order": 19,
+    "role": "mainline",
+    "series": "The Legend of Zelda"
+  },
+  "lego batman 3 beyond gotham": {
+    "order": 3,
+    "role": "mainline",
+    "series": "LEGO Batman"
+  },
+  "lego dc supervillains": {
+    "order": 4,
+    "role": "mainline",
+    "series": "LEGO Batman"
+  },
+  "lego harry potter years 14": {
+    "order": 1,
+    "role": "mainline",
+    "series": "LEGO Harry Potter"
+  },
+  "lego harry potter years 57": {
+    "order": 2,
+    "role": "mainline",
+    "series": "LEGO Harry Potter"
+  },
+  "lego marvel super heroes": {
+    "order": 1,
+    "role": "mainline",
+    "series": "LEGO Marvel"
+  },
+  "lego marvel super heroes 2": {
+    "order": 3,
+    "role": "mainline",
+    "series": "LEGO Marvel"
+  },
+  "lego marvels avengers": {
+    "order": 2,
+    "role": "mainline",
+    "series": "LEGO Marvel"
+  },
+  "lego star wars the skywalker saga": {
+    "order": 5,
+    "role": "mainline",
+    "series": "LEGO Star Wars"
+  },
+  "lego star wars the skywalker saga character collection 1": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "LEGO Star Wars"
+  },
+  "lego star wars the skywalker saga character collection 2": {
+    "order": 7,
+    "role": "spinoff",
+    "series": "LEGO Star Wars"
+  },
+  "life is strange": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Life Is Strange"
+  },
+  "life is strange 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Life Is Strange"
+  },
+  "life is strange before the storm": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Life Is Strange"
+  },
+  "lightning returns final fantasy xiii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Final Fantasy XIII"
+  },
+  "like a dragon pirate yakuza in hawaii": {
+    "order": 9,
+    "role": "spinoff",
+    "series": "Like a Dragon"
+  },
+  "littlebigplanet3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "LittleBigPlanet"
+  },
+  "love 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Love"
+  },
+  "mado monogatari fia and the wondrous academy": {
+    "order": null,
+    "role": "mainline",
+    "series": "Madou Monogatari"
+  },
+  "mario kart 8 deluxe": {
+    "order": 8,
+    "role": "spinoff",
+    "series": "Mario Kart"
+  },
+  "mario kart world": {
+    "order": 9,
+    "role": "spinoff",
+    "series": "Mario Kart"
+  },
+  "mario rabbids kingdom battle": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mario + Rabbids"
+  },
+  "mario rabbids sparks of hope": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mario + Rabbids"
+  },
+  "marvel ultimate alliance 3 the black order": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Marvel Ultimate Alliance"
+  },
+  "marvels spiderman 2": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Marvel's Spider-Man"
+  },
+  "marvels spiderman miles morales": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Marvel's Spider-Man"
+  },
+  "marvels spiderman remastered": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Marvel's Spider-Man"
+  },
+  "mass effect andromeda deluxe recruit edition": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mass Effect"
+  },
+  "mass effect legendary edition": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Mass Effect"
+  },
+  "mega man": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 10": {
+    "order": 10,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 11": {
+    "order": 11,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 4": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 5": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 6": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 7": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 8": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man 9": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Mega Man"
+  },
+  "mega man battle network": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 3 blue": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 3 white": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 4 blue moon": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 4 red sun": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 5 team colonel": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 5 team protoman": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 6 cybeast falzar": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man battle network 6 cybeast gregar": {
+    "order": 10,
+    "role": "mainline",
+    "series": "Mega Man Battle Network"
+  },
+  "mega man x": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x4": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x5": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x6": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x7": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man x8": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Mega Man X"
+  },
+  "mega man zero": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mega Man Zero"
+  },
+  "mega man zero 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mega Man Zero"
+  },
+  "mega man zero 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Mega Man Zero"
+  },
+  "mega man zero 4": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Mega Man Zero"
+  },
+  "mega man zx": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Mega Man ZX"
+  },
+  "mega man zx advent": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mega Man ZX"
+  },
+  "metal gear rising revengeance": {
+    "order": 11,
+    "role": "spinoff",
+    "series": "Metal Gear"
+  },
+  "metal gear solid v ground zeroes": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Metal Gear"
+  },
+  "metal gear solid v the phantom pain": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Metal Gear"
+  },
+  "mgs pw hd": {
+    "order": 10,
+    "role": "spinoff",
+    "series": "Metal Gear"
+  },
+  "momodora reverie under the moonlight": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Momodora"
+  },
+  "monster hunter stories": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Monster Hunter Stories"
+  },
+  "monster hunter stories 2 wings of ruin": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Monster Hunter Stories"
+  },
+  "monster of the deep final fantasy xv": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Final Fantasy XV"
+  },
+  "monster train 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Monster Train"
+  },
+  "monster train first class": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Monster Train"
+  },
+  "monster world iv": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Wonder Boy"
+  },
+  "moonstone island": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Moonstone Island"
+  },
+  "moonstone island deluxe edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Moonstone Island"
+  },
+  "moss": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Moss"
+  },
+  "nexomon": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Nexomon"
+  },
+  "nexomon extinction": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Nexomon"
+  },
+  "ni no kuni ii revenant kingdom princes edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Ni no Kuni"
+  },
+  "nier automata": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Nier"
+  },
+  "nobody saves the world": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Nobody Saves the World"
+  },
+  "nobody saves the world frozen hearth bundle": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Nobody Saves the World"
+  },
+  "octopath traveler": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Octopath Traveler"
+  },
+  "outlast": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Outlast"
+  },
+  "outlast 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Outlast"
+  },
+  "overcooked 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Overcooked"
+  },
+  "overcooked special edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Overcooked"
+  },
+  "persona 4 golden": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Persona"
+  },
+  "persona 5 royal": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Persona"
+  },
+  "phantasy star online 2 new genesis": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Phantasy Star Online"
+  },
+  "phoenix wright ace attorney": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Ace Attorney"
+  },
+  "phoenix wright ace attorney justice for all": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Ace Attorney"
+  },
+  "phoenix wright ace attorney trials and tribulations": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Ace Attorney"
+  },
+  "pikmin 1": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Pikmin"
+  },
+  "pikmin 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Pikmin"
+  },
+  "pixeljunk monsters 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "PixelJunk Monsters"
+  },
+  "plants vs zombies battle for neighborville": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Plants vs. Zombies"
+  },
+  "plants vs zombies garden warfare": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Plants vs. Zombies"
+  },
+  "plants vs zombies replanted": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Plants vs. Zombies"
+  },
+  "pocket mini golf": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Pocket Mini Golf"
+  },
+  "pocket mini golf 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Pocket Mini Golf"
+  },
+  "pokémon firered version": {
+    "order": 14,
+    "role": "mainline",
+    "series": "Pokemon"
+  },
+  "pokémon home": {
+    "order": 30,
+    "role": "spinoff",
+    "series": "Pokemon"
+  },
+  "pokémon pokopia": {
+    "order": 31,
+    "role": "spinoff",
+    "series": "Pokemon"
+  },
+  "pokémon quest": {
+    "order": 32,
+    "role": "spinoff",
+    "series": "Pokemon"
+  },
+  "pokémon unite": {
+    "order": 33,
+    "role": "spinoff",
+    "series": "Pokemon"
+  },
+  "portal": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Portal"
+  },
+  "portal 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Portal"
+  },
+  "powerslave exhumed": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "PowerSlave"
+  },
+  "prey": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Prey"
+  },
+  "prey digital deluxe edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Prey"
+  },
+  "prince of persia the lost crown": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Prince of Persia"
+  },
+  "prototype": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Prototype"
+  },
+  "prototype 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Prototype"
+  },
+  "quake": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Quake"
+  },
+  "quake ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Quake"
+  },
+  "red faction guerrilla remarstered": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Red Faction"
+  },
+  "rekt": {
+    "order": 1,
+    "role": "mainline",
+    "series": "REKT"
+  },
+  "rekt high octane stunts": {
+    "order": 2,
+    "role": "mainline",
+    "series": "REKT"
+  },
+  "resident evil 4": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Resident Evil"
+  },
+  "resident evil 7 biohazard": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Resident Evil"
+  },
+  "rez infinite": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Rez"
+  },
+  "rhapsody a musical adventure": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Marl Kingdom"
+  },
+  "rock band 4 rivals bundle": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Rock Band"
+  },
+  "rocksmith 2014 edition remastered": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Rocksmith"
+  },
+  "rogue legacy": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Rogue Legacy"
+  },
+  "saga scarlet grace ambitions": {
+    "order": 9,
+    "role": "mainline",
+    "series": "SaGa"
+  },
+  "saints row iv": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Saints Row"
+  },
+  "sakura wars": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Sakura Wars"
+  },
+  "scribblenauts mega pack": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Scribblenauts"
+  },
+  "secret of mana": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mana"
+  },
+  "shadows over loathing": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Loathing"
+  },
+  "shantae": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Shantae"
+  },
+  "shantae halfgenie hero": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Shantae"
+  },
+  "shantae riskys revenge directors cut": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Shantae"
+  },
+  "shenmue i ii": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Shenmue"
+  },
+  "shenmue iii": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Shenmue"
+  },
+  "shining resonance refrain": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Shining"
+  },
+  "shovel knight treasure trove": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Shovel Knight"
+  },
+  "skyrim vr": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "The Elder Scrolls"
+  },
+  "slime rancher": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Slime Rancher"
+  },
+  "slime rancher 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Slime Rancher"
+  },
+  "sonic mania": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Sonic the Hedgehog"
+  },
+  "sonic origins": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Sonic the Hedgehog"
+  },
+  "south park the fractured but whole gold edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "South Park"
+  },
+  "south park the stick of truth": {
+    "order": 1,
+    "role": "mainline",
+    "series": "South Park"
+  },
+  "star ocean first departure r": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Star Ocean"
+  },
+  "star ocean integrity and faithlessness": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Star Ocean"
+  },
+  "star ocean the last hope 4k full hd remaster": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Star Ocean"
+  },
+  "star ocean till the end of time": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Star Ocean"
+  },
+  "star wars jedi fallen order deluxe edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Star Wars Jedi"
+  },
+  "star wars knights of the old republic": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Star Wars: Knights of the Old Republic"
+  },
+  "star wars knights of the old republic ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Star Wars: Knights of the Old Republic"
+  },
+  "steamworld build": {
+    "order": 6,
+    "role": "spinoff",
+    "series": "SteamWorld"
+  },
+  "steamworld dig": {
+    "order": 1,
+    "role": "mainline",
+    "series": "SteamWorld"
+  },
+  "steamworld dig 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "SteamWorld"
+  },
+  "steamworld heist": {
+    "order": 3,
+    "role": "mainline",
+    "series": "SteamWorld"
+  },
+  "steamworld heist ii": {
+    "order": 4,
+    "role": "mainline",
+    "series": "SteamWorld"
+  },
+  "steamworld quest": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "SteamWorld"
+  },
+  "stranger of paradise final fantasy origin": {
+    "order": 19,
+    "role": "spinoff",
+    "series": "Final Fantasy"
+  },
+  "strikeforce kitty": {
+    "order": 1,
+    "role": "mainline",
+    "series": "StrikeForce Kitty"
+  },
+  "subnautica": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Subnautica"
+  },
+  "suika game": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Suika Game"
+  },
+  "suika game multiplayer mode expansion pack": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Suika Game"
+  },
+  "super castlevania iv": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Castlevania"
+  },
+  "super kirby clash": {
+    "order": 30,
+    "role": "spinoff",
+    "series": "Kirby"
+  },
+  "super mario rpg": {
+    "order": 40,
+    "role": "spinoff",
+    "series": "Super Mario"
+  },
+  "super smash bros ultimate": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Super Smash Bros."
+  },
+  "tales of arise": {
+    "order": 17,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "tales of berseria": {
+    "order": 16,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "tales of graces f remastered": {
+    "order": 13,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "tales of symphonia remastered": {
+    "order": 11,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "tales of vesperia definitive edition": {
+    "order": 12,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "tales of zestiria": {
+    "order": 15,
+    "role": "mainline",
+    "series": "Tales"
+  },
+  "teenage mutant ninja turtles shredders revenge": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Teenage Mutant Ninja Turtles"
+  },
+  "teenage mutant ninja turtles shredders revenge ultimate edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Teenage Mutant Ninja Turtles"
+  },
+  "teslagrad": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Teslagrad"
+  },
+  "the awesome adventures of captain spirit": {
+    "order": 7,
+    "role": "spinoff",
+    "series": "Life Is Strange"
+  },
+  "the dark pictures anthology house of ashes": {
+    "order": 3,
+    "role": "mainline",
+    "series": "The Dark Pictures Anthology"
+  },
+  "the dark pictures anthology little hope": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Dark Pictures Anthology"
+  },
+  "the dark pictures anthology man of medan": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Dark Pictures Anthology"
+  },
+  "the darkness": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Darkness"
+  },
+  "the darkness ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Darkness"
+  },
+  "the elder scrolls iv oblivion": {
+    "order": 4,
+    "role": "mainline",
+    "series": "The Elder Scrolls"
+  },
+  "the elder scrolls v skyrim anniversary edition": {
+    "order": 5,
+    "role": "mainline",
+    "series": "The Elder Scrolls"
+  },
+  "the final fantasy legend": {
+    "order": 1,
+    "role": "mainline",
+    "series": "SaGa"
+  },
+  "the great ace attorney chronicles": {
+    "order": null,
+    "role": "spinoff",
+    "series": "Ace Attorney"
+  },
+  "the last of us": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Last of Us"
+  },
+  "the last of us part ii": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Last of Us"
+  },
+  "the legend of zelda breath of the wild": {
+    "order": 18,
+    "role": "mainline",
+    "series": "The Legend of Zelda"
+  },
+  "the lego movie 2 videogame": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Lego Movie Videogame"
+  },
+  "the lego movie videogame": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Lego Movie Videogame"
+  },
+  "the outer worlds boardapproved bundle": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "The Outer Worlds"
+  },
+  "the outer worlds expansion pass": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "The Outer Worlds"
+  },
+  "the persistence": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Persistence"
+  },
+  "the persistence enhanced edition": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Persistence"
+  },
+  "the playroom vr": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "The Playroom"
+  },
+  "the stanley parable ultra deluxe": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Stanley Parable"
+  },
+  "the talos principle deluxe edition": {
+    "order": 1,
+    "role": "mainline",
+    "series": "The Talos Principle"
+  },
+  "the witcher 2 assassins of kings": {
+    "order": 2,
+    "role": "mainline",
+    "series": "The Witcher"
+  },
+  "the witcher 3 wild hunt complete edition": {
+    "order": 3,
+    "role": "mainline",
+    "series": "The Witcher"
+  },
+  "theatrhythm final bar line": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Theatrhythm"
+  },
+  "tiny tinas wonderlands": {
+    "order": 8,
+    "role": "spinoff",
+    "series": "Borderlands"
+  },
+  "turnip boy commits tax evasion": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Turnip Boy"
+  },
+  "turnip boy robs a bank": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Turnip Boy"
+  },
+  "ultra despair girls": {
+    "order": 4,
+    "role": "spinoff",
+    "series": "Danganronpa"
+  },
+  "uncharted 2 among thieves": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Uncharted"
+  },
+  "uncharted 3 drakes deception": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Uncharted"
+  },
+  "uncharted 4 a thiefs end": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Uncharted"
+  },
+  "uncharted drakes fortune": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Uncharted"
+  },
+  "uncharted the lost legacy": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Uncharted"
+  },
+  "unravel": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Unravel"
+  },
+  "unravel two": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Unravel"
+  },
+  "valkyrie profile lenneth": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Valkyrie Profile"
+  },
+  "valthirian arc hero school story": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Valthirian Arc"
+  },
+  "valthirian arc hero school story 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Valthirian Arc"
+  },
+  "vampire crawlers the turbo wildcard from vampire survivors": {
+    "order": 2,
+    "role": "spinoff",
+    "series": "Vampire Survivors"
+  },
+  "vampire survivors": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Vampire Survivors"
+  },
+  "voice of cards the beasts of burden": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Voice of Cards"
+  },
+  "voice of cards the forsaken maiden": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Voice of Cards"
+  },
+  "voice of cards the isle dragon roars": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Voice of Cards"
+  },
+  "wargroove double trouble bundle": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Wargroove"
+  },
+  "watch dogs": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Watch Dogs"
+  },
+  "watch dogs 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Watch Dogs"
+  },
+  "we love katamari reroll royal reverie": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Katamari"
+  },
+  "west of loathing": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Loathing"
+  },
+  "whispike survivors": {
+    "order": 3,
+    "role": "spinoff",
+    "series": "Vampire Survivors"
+  },
+  "wild arms": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Wild Arms"
+  },
+  "wonder boy iii monster lair": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Wonder Boy"
+  },
+  "wonder boy in monster world": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Wonder Boy"
+  },
+  "world of final fantasy maxima": {
+    "order": 18,
+    "role": "spinoff",
+    "series": "Final Fantasy"
+  },
+  "xcom 2 collection": {
+    "order": 2,
+    "role": "mainline",
+    "series": "XCOM"
+  },
+  "yakuza 0": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza 3": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza 4": {
+    "order": 5,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza 5": {
+    "order": 6,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza 6 the song of life": {
+    "order": 7,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza kiwami": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza kiwami 2": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yakuza like a dragon": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Yakuza"
+  },
+  "yookalaylee": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Yooka-Laylee"
+  },
+  "yookalaylee and the impossible lair": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Yooka-Laylee"
+  },
+  "ys ix monstrum nox": {
+    "order": 9,
+    "role": "mainline",
+    "series": "Ys"
+  },
+  "ys memories of celceta": {
+    "order": 4,
+    "role": "mainline",
+    "series": "Ys"
+  },
+  "ys origin": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Ys"
+  },
+  "ys viii lacrimosa of dana": {
+    "order": 8,
+    "role": "mainline",
+    "series": "Ys"
+  },
+  "yugioh master duel": {
+    "order": 1,
+    "role": "spinoff",
+    "series": "Yu-Gi-Oh!"
+  }
+}
