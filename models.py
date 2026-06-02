@@ -704,11 +704,13 @@ def migrate_game_signals(conn: sqlite3.Connection) -> None:
 
 
 def migrate_game_traits(conn: sqlite3.Connection) -> None:
-    """Add the session-tolerance + series-role trait columns to games. Idempotent.
+    """Add the session-tolerance + series-role columns to games. Idempotent.
 
-    Each trait carries a `*_source` of catalog/ai/manual (manual LOCKS the row against
-    catalog re-sync and AI). Values are short/long for session_length and
-    mainline/spinoff for series_role; null is always a safe, neutral value.
+    Each carries a `*_source` of catalog/ai/manual (manual LOCKS the row against
+    catalog re-sync and AI). session_length (short/long) is written by the trait
+    catalog (apply_traits_catalog); series_role (mainline/spinoff) is written by the
+    SERIES catalog (apply_series_catalog) — this migration only adds the columns. Null
+    is always a safe, neutral value.
     """
     cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
     additions = [
