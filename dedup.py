@@ -283,6 +283,7 @@ def compute_merged_curation(rows: list[dict]) -> dict:
         "notes": notes,
         "series_id": _first("series_id"),
         "series_order": _first("series_order"),
+        "series_source": _first("series_source"),
         "started_at": started,
         "completed_at": completed,
         "sort_order": rows[0].get("sort_order"),
@@ -292,13 +293,14 @@ def compute_merged_curation(rows: list[dict]) -> dict:
 _CURATION_FIELDS = (
     "status", "rating", "notes", "priority", "hours_played",
     "started_at", "completed_at", "sort_order", "series_id", "series_order",
+    "series_source",
 )
 
 
 def _rating_row(conn: sqlite3.Connection, game_id: int) -> dict:
     row = conn.execute(
         "SELECT status, rating, notes, priority, hours_played, started_at, "
-        "completed_at, sort_order, series_id, series_order "
+        "completed_at, sort_order, series_id, series_order, series_source "
         "FROM user_ratings WHERE game_id = ?", (game_id,)
     ).fetchone()
     return dict(row) if row else {"status": "backlog"}

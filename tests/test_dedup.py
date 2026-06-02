@@ -146,6 +146,7 @@ def _full_conn():
             rating INTEGER, notes TEXT, priority INTEGER DEFAULT 5,
             hours_played REAL DEFAULT 0, started_at DATE, completed_at DATE,
             sort_order INTEGER, series_id INTEGER, series_order INTEGER,
+            series_source TEXT,
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
         INSERT INTO platforms (id, short_name) VALUES (1, 'Switch'), (2, 'PS4');
     """)
@@ -199,6 +200,26 @@ def test_merge_dry_run_writes_nothing():
     plan = merge_games(conn, survivor_id=1, drop_ids=[2], title="Disco Elysium", dry_run=True)
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
     assert plan["survivor_id"] == 1 and plan["drop_ids"] == [2]
+
+
+def test_merge_preserves_series_source():
+    """series_source from the drop (manual) is carried to the survivor when survivor has none."""
+    conn = _full_conn()
+    _add_game(conn, 1, "Halo: Combat Evolved", platform_ids=[1])
+    _add_game(conn, 2, "Halo CE", platform_ids=[2])
+    # Drop (id=2) has the manual series assignment; survivor (id=1) has none.
+    conn.execute("DELETE FROM user_ratings WHERE game_id = 2")
+    conn.execute(
+        "INSERT INTO user_ratings (game_id, status, series_id, series_order, series_source) "
+        "VALUES (2, 'backlog', 1, 0, 'manual')"
+    )
+    conn.commit()
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+    src = conn.execute(
+        "SELECT series_source FROM user_ratings WHERE game_id = 1"
+    ).fetchone()[0]
+    assert src == "manual"
+    conn.close()
 
 
 def test_refresh_updates_keys_to_fresh_clean_title():
