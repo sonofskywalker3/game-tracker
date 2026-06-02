@@ -70,15 +70,16 @@ def _traits(conn, gid):
     return dict(r)
 
 
-def test_apply_traits_catalog_sets_catalog_values(monkeypatch, temp_db):
+def test_apply_traits_catalog_sets_session_length_only(monkeypatch, temp_db):
     conn = models.get_db()
     gid = _add_game(conn, "Celeste")
     monkeypatch.setattr(models, "load_game_traits",
                         lambda: {"celeste": {"session_length": "short", "series_role": "mainline"}})
     models.apply_traits_catalog(conn)
     t = _traits(conn, gid)
-    assert t == {"session_length": "short", "session_length_source": "catalog",
-                 "series_role": "mainline", "series_role_source": "catalog"}
+    assert t["session_length"] == "short" and t["session_length_source"] == "catalog"
+    # series_role is now owned by the series catalog, NOT the trait catalog:
+    assert t["series_role"] is None and t["series_role_source"] is None
     conn.close()
 
 
@@ -89,11 +90,10 @@ def test_apply_traits_catalog_skips_manual(monkeypatch, temp_db):
                  "WHERE id = ?", (gid,))
     conn.commit()
     monkeypatch.setattr(models, "load_game_traits",
-                        lambda: {"celeste": {"session_length": "short", "series_role": "mainline"}})
+                        lambda: {"celeste": {"session_length": "short"}})
     models.apply_traits_catalog(conn)
     t = _traits(conn, gid)
-    assert t["session_length"] == "long" and t["session_length_source"] == "manual"  # locked, untouched
-    assert t["series_role"] == "mainline" and t["series_role_source"] == "catalog"    # unlocked, set
+    assert t["session_length"] == "long" and t["session_length_source"] == "manual"  # locked
     conn.close()
 
 
