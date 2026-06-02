@@ -842,7 +842,9 @@ def migrate_db():
     migrate_game_traits(conn)
     migrate_collection_name(conn)
     migrate_series_source(conn)
+    backfill_series_source(conn)
     apply_traits_catalog(conn)
+    apply_series_catalog(conn)
     seed_default_slots(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
