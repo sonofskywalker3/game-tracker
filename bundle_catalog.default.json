@@ -3,6 +3,10 @@
     "type": "compilation",
     "constituents": ["Advance Wars", "Advance Wars 2: Black Hole Rising"]
   },
+  "assassins creed chronicles": {
+    "type": "compilation",
+    "constituents": ["Assassin's Creed Chronicles: China", "Assassin's Creed Chronicles: India", "Assassin's Creed Chronicles: Russia"]
+  },
   "assassins creed the ezio collection": {
     "type": "compilation",
     "constituents": ["Assassin's Creed II", "Assassin's Creed: Brotherhood", "Assassin's Creed: Revelations"]
@@ -47,6 +51,10 @@
     "type": "compilation",
     "constituents": ["Dragon Quest I HD-2D Remake", "Dragon Quest II HD-2D Remake"]
   },
+  "evoland legendary edition": {
+    "type": "compilation",
+    "constituents": ["Evoland", "Evoland 2"]
+  },
   "final fantasy xx2 hd remaster": {
     "type": "compilation",
     "constituents": ["Final Fantasy X", "Final Fantasy X-2"]
@@ -67,9 +75,17 @@
     "type": "compilation",
     "constituents": ["Halo: Combat Evolved Anniversary", "Halo 2: Anniversary", "Halo 3", "Halo 3: ODST", "Halo 4", "Halo: Reach"]
   },
+  "holy potatoes a bundle": {
+    "type": "entitlement",
+    "constituents": ["Holy Potatoes! A Weapon Shop?!", "Holy Potatoes! We're in Space?!"]
+  },
   "lego harry potter collection": {
     "type": "compilation",
     "constituents": ["LEGO Harry Potter: Years 1-4", "LEGO Harry Potter: Years 5-7"]
+  },
+  "mass effect legendary edition": {
+    "type": "compilation",
+    "constituents": ["Mass Effect", "Mass Effect 2", "Mass Effect 3"]
   },
   "mega man legacy collection": {
     "type": "compilation",
@@ -126,6 +142,10 @@
   "sega vintage collection monster world": {
     "type": "compilation",
     "constituents": ["Wonder Boy in Monster World", "Wonder Boy III: Monster Lair", "Monster World IV"]
+  },
+  "the great ace attorney chronicles": {
+    "type": "compilation",
+    "constituents": ["The Great Ace Attorney: Adventures", "The Great Ace Attorney 2: Resolve"]
   },
   "uncharted legacy of thieves collection": {
     "type": "compilation",
