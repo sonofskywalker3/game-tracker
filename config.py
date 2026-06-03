@@ -16,6 +16,14 @@ DEFAULT_CONFIG = {
     "decider_model": "claude-sonnet-4-6",
 }
 
+# Models offered in the decider-chat model dropdown — single source of truth.
+# Add a row here when a new Claude model ships. (model_id, human label)
+DECIDER_MODELS = (
+    ("claude-opus-4-8", "Claude Opus 4.8 — most capable"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6 — balanced (default)"),
+    ("claude-haiku-4-5", "Claude Haiku 4.5 — fastest"),
+)
+
 
 def load_config():
     """Load configuration from file."""
