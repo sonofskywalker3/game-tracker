@@ -83,7 +83,24 @@
                         <button onclick="slotOutcome(${slot.id},'swap')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Swap</button>
                     </div>
                 </div>
-            </div>` : `<p class="text-sm text-gray-400">Empty — search or pick a suggestion.</p>`;
+            </div>` : `
+            <div>
+                <p class="text-sm text-gray-400">Empty — search or pick a suggestion.</p>
+                <button onclick="toggleDeciderChat(${slot.id})" id="decider-btn-${slot.id}"
+                        class="mt-2 px-2 py-1 bg-surface rounded hover:bg-surface-lighter text-xs text-gray-300">Help me decide</button>
+            </div>
+            <div id="decider-chat-${slot.id}" class="hidden mt-3">
+                <div id="decider-msgs-${slot.id}"
+                     class="bg-surface rounded-lg border border-gray-700 p-2 space-y-2 max-h-64 overflow-y-auto text-xs"></div>
+                <div class="flex gap-1">
+                    <input type="text" id="decider-input-${slot.id}"
+                           placeholder="Ask me anything about your backlog…"
+                           class="flex-1 bg-surface rounded border border-gray-700 px-2 py-1 text-white text-xs placeholder-gray-600 focus:border-accent focus:outline-none"
+                           onkeydown="if(event.key==='Enter') sendDeciderMessage(${slot.id})">
+                    <button onclick="sendDeciderMessage(${slot.id})"
+                            class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs">Send</button>
+                </div>
+            </div>`;
 
         const sugg = (slot.candidates || []).slice(0, 5).map(c => `
             <div class="flex items-center gap-2 py-1">
@@ -266,6 +283,121 @@
 
     async function addSlot() {
         await api.post('/api/slots', { label: 'New slot', platforms: [] });
+        loadSlate();
+    }
+
+    // ---- Decider chat ----
+    const _deciderMessages = {};  // slotId -> [{role, content}, ...]
+
+    function toggleDeciderChat(slotId) {
+        const panel = document.getElementById('decider-chat-' + slotId);
+        const btn = document.getElementById('decider-btn-' + slotId);
+        if (!panel) return;
+        const isOpen = panel.style.display === 'flex';
+        if (isOpen) {
+            panel.style.display = 'none';
+            panel.classList.add('hidden');
+            if (btn) btn.textContent = 'Help me decide';
+        } else {
+            panel.classList.remove('hidden');
+            panel.style.display = 'flex';
+            panel.style.flexDirection = 'column';
+            panel.style.gap = '0.5rem';
+            if (btn) btn.textContent = 'Close chat';
+            const input = document.getElementById('decider-input-' + slotId);
+            if (input) input.focus();
+        }
+    }
+
+    function _deciderAppendMsg(slotId, role, html) {
+        const box = document.getElementById('decider-msgs-' + slotId);
+        if (!box) return;
+        const div = document.createElement('div');
+        if (role === 'user') {
+            div.className = 'flex justify-end';
+            div.innerHTML = `<span class="bg-accent/30 text-white rounded-lg px-2 py-1 max-w-[85%] break-words">${escapeHtml(html)}</span>`;
+        } else if (role === 'assistant') {
+            div.className = 'flex justify-start';
+            div.innerHTML = `<span class="bg-surface-lighter text-gray-200 rounded-lg px-2 py-1 max-w-[85%] break-words">${escapeHtml(html)}</span>`;
+        } else {
+            // system/notice: full width
+            div.innerHTML = html;
+        }
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+        return div;
+    }
+
+    async function sendDeciderMessage(slotId) {
+        const input = document.getElementById('decider-input-' + slotId);
+        if (!input) return;
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+
+        if (!_deciderMessages[slotId]) _deciderMessages[slotId] = [];
+        _deciderMessages[slotId].push({ role: 'user', content: text });
+        _deciderAppendMsg(slotId, 'user', text);
+
+        // Show thinking placeholder
+        const box = document.getElementById('decider-msgs-' + slotId);
+        const thinking = document.createElement('div');
+        thinking.className = 'flex justify-start';
+        thinking.innerHTML = `<span class="bg-surface-lighter text-gray-500 rounded-lg px-2 py-1 italic">Thinking…</span>`;
+        if (box) { box.appendChild(thinking); box.scrollTop = box.scrollHeight; }
+
+        const res = await api.post(`/api/slots/${slotId}/chat`, { messages: _deciderMessages[slotId] });
+
+        if (box && thinking.parentNode === box) box.removeChild(thinking);
+
+        if (!res.ok) {
+            const errCode = (res.data && res.data.error) || '';
+            let noticeHtml;
+            if (errCode === 'no_api_key') {
+                noticeHtml = `<p class="text-yellow-400 text-xs">Add your Anthropic API key in <a href="/settings" class="underline hover:text-yellow-300">Settings</a>.</p>`;
+            } else {
+                noticeHtml = `<p class="text-red-400 text-xs">Something went wrong, try again.</p>`;
+            }
+            _deciderAppendMsg(slotId, 'notice', noticeHtml);
+            // Remove the last user message from history so they can retry cleanly
+            _deciderMessages[slotId].pop();
+            return;
+        }
+
+        const reply = (res.data && res.data.reply) || '';
+        const suggestions = (res.data && res.data.suggestions) || [];
+
+        if (reply) {
+            _deciderMessages[slotId].push({ role: 'assistant', content: reply });
+            _deciderAppendMsg(slotId, 'assistant', reply);
+        }
+
+        if (suggestions.length) {
+            const sugBox = document.createElement('div');
+            sugBox.className = 'space-y-2 mt-1';
+            sugBox.innerHTML = `<p class="text-gray-500 text-[10px] uppercase tracking-wide">Suggested picks</p>`;
+            suggestions.forEach(game => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'flex items-center gap-2 bg-surface-lighter rounded-lg p-2';
+                // Mini cover + title
+                const coverHtml = game.cover_url
+                    ? `<img src="${escapeHtml(game.cover_url)}" class="w-8 h-10 object-cover rounded flex-shrink-0 cursor-pointer" onclick="openModal(${game.id})">`
+                    : `<div class="cover-placeholder w-8 h-10 rounded flex items-center justify-center flex-shrink-0 cursor-pointer text-sm" onclick="openModal(${game.id})">🎮</div>`;
+                wrapper.innerHTML = `
+                    ${coverHtml}
+                    <span class="flex-1 min-w-0 text-xs text-gray-200 truncate cursor-pointer" onclick="openModal(${game.id})" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</span>
+                    <button onclick="pinFromDecider(${slotId}, ${game.id})"
+                            class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs flex-shrink-0">Pin</button>`;
+                sugBox.appendChild(wrapper);
+            });
+            if (box) { box.appendChild(sugBox); box.scrollTop = box.scrollHeight; }
+        }
+    }
+
+    async function pinFromDecider(slotId, gameId) {
+        await api.post(`/api/slots/${slotId}/pin`, { game_id: gameId });
+        // Reset chat state for this slot before refreshing
+        delete _deciderMessages[slotId];
         loadSlate();
     }
 
