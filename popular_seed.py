@@ -76,3 +76,30 @@ def select_unseeded(games: list[dict], *,
         seen.add(nt)
         out.append(g)
     return out
+
+
+_VALID_SESSION_LENGTHS = frozenset({"short", "long"})
+
+
+def merge_classifications(verdicts: list[dict], *,
+                          catalog_path: Path = GAME_TRAITS_DEFAULT_PATH) -> tuple[int, int]:
+    """Add ``{session_length}`` entries for new normalized_titles. Never overwrite
+    an existing entry; skip anything not in {short, long} (unknown/abstentions)
+    and rows missing a normalized_title. Write sorted + 2-space indent + preserved
+    trailing newline (minimal diff). Returns ``(added, skipped)``."""
+    raw = catalog_path.read_text(encoding="utf-8")
+    catalog = json.loads(raw)
+    added = skipped = 0
+    for v in verdicts:
+        nt = v.get("normalized_title")
+        sl = v.get("session_length")
+        if not nt or sl not in _VALID_SESSION_LENGTHS or nt in catalog:
+            skipped += 1
+            continue
+        catalog[nt] = {"session_length": sl}
+        added += 1
+    out = json.dumps(catalog, sort_keys=True, indent=2, ensure_ascii=False)
+    if raw.endswith("\n"):
+        out += "\n"
+    catalog_path.write_text(out, encoding="utf-8", newline="\n")
+    return added, skipped
