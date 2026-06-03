@@ -1,3 +1,5 @@
+import json
+
 import popular_seed
 
 
@@ -28,3 +30,16 @@ def test_fetch_top_games_parses_paginates_and_dedupes(monkeypatch):
     assert out[0]["year"] == 2010
     assert out[1]["year"] is None
     assert out[0]["name"] == "Alpha Quest"
+
+
+def test_select_unseeded_drops_existing_and_intra_dups(tmp_path):
+    catalog = tmp_path / "game_traits.default.json"
+    catalog.write_text(json.dumps({"zelda": {"session_length": "long"}}, indent=2) + "\n",
+                       encoding="utf-8")
+    games = [
+        {"normalized_title": "zelda", "name": "Zelda"},        # already in catalog -> drop
+        {"normalized_title": "celeste", "name": "Celeste"},    # keep
+        {"normalized_title": "celeste", "name": "Celeste DX"}, # intra-list dup -> drop
+    ]
+    out = popular_seed.select_unseeded(games, catalog_path=catalog)
+    assert [g["normalized_title"] for g in out] == ["celeste"]
