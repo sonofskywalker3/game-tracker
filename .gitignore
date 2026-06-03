@@ -52,3 +52,8 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
+
+# SP-B seed scratch artifacts (never commit)
+popular_seed_input.json
+popular_seed_verdicts.json
+popular_seed_pilot.json
