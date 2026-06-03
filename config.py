@@ -12,6 +12,8 @@ DEFAULT_CONFIG = {
     "twitch_client_secret": "",
     "steam_api_key": "",
     "steam_id": "",
+    "anthropic_api_key": "",
+    "decider_model": "claude-sonnet-4-6",
 }
 
 
@@ -53,3 +55,11 @@ def get_steam_credentials():
     if api_key and steam_id:
         return api_key, steam_id
     return None, None
+
+
+def get_anthropic_config() -> tuple[str | None, str]:
+    """Return (api_key_or_None, model) for the decider chat."""
+    config = load_config()
+    key = config.get("anthropic_api_key", "").strip()
+    model = config.get("decider_model", "").strip() or DEFAULT_CONFIG["decider_model"]
+    return (key or None), model
