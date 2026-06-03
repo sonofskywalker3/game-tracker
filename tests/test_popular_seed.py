@@ -23,6 +23,7 @@ def test_fetch_top_games_parses_paginates_and_dedupes(monkeypatch):
         return pages[i] if i < len(pages) else []
 
     monkeypatch.setattr(popular_seed.igdb_dlc, "_igdb_query", fake_query)
+    monkeypatch.setattr(popular_seed.time, "sleep", lambda _: None)
     out = popular_seed.fetch_top_games(10, client_id="c", token="t", page_size=2)
 
     assert [g["normalized_title"] for g in out] == ["alpha quest", "beta blast"]
@@ -70,6 +71,24 @@ def test_merge_classifications_minimal_diff_skip_existing_and_unknown(tmp_path):
     # round-trips: sorted, 2-space indent, trailing newline preserved
     expected = json.dumps(result, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     assert catalog.read_text(encoding="utf-8") == expected
+
+
+def test_merge_classifications_no_op_skips_write(tmp_path):
+    catalog = tmp_path / "game_traits.default.json"
+    # Deliberately non-canonical: keys out of sorted order, non-standard spacing
+    non_canonical = '{"zelda": {"session_length": "long"}, "abzu": {"session_length": "short"}}'
+    catalog.write_text(non_canonical, encoding="utf-8")
+
+    verdicts = [
+        {"normalized_title": "zelda", "session_length": "short"},   # already present -> skip
+        {"normalized_title": "abzu", "session_length": "long"},     # already present -> skip
+        {"normalized_title": "mystery", "session_length": "unknown"},  # invalid -> skip
+    ]
+    added, skipped = popular_seed.merge_classifications(verdicts, catalog_path=catalog)
+
+    assert (added, skipped) == (0, 3)
+    # File bytes must be byte-for-byte unchanged — guard skipped the write
+    assert catalog.read_text(encoding="utf-8") == non_canonical
 
 
 def test_cli_merge_applies_verdicts(tmp_path, monkeypatch, capsys):
