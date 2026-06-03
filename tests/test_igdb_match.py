@@ -1,4 +1,5 @@
 import igdb_match
+import models
 
 
 def _cand(name, plats, *, cover=True, rating=0, year=2000, igdb_id=1):
@@ -124,6 +125,13 @@ def test_resolve_identity_falls_back_to_scorer(monkeypatch):
     monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
     got = igdb_match.resolve_identity("Celeste", {6}, None, "c", "t")
     assert got["igdb_id"] == 5 and got["source"] == "search"
+
+
+def test_migrate_igdb_review_adds_columns(temp_db):
+    conn = models.get_db()
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)")]
+    assert "igdb_locked" in cols and "needs_igdb_review" in cols
+    conn.close()
 
 
 def test_resolve_identity_bundle_resolves_but_no_constituent_match_falls_through(monkeypatch):
