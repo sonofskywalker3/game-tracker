@@ -500,3 +500,32 @@ def test_refresh_dlc_network_error_502(client, temp_db, monkeypatch):
     monkeypatch.setattr(igdb_dlc, "_igdb_query", boom)
     resp = client.post(f"/api/games/{gid}/dlc/refresh")
     assert resp.status_code == 502
+
+
+def test_igdb_candidates_and_pick(client, temp_db, monkeypatch):
+    import igdb_dlc
+    import igdb_match
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,collection_name) "
+                 "VALUES (1,'Mega Man 2','mega man 2','MM LC2')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    import config
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("c", "s"))
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 1711, "name": "Mega Man 2", "cover_url": "https://x/t_cover_big/2.jpg",
+         "platforms": [18], "source": "bundle"}])
+
+    r = client.get("/api/games/1/igdb-candidates")
+    assert r.status_code == 200 and r.get_json()["candidates"][0]["igdb_id"] == 1711
+
+    r = client.post("/api/games/1/igdb-pick", json={"igdb_id": 1711,
+                    "cover_url": "https://x/t_cover_big/2.jpg"})
+    assert r.status_code == 200
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT igdb_id, cover_url, igdb_locked, needs_igdb_review FROM games WHERE id=1"
+    ).fetchone()
+    conn.close()
+    assert row["igdb_id"] == 1711 and row["igdb_locked"] == 1 and row["needs_igdb_review"] == 0
