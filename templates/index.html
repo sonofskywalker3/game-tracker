@@ -161,6 +161,7 @@
         { id: 'legacy',   label: 'Legacy',  match: g => (g.categories || []).includes('legacy_console') },
         { id: 'pc',       label: 'PC',      match: g => (g.categories || []).includes('pc') },
         { id: 'physical', label: 'Physical', match: g => !!g.physical },
+        { id: 'needs_review', label: 'Needs review', match: g => !!g.needs_igdb_review },
     ];
     let currentMode = 'all';
 
