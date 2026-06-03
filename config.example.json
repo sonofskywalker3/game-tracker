@@ -2,5 +2,7 @@
   "twitch_client_id": "",
   "twitch_client_secret": "",
   "steam_api_key": "",
-  "steam_id": ""
+  "steam_id": "",
+  "anthropic_api_key": "",
+  "decider_model": "claude-sonnet-4-6"
 }
