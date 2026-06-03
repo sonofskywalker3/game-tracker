@@ -19,7 +19,7 @@ from models import (
     apply_series_catalog,
 )
 from recommendation import get_recommendations, get_quick_picks
-from config import load_config, save_config, get_twitch_credentials
+from config import load_config, save_config, get_twitch_credentials, DECIDER_MODELS
 from background_tasks import run_cover_fetch_background, get_cover_fetch_status
 import scrape_service
 
@@ -1820,6 +1820,7 @@ def api_get_settings():
         'has_credentials': bool(config.get('twitch_client_id') and config.get('twitch_client_secret')),
         'anthropic_api_key': '••••••••' if config.get('anthropic_api_key') else '',
         'decider_model': config.get('decider_model', 'claude-sonnet-4-6'),
+        'decider_models': [{'id': mid, 'label': label} for mid, label in DECIDER_MODELS],
         'has_anthropic_key': bool(config.get('anthropic_api_key')),
     }
     return jsonify(masked)
