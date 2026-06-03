@@ -1,5 +1,6 @@
 """Per-slot Anthropic decider chat: library snapshot, prompt assembly, and the
 blocking Messages call. The Anthropic client is injectable for testing."""
+import json
 import logging
 import re  # noqa: F401
 import sqlite3
@@ -39,3 +40,50 @@ def build_library_snapshot(conn: sqlite3.Connection) -> str:
             f"session:{r['session_length'] or '?'} | series:{series}({role}) | "
             f"status:{r['status'] or '-'} | hrs:{r['hours_played'] or 0} | pri:{r['priority'] or 5}")
     return "\n".join(lines)
+
+
+INSTRUCTIONS = (
+    "You are a backlog gaming decider. You help the user choose ONE game to pin into a "
+    "specific slot, given their whole library, the slot's constraints/notes, and their "
+    "mood, energy, and time tonight.\n\n"
+    "session_length is SESSION TOLERANCE (clean short stopping points = 'short'; needs a "
+    "dedicated block = 'long'), NOT total play-time. Weigh: the slot's platform and session "
+    "constraints, what the user just finished (avoid genre fatigue), time-to-beat for length "
+    "moods, priority, and the user's stated mood/energy/time. Ask a brief clarifying question "
+    "about mood/energy/time when it would change your pick. Recommend from anywhere in the "
+    "library, but respect the slot's hard constraints (platform, streamable, session) in your "
+    "reasoning.\n\n"
+    "Each library line begins with #<id>. End EVERY reply with a single line listing the ids "
+    "you recommend, exactly: <suggestions>12,88</suggestions> (use an empty list "
+    "<suggestions></suggestions> if you are only asking a question). Recommend at most 3."
+)
+
+
+def build_system_prompt(snapshot: str) -> list[dict]:
+    """Stable, slot-independent system blocks. Cache breakpoint on the snapshot so the
+    prefix is byte-identical across all slots and conversations."""
+    return [
+        {"type": "text", "text": INSTRUCTIONS},
+        {"type": "text", "text": snapshot, "cache_control": {"type": "ephemeral"}},
+    ]
+
+
+def build_slot_context(conn: sqlite3.Connection, slot: dict) -> str:
+    """A leading user-turn preamble describing the slot the user is filling. Dynamic
+    (per-slot), so it lives in messages, NOT in the cached system prefix."""
+    platforms = ", ".join(json.loads(slot["platforms"])) if slot.get("platforms") else "any"
+    parts = [f"SLOT: {slot.get('label')}", f"Platforms: {platforms}"]
+    if slot.get("max_session_minutes"):
+        parts.append(f"Short session (about {slot['max_session_minutes']} min) — exclude long games.")
+    if slot.get("min_session_minutes"):
+        parts.append(f"Long session (>= {slot['min_session_minutes']} min) — long games welcome.")
+    if slot.get("streamable_only"):
+        parts.append("Streamed/lag-tolerant games only.")
+    if slot.get("focus_series_id"):
+        row = conn.execute("SELECT name FROM series WHERE id = ?",
+                           (slot["focus_series_id"],)).fetchone()
+        if row:
+            parts.append(f"Focus series: {row['name']}.")
+    if slot.get("context_notes"):
+        parts.append(f"Notes: {slot['context_notes']}")
+    return "\n".join(parts)
