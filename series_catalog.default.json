@@ -69,23 +69,18 @@
     "role": "mainline",
     "series": "Assassin's Creed"
   },
-  "assassins creed chronicles": {
+  "assassins creed chronicles china": {
     "order": 1,
     "role": "spinoff",
     "series": "Assassin's Creed Chronicles"
   },
-  "assassins creed chronicles china": {
+  "assassins creed chronicles india": {
     "order": 2,
     "role": "spinoff",
     "series": "Assassin's Creed Chronicles"
   },
-  "assassins creed chronicles india": {
-    "order": 3,
-    "role": "spinoff",
-    "series": "Assassin's Creed Chronicles"
-  },
   "assassins creed chronicles russia": {
-    "order": 4,
+    "order": 3,
     "role": "spinoff",
     "series": "Assassin's Creed Chronicles"
   },
@@ -719,8 +714,13 @@
     "role": "spinoff",
     "series": "Everybody's Golf"
   },
-  "evoland legendary edition": {
-    "order": 3,
+  "evoland": {
+    "order": 1,
+    "role": "mainline",
+    "series": "Evoland"
+  },
+  "evoland 2": {
+    "order": 2,
     "role": "mainline",
     "series": "Evoland"
   },
@@ -1034,11 +1034,6 @@
     "role": "mainline",
     "series": "Hollow Knight"
   },
-  "holy potatoes a bundle": {
-    "order": 3,
-    "role": "spinoff",
-    "series": "Holy Potatoes"
-  },
   "holy potatoes a weapon shop": {
     "order": 1,
     "role": "mainline",
@@ -1269,14 +1264,24 @@
     "role": "mainline",
     "series": "Marvel's Spider-Man"
   },
-  "mass effect andromeda deluxe recruit edition": {
-    "order": 4,
+  "mass effect": {
+    "order": 1,
     "role": "mainline",
     "series": "Mass Effect"
   },
-  "mass effect legendary edition": {
-    "order": 5,
-    "role": "spinoff",
+  "mass effect 2": {
+    "order": 2,
+    "role": "mainline",
+    "series": "Mass Effect"
+  },
+  "mass effect 3": {
+    "order": 3,
+    "role": "mainline",
+    "series": "Mass Effect"
+  },
+  "mass effect andromeda deluxe recruit edition": {
+    "order": 4,
+    "role": "mainline",
     "series": "Mass Effect"
   },
   "mega man": {
@@ -2074,8 +2079,13 @@
     "role": "mainline",
     "series": "SaGa"
   },
-  "the great ace attorney chronicles": {
-    "order": null,
+  "the great ace attorney 2 resolve": {
+    "order": 5,
+    "role": "spinoff",
+    "series": "Ace Attorney"
+  },
+  "the great ace attorney adventures": {
+    "order": 4,
     "role": "spinoff",
     "series": "Ace Attorney"
   },

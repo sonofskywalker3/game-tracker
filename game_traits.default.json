@@ -89,9 +89,6 @@
   "assassins creed brotherhood": {
     "session_length": "long"
   },
-  "assassins creed chronicles": {
-    "session_length": "short"
-  },
   "assassins creed chronicles china": {
     "session_length": "short"
   },
@@ -704,7 +701,10 @@
   "everybodys golf vr": {
     "session_length": "short"
   },
-  "evoland legendary edition": {
+  "evoland": {
+    "session_length": "short"
+  },
+  "evoland 2": {
     "session_length": "long"
   },
   "exorder": {
@@ -1223,10 +1223,16 @@
   "marvels spiderman remastered": {
     "session_length": "long"
   },
-  "mass effect andromeda deluxe recruit edition": {
+  "mass effect": {
     "session_length": "long"
   },
-  "mass effect legendary edition": {
+  "mass effect 2": {
+    "session_length": "long"
+  },
+  "mass effect 3": {
+    "session_length": "long"
+  },
+  "mass effect andromeda deluxe recruit edition": {
     "session_length": "long"
   },
   "master spy": {
@@ -1937,7 +1943,10 @@
   "the flame in the flood complete edition": {
     "session_length": "short"
   },
-  "the great ace attorney chronicles": {
+  "the great ace attorney 2 resolve": {
+    "session_length": "short"
+  },
+  "the great ace attorney adventures": {
     "session_length": "short"
   },
   "the house in fata morgana dreams of the revenants edition": {
