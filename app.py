@@ -10,6 +10,7 @@ import requests
 import dedup
 import hltb
 import import_scraped
+import decider
 import slots
 from flask import Flask, render_template, request, jsonify
 from models import (
@@ -1692,6 +1693,30 @@ def api_slot_dismiss(slot_id: int):
     slots.dismiss_suggestion(conn, slot_id, game_id)
     conn.close()
     return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/chat', methods=['POST'])
+def api_slot_chat(slot_id: int):
+    """One blocking decider turn for a slot. Body: {messages:[...]}. Returns
+    {reply, suggestions:[game,...]} or a 400 {error} when no API key is configured."""
+    data = request.get_json() or {}
+    messages = data.get('messages') or []
+    conn = get_db()
+    row = conn.execute("SELECT * FROM slots WHERE id = ?", (slot_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'slot not found'}), 404
+    result = decider.decide(conn, dict(row), messages)
+    if 'error' in result:
+        conn.close()
+        return jsonify({'error': result['error']}), 400
+    games = []
+    for gid in result['suggestions']:
+        g = conn.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        if g:
+            games.append(dict(g))
+    conn.close()
+    return jsonify({'reply': result['reply'], 'suggestions': games})
 
 
 @app.route('/api/hltb/refresh', methods=['POST'])
