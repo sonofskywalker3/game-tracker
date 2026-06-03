@@ -1,1 +1,2198 @@
-{}
+{
+  "60 seconds": {
+    "session_length": "short"
+  },
+  "9 years of shadows": {
+    "session_length": "long"
+  },
+  "a kings tale final fantasy xv": {
+    "session_length": "short"
+  },
+  "a short hike": {
+    "session_length": "short"
+  },
+  "abzû": {
+    "session_length": "short"
+  },
+  "actraiser renaissance": {
+    "session_length": "short"
+  },
+  "advance wars": {
+    "session_length": "short"
+  },
+  "advance wars 2 black hole rising": {
+    "session_length": "short"
+  },
+  "aegis defenders": {
+    "session_length": "short"
+  },
+  "after the fall": {
+    "session_length": "short"
+  },
+  "aggelos": {
+    "session_length": "long"
+  },
+  "ai the somnium files": {
+    "session_length": "short"
+  },
+  "ai the somnium files nirvana initiative": {
+    "session_length": "short"
+  },
+  "akuto showdown": {
+    "session_length": "short"
+  },
+  "alan wakes american nightmare": {
+    "session_length": "short"
+  },
+  "alders blood": {
+    "session_length": "short"
+  },
+  "alex kidd in miracle world dx": {
+    "session_length": "short"
+  },
+  "alwas awakening": {
+    "session_length": "long"
+  },
+  "alwas legacy": {
+    "session_length": "long"
+  },
+  "ambition of the slimes": {
+    "session_length": "short"
+  },
+  "among us": {
+    "session_length": "short"
+  },
+  "animal crossing new horizons": {
+    "session_length": "short"
+  },
+  "animal well": {
+    "session_length": "long"
+  },
+  "apparition": {
+    "session_length": "short"
+  },
+  "ara fell enhanced edition": {
+    "session_length": "long"
+  },
+  "arietta of spirits": {
+    "session_length": "short"
+  },
+  "armored warriors": {
+    "session_length": "short"
+  },
+  "army of ruin": {
+    "session_length": "short"
+  },
+  "assassins creed": {
+    "session_length": "long"
+  },
+  "assassins creed brotherhood": {
+    "session_length": "long"
+  },
+  "assassins creed chronicles": {
+    "session_length": "short"
+  },
+  "assassins creed chronicles china": {
+    "session_length": "short"
+  },
+  "assassins creed chronicles india": {
+    "session_length": "short"
+  },
+  "assassins creed chronicles russia": {
+    "session_length": "short"
+  },
+  "assassins creed ii": {
+    "session_length": "long"
+  },
+  "assassins creed iii": {
+    "session_length": "long"
+  },
+  "assassins creed iv black flag": {
+    "session_length": "long"
+  },
+  "assassins creed mirage": {
+    "session_length": "long"
+  },
+  "assassins creed odyssey": {
+    "session_length": "long"
+  },
+  "assassins creed origins": {
+    "session_length": "long"
+  },
+  "assassins creed revelations": {
+    "session_length": "long"
+  },
+  "assassins creed rogue remastered": {
+    "session_length": "long"
+  },
+  "assassins creed shadows": {
+    "session_length": "long"
+  },
+  "assassins creed syndicate": {
+    "session_length": "long"
+  },
+  "assassins creed unity": {
+    "session_length": "long"
+  },
+  "assassins creed valhalla": {
+    "session_length": "long"
+  },
+  "astalon tears of the earth": {
+    "session_length": "long"
+  },
+  "astro bot rescue mission": {
+    "session_length": "short"
+  },
+  "atari 50 the anniversary celebration": {
+    "session_length": "short"
+  },
+  "atelier ryza ever darkness the secret hideout": {
+    "session_length": "long"
+  },
+  "attack hole": {
+    "session_length": "short"
+  },
+  "axiom verge": {
+    "session_length": "long"
+  },
+  "axiom verge 2": {
+    "session_length": "long"
+  },
+  "balatro": {
+    "session_length": "short"
+  },
+  "ball x pit": {
+    "session_length": "short"
+  },
+  "batman arkham asylum": {
+    "session_length": "long"
+  },
+  "batman arkham city": {
+    "session_length": "long"
+  },
+  "batman arkham knight": {
+    "session_length": "long"
+  },
+  "batman arkham vr": {
+    "session_length": "short"
+  },
+  "batman return to arkham": {
+    "session_length": "long"
+  },
+  "batman the enemy within": {
+    "session_length": "short"
+  },
+  "battle circuit": {
+    "session_length": "short"
+  },
+  "bayonetta": {
+    "session_length": "short"
+  },
+  "beacon pines": {
+    "session_length": "short"
+  },
+  "before your eyes": {
+    "session_length": "short"
+  },
+  "beyond galaxyland": {
+    "session_length": "short"
+  },
+  "binarystar infinity": {
+    "session_length": "short"
+  },
+  "bio prototype": {
+    "session_length": "short"
+  },
+  "bioshock": {
+    "session_length": "long"
+  },
+  "bioshock 2": {
+    "session_length": "long"
+  },
+  "bioshock infinite": {
+    "session_length": "long"
+  },
+  "bioshock infinite the complete edition": {
+    "session_length": "long"
+  },
+  "blacklight retribution": {
+    "session_length": "short"
+  },
+  "blast brigade": {
+    "session_length": "long"
+  },
+  "blaster master zero": {
+    "session_length": "short"
+  },
+  "blaster master zero 2": {
+    "session_length": "short"
+  },
+  "blaster master zero 3": {
+    "session_length": "short"
+  },
+  "bloodstained curse of the moon": {
+    "session_length": "short"
+  },
+  "bloodstained curse of the moon 2": {
+    "session_length": "short"
+  },
+  "bloodstained ritual of the night": {
+    "session_length": "long"
+  },
+  "bloomtown a different story": {
+    "session_length": "long"
+  },
+  "blossom tales ii the minotaur prince": {
+    "session_length": "long"
+  },
+  "blossom tales the sleeping king": {
+    "session_length": "long"
+  },
+  "blue dragon": {
+    "session_length": "long"
+  },
+  "bob help them": {
+    "session_length": "short"
+  },
+  "borderlands": {
+    "session_length": "long"
+  },
+  "borderlands 2": {
+    "session_length": "long"
+  },
+  "borderlands 3": {
+    "session_length": "long"
+  },
+  "borderlands 3 next level edition": {
+    "session_length": "long"
+  },
+  "borderlands 4": {
+    "session_length": "long"
+  },
+  "borderlands the presequel": {
+    "session_length": "long"
+  },
+  "born of bread": {
+    "session_length": "long"
+  },
+  "bound by flame": {
+    "session_length": "long"
+  },
+  "brawlhalla": {
+    "session_length": "short"
+  },
+  "brotato": {
+    "session_length": "short"
+  },
+  "bubble trouble": {
+    "session_length": "short"
+  },
+  "bubble trouble 2 rebubbled": {
+    "session_length": "short"
+  },
+  "bubble trouble 3": {
+    "session_length": "short"
+  },
+  "bubble trouble adventures": {
+    "session_length": "short"
+  },
+  "buddy simulator 1984": {
+    "session_length": "short"
+  },
+  "bugsnax": {
+    "session_length": "short"
+  },
+  "bullets brains": {
+    "session_length": "short"
+  },
+  "bulletstorm full clip edition": {
+    "session_length": "short"
+  },
+  "captain commando": {
+    "session_length": "short"
+  },
+  "caravan stories": {
+    "session_length": "long"
+  },
+  "cartoon network battle crashers": {
+    "session_length": "short"
+  },
+  "cassette beasts": {
+    "session_length": "long"
+  },
+  "castle crashers remastered": {
+    "session_length": "short"
+  },
+  "castlevania": {
+    "session_length": "short"
+  },
+  "castlevania aria of sorrow": {
+    "session_length": "long"
+  },
+  "castlevania bloodlines": {
+    "session_length": "short"
+  },
+  "castlevania circle of the moon": {
+    "session_length": "long"
+  },
+  "castlevania dracula x": {
+    "session_length": "short"
+  },
+  "castlevania harmony of despair": {
+    "session_length": "short"
+  },
+  "castlevania harmony of dissonance": {
+    "session_length": "long"
+  },
+  "castlevania ii belmonts revenge": {
+    "session_length": "short"
+  },
+  "castlevania ii simons quest": {
+    "session_length": "long"
+  },
+  "castlevania iii draculas curse": {
+    "session_length": "short"
+  },
+  "castlevania requiem symphony of the night rondo of blood": {
+    "session_length": "long"
+  },
+  "castlevania sotn": {
+    "session_length": "long"
+  },
+  "castlevania the adventure": {
+    "session_length": "short"
+  },
+  "cat quest": {
+    "session_length": "short"
+  },
+  "cat quest ii": {
+    "session_length": "short"
+  },
+  "catastronauts": {
+    "session_length": "short"
+  },
+  "catlateral damage remeowstered": {
+    "session_length": "short"
+  },
+  "chained echoes": {
+    "session_length": "long"
+  },
+  "chaos on deponia": {
+    "session_length": "long"
+  },
+  "chasm": {
+    "session_length": "long"
+  },
+  "chex quest hd": {
+    "session_length": "short"
+  },
+  "chocobo gp": {
+    "session_length": "short"
+  },
+  "chrono cross the radical dreamers edition": {
+    "session_length": "long"
+  },
+  "citizen sleeper": {
+    "session_length": "short"
+  },
+  "clannad": {
+    "session_length": "short"
+  },
+  "classic logic bundle": {
+    "session_length": "short"
+  },
+  "close to the sun": {
+    "session_length": "short"
+  },
+  "code vein": {
+    "session_length": "long"
+  },
+  "coloring book": {
+    "session_length": "short"
+  },
+  "connection haunted": {
+    "session_length": "short"
+  },
+  "connection haunted server error": {
+    "session_length": "short"
+  },
+  "connection rehaunted": {
+    "session_length": "short"
+  },
+  "control ultimate edition": {
+    "session_length": "long"
+  },
+  "cookie clicker": {
+    "session_length": "short"
+  },
+  "core keeper": {
+    "session_length": "long"
+  },
+  "cosmic star heroine": {
+    "session_length": "short"
+  },
+  "cozy grove": {
+    "session_length": "short"
+  },
+  "cozy grove new neighbears": {
+    "session_length": "short"
+  },
+  "crash team racing nitrofueled": {
+    "session_length": "short"
+  },
+  "crashlands": {
+    "session_length": "long"
+  },
+  "creepy tale": {
+    "session_length": "short"
+  },
+  "crisis core final fantasy vii reunion": {
+    "session_length": "short"
+  },
+  "crosscode": {
+    "session_length": "long"
+  },
+  "crystal defenders": {
+    "session_length": "short"
+  },
+  "crystal project": {
+    "session_length": "long"
+  },
+  "cursed to golf": {
+    "session_length": "short"
+  },
+  "cyberpunk 2077": {
+    "session_length": "long"
+  },
+  "cyjin the cyborg ninja": {
+    "session_length": "short"
+  },
+  "dadish": {
+    "session_length": "short"
+  },
+  "dadish 2": {
+    "session_length": "short"
+  },
+  "dadish 3": {
+    "session_length": "short"
+  },
+  "daily dadish": {
+    "session_length": "short"
+  },
+  "danganronpa 12 reload": {
+    "session_length": "short"
+  },
+  "danganronpa 2 goodbye despair anniversary edition": {
+    "session_length": "short"
+  },
+  "danganronpa s ultimate summer camp": {
+    "session_length": "short"
+  },
+  "danganronpa trigger happy havoc anniversary edition": {
+    "session_length": "short"
+  },
+  "danganronpa v3 killing harmony anniversary edition": {
+    "session_length": "short"
+  },
+  "darksiders genesis": {
+    "session_length": "short"
+  },
+  "darksiders ii deathinitive edition": {
+    "session_length": "long"
+  },
+  "darksiders iii": {
+    "session_length": "long"
+  },
+  "darksiders warmastered edition": {
+    "session_length": "long"
+  },
+  "dave the diver": {
+    "session_length": "short"
+  },
+  "day of the tentacle remastered": {
+    "session_length": "long"
+  },
+  "dc universe online": {
+    "session_length": "short"
+  },
+  "dead secret": {
+    "session_length": "long"
+  },
+  "dead space digital deluxe edition": {
+    "session_length": "long"
+  },
+  "deathloop": {
+    "session_length": "short"
+  },
+  "deponia": {
+    "session_length": "short"
+  },
+  "deponia doomsday": {
+    "session_length": "short"
+  },
+  "destiny 2": {
+    "session_length": "short"
+  },
+  "destropolis": {
+    "session_length": "short"
+  },
+  "deus ex human revolution": {
+    "session_length": "long"
+  },
+  "deus ex mankind divided digital deluxe edition": {
+    "session_length": "long"
+  },
+  "devil may cry": {
+    "session_length": "short"
+  },
+  "devil may cry 2": {
+    "session_length": "short"
+  },
+  "devil may cry 3 dantes awakening": {
+    "session_length": "short"
+  },
+  "devil may cry 4 special edition": {
+    "session_length": "short"
+  },
+  "diablo ii resurrected": {
+    "session_length": "short"
+  },
+  "diablo iii eternal collection": {
+    "session_length": "short"
+  },
+  "diablo iii reaper of souls ultimate evil edition": {
+    "session_length": "short"
+  },
+  "dicefolk": {
+    "session_length": "short"
+  },
+  "dicey dungeons": {
+    "session_length": "short"
+  },
+  "digimon story cyber sleuth": {
+    "session_length": "long"
+  },
+  "digimon story cyber sleuth hackers memory": {
+    "session_length": "long"
+  },
+  "disco elysium": {
+    "session_length": "long"
+  },
+  "dishonored death of the outsider deluxe bundle": {
+    "session_length": "long"
+  },
+  "dishonored definitive edition": {
+    "session_length": "long"
+  },
+  "dissidia final fantasy nt": {
+    "session_length": "short"
+  },
+  "do not feed the monkeys": {
+    "session_length": "short"
+  },
+  "doki doki literature club plus": {
+    "session_length": "short"
+  },
+  "dont starve": {
+    "session_length": "long"
+  },
+  "dont starve together": {
+    "session_length": "long"
+  },
+  "donut county": {
+    "session_length": "short"
+  },
+  "doom doom ii": {
+    "session_length": "short"
+  },
+  "doom ii": {
+    "session_length": "short"
+  },
+  "drag racing rivals": {
+    "session_length": "short"
+  },
+  "dragon age 2": {
+    "session_length": "long"
+  },
+  "dragon ball xenoverse 2": {
+    "session_length": "short"
+  },
+  "dragon ball z kakarot": {
+    "session_length": "long"
+  },
+  "dragon quest": {
+    "session_length": "long"
+  },
+  "dragon quest builders": {
+    "session_length": "long"
+  },
+  "dragon quest builders 2": {
+    "session_length": "long"
+  },
+  "dragon quest i hd2d remake": {
+    "session_length": "long"
+  },
+  "dragon quest ii hd2d remake": {
+    "session_length": "long"
+  },
+  "dragon quest ii luminaries of the legendary line": {
+    "session_length": "long"
+  },
+  "dragon quest iii hd2d remake": {
+    "session_length": "long"
+  },
+  "dragon quest iii the seeds of salvation": {
+    "session_length": "long"
+  },
+  "dragon quest treasures": {
+    "session_length": "long"
+  },
+  "dragon quest xi s echoes of an elusive age definitive edition": {
+    "session_length": "long"
+  },
+  "dragons dogma dark arisen": {
+    "session_length": "long"
+  },
+  "dream alone": {
+    "session_length": "short"
+  },
+  "driveclub": {
+    "session_length": "short"
+  },
+  "drums rock": {
+    "session_length": "short"
+  },
+  "duck detective the secret salami": {
+    "session_length": "short"
+  },
+  "duck game": {
+    "session_length": "short"
+  },
+  "dying light": {
+    "session_length": "long"
+  },
+  "eastward": {
+    "session_length": "long"
+  },
+  "edna harvey harveys new eyes": {
+    "session_length": "short"
+  },
+  "edna harvey the breakout anniversary edition": {
+    "session_length": "short"
+  },
+  "ego protocol": {
+    "session_length": "short"
+  },
+  "enter the gungeon": {
+    "session_length": "short"
+  },
+  "epistory typing chronicles": {
+    "session_length": "short"
+  },
+  "escape doodland": {
+    "session_length": "short"
+  },
+  "escape plan": {
+    "session_length": "short"
+  },
+  "everafter falls": {
+    "session_length": "long"
+  },
+  "evergate": {
+    "session_length": "short"
+  },
+  "everybodys golf vr": {
+    "session_length": "short"
+  },
+  "evoland legendary edition": {
+    "session_length": "long"
+  },
+  "exorder": {
+    "session_length": "short"
+  },
+  "eyes the horror game": {
+    "session_length": "short"
+  },
+  "fall guys ultimate knockout": {
+    "session_length": "short"
+  },
+  "fallout 3": {
+    "session_length": "long"
+  },
+  "fallout 4 game of the year edition": {
+    "session_length": "long"
+  },
+  "fallout new vegas": {
+    "session_length": "long"
+  },
+  "fantasy life i the girl who steals time": {
+    "session_length": "long"
+  },
+  "fantasy life i the girl who steals time nintendo switch 2 edition": {
+    "session_length": "long"
+  },
+  "fearmonium": {
+    "session_length": "long"
+  },
+  "final fantasy": {
+    "session_length": "long"
+  },
+  "final fantasy crystal chronicles": {
+    "session_length": "short"
+  },
+  "final fantasy ii": {
+    "session_length": "long"
+  },
+  "final fantasy iii": {
+    "session_length": "long"
+  },
+  "final fantasy iv": {
+    "session_length": "long"
+  },
+  "final fantasy ix": {
+    "session_length": "long"
+  },
+  "final fantasy legend ii": {
+    "session_length": "long"
+  },
+  "final fantasy legend iii": {
+    "session_length": "long"
+  },
+  "final fantasy type0 hd": {
+    "session_length": "short"
+  },
+  "final fantasy v": {
+    "session_length": "long"
+  },
+  "final fantasy vi": {
+    "session_length": "long"
+  },
+  "final fantasy vii": {
+    "session_length": "long"
+  },
+  "final fantasy vii rebirth": {
+    "session_length": "long"
+  },
+  "final fantasy vii remake": {
+    "session_length": "long"
+  },
+  "final fantasy vii remake intergrade": {
+    "session_length": "long"
+  },
+  "final fantasy viii remastered": {
+    "session_length": "long"
+  },
+  "final fantasy x": {
+    "session_length": "long"
+  },
+  "final fantasy x2": {
+    "session_length": "short"
+  },
+  "final fantasy xii the zodiac age": {
+    "session_length": "long"
+  },
+  "final fantasy xiii": {
+    "session_length": "long"
+  },
+  "final fantasy xiii2": {
+    "session_length": "long"
+  },
+  "final fantasy xiv": {
+    "session_length": "long"
+  },
+  "final fantasy xiv online": {
+    "session_length": "long"
+  },
+  "final fantasy xv": {
+    "session_length": "long"
+  },
+  "final fantasy xv multiplayer comrades": {
+    "session_length": "short"
+  },
+  "final fantasy xvi": {
+    "session_length": "long"
+  },
+  "final fight": {
+    "session_length": "short"
+  },
+  "fist forged in shadow torch": {
+    "session_length": "short"
+  },
+  "flippin kaktus": {
+    "session_length": "short"
+  },
+  "forager": {
+    "session_length": "long"
+  },
+  "forspoken": {
+    "session_length": "long"
+  },
+  "frontier hunter erzas wheel of fortune": {
+    "session_length": "long"
+  },
+  "fueled up": {
+    "session_length": "short"
+  },
+  "gal guardians demon purge": {
+    "session_length": "short"
+  },
+  "gang beasts": {
+    "session_length": "short"
+  },
+  "garden story": {
+    "session_length": "long"
+  },
+  "gato roboto": {
+    "session_length": "short"
+  },
+  "genshin impact": {
+    "session_length": "short"
+  },
+  "ghost of tsushima": {
+    "session_length": "long"
+  },
+  "glyph": {
+    "session_length": "short"
+  },
+  "goblin sword": {
+    "session_length": "short"
+  },
+  "golden force": {
+    "session_length": "short"
+  },
+  "golf story": {
+    "session_length": "short"
+  },
+  "good night knight": {
+    "session_length": "short"
+  },
+  "goodbye deponia": {
+    "session_length": "short"
+  },
+  "gotham knights": {
+    "session_length": "long"
+  },
+  "gotta protectors cart of darkness": {
+    "session_length": "short"
+  },
+  "grand theft auto iii": {
+    "session_length": "long"
+  },
+  "grand theft auto san andreas": {
+    "session_length": "long"
+  },
+  "grand theft auto san andreas the definitive edition": {
+    "session_length": "long"
+  },
+  "grand theft auto v premium edition": {
+    "session_length": "long"
+  },
+  "grand theft auto vice city": {
+    "session_length": "long"
+  },
+  "grandia": {
+    "session_length": "long"
+  },
+  "grandia ii": {
+    "session_length": "long"
+  },
+  "grapple dog": {
+    "session_length": "short"
+  },
+  "graveyard keeper ultimate collectors edition": {
+    "session_length": "long"
+  },
+  "gravity rush 2": {
+    "session_length": "long"
+  },
+  "gravity rush remastered": {
+    "session_length": "long"
+  },
+  "guacamelee 2 complete": {
+    "session_length": "long"
+  },
+  "guacamelee super turbo championship edition": {
+    "session_length": "long"
+  },
+  "guardian tales": {
+    "session_length": "short"
+  },
+  "hackgu vol1rebirth": {
+    "session_length": "long"
+  },
+  "hackgu vol2reminisce": {
+    "session_length": "long"
+  },
+  "hackgu vol3redemption": {
+    "session_length": "long"
+  },
+  "hackgu vol4reconnection": {
+    "session_length": "long"
+  },
+  "hades": {
+    "session_length": "short"
+  },
+  "haiku the robot": {
+    "session_length": "long"
+  },
+  "halo 2 anniversary": {
+    "session_length": "short"
+  },
+  "halo 3": {
+    "session_length": "short"
+  },
+  "halo 3 odst": {
+    "session_length": "short"
+  },
+  "halo 4": {
+    "session_length": "short"
+  },
+  "halo 5 guardians": {
+    "session_length": "short"
+  },
+  "halo combat evolved anniversary": {
+    "session_length": "short"
+  },
+  "halo infinite": {
+    "session_length": "short"
+  },
+  "halo reach": {
+    "session_length": "short"
+  },
+  "haven": {
+    "session_length": "long"
+  },
+  "headlander": {
+    "session_length": "long"
+  },
+  "hello neighbor": {
+    "session_length": "long"
+  },
+  "hello neighbor hide and seek": {
+    "session_length": "long"
+  },
+  "heroland": {
+    "session_length": "short"
+  },
+  "hole io": {
+    "session_length": "short"
+  },
+  "hollow knight": {
+    "session_length": "long"
+  },
+  "holy potatoes a weapon shop": {
+    "session_length": "long"
+  },
+  "holy potatoes were in space": {
+    "session_length": "long"
+  },
+  "horace": {
+    "session_length": "long"
+  },
+  "horizon call of the mountain": {
+    "session_length": "long"
+  },
+  "horizon forbidden west": {
+    "session_length": "long"
+  },
+  "horizon zero dawn complete edition": {
+    "session_length": "long"
+  },
+  "human fall flat": {
+    "session_length": "short"
+  },
+  "hyrule warriors age of calamity": {
+    "session_length": "short"
+  },
+  "i am setsuna": {
+    "session_length": "long"
+  },
+  "idle champions": {
+    "session_length": "short"
+  },
+  "immortals fenyx rising": {
+    "session_length": "long"
+  },
+  "indivisible": {
+    "session_length": "long"
+  },
+  "infamous first light": {
+    "session_length": "short"
+  },
+  "infamous second son": {
+    "session_length": "short"
+  },
+  "infinite minigolf": {
+    "session_length": "short"
+  },
+  "inside": {
+    "session_length": "short"
+  },
+  "into the breach": {
+    "session_length": "short"
+  },
+  "islets": {
+    "session_length": "short"
+  },
+  "it takes two": {
+    "session_length": "long"
+  },
+  "jack move": {
+    "session_length": "long"
+  },
+  "jade empire": {
+    "session_length": "long"
+  },
+  "journey": {
+    "session_length": "short"
+  },
+  "journey to the savage planet": {
+    "session_length": "long"
+  },
+  "katamari damacy reroll": {
+    "session_length": "short"
+  },
+  "kaze and the wild masks": {
+    "session_length": "short"
+  },
+  "kaze and the wild masks deluxe edition": {
+    "session_length": "short"
+  },
+  "kickerinho world": {
+    "session_length": "short"
+  },
+  "kid dracula": {
+    "session_length": "short"
+  },
+  "kids farm coloring": {
+    "session_length": "short"
+  },
+  "kill it with fire vr": {
+    "session_length": "short"
+  },
+  "kingdom hearts iii": {
+    "session_length": "long"
+  },
+  "kingdom heartsvr experience": {
+    "session_length": "short"
+  },
+  "kirby and the forgotten land nintendo switch 2 edition starcrossed world": {
+    "session_length": "short"
+  },
+  "kirbys return to dream land deluxe": {
+    "session_length": "short"
+  },
+  "kitaria fables": {
+    "session_length": "long"
+  },
+  "knack": {
+    "session_length": "short"
+  },
+  "knights of the round": {
+    "session_length": "short"
+  },
+  "kraino origins": {
+    "session_length": "short"
+  },
+  "la pucelle ragnarok": {
+    "session_length": "short"
+  },
+  "leap year": {
+    "session_length": "short"
+  },
+  "legend of mana": {
+    "session_length": "short"
+  },
+  "legend of zelda breath of the wild": {
+    "session_length": "long"
+  },
+  "lego batman 3 beyond gotham": {
+    "session_length": "short"
+  },
+  "lego dc supervillains": {
+    "session_length": "short"
+  },
+  "lego harry potter years 14": {
+    "session_length": "short"
+  },
+  "lego harry potter years 57": {
+    "session_length": "short"
+  },
+  "lego marvel super heroes": {
+    "session_length": "short"
+  },
+  "lego marvel super heroes 2": {
+    "session_length": "short"
+  },
+  "lego marvels avengers": {
+    "session_length": "short"
+  },
+  "lego star wars the skywalker saga": {
+    "session_length": "short"
+  },
+  "lego star wars the skywalker saga character collection 1": {
+    "session_length": "short"
+  },
+  "lego star wars the skywalker saga character collection 2": {
+    "session_length": "short"
+  },
+  "lego worlds": {
+    "session_length": "long"
+  },
+  "levelhead": {
+    "session_length": "short"
+  },
+  "life is strange": {
+    "session_length": "long"
+  },
+  "life is strange 2": {
+    "session_length": "long"
+  },
+  "life is strange before the storm": {
+    "session_length": "long"
+  },
+  "lightning returns final fantasy xiii": {
+    "session_length": "long"
+  },
+  "like a dragon pirate yakuza in hawaii": {
+    "session_length": "long"
+  },
+  "limbo": {
+    "session_length": "short"
+  },
+  "littlebigplanet3": {
+    "session_length": "short"
+  },
+  "locks quest": {
+    "session_length": "short"
+  },
+  "lost castle": {
+    "session_length": "short"
+  },
+  "lost in random": {
+    "session_length": "long"
+  },
+  "lost sphear": {
+    "session_length": "long"
+  },
+  "love 3": {
+    "session_length": "short"
+  },
+  "lunarlux": {
+    "session_length": "short"
+  },
+  "mado monogatari fia and the wondrous academy": {
+    "session_length": "long"
+  },
+  "make war": {
+    "session_length": "short"
+  },
+  "mangavania": {
+    "session_length": "short"
+  },
+  "mario kart 8 deluxe": {
+    "session_length": "short"
+  },
+  "mario kart world": {
+    "session_length": "short"
+  },
+  "mario rabbids kingdom battle": {
+    "session_length": "short"
+  },
+  "mario rabbids sparks of hope": {
+    "session_length": "short"
+  },
+  "marvel cosmic invasion": {
+    "session_length": "short"
+  },
+  "marvel ultimate alliance 3 the black order": {
+    "session_length": "short"
+  },
+  "marvels avengers": {
+    "session_length": "short"
+  },
+  "marvels midnight suns legendary edition": {
+    "session_length": "long"
+  },
+  "marvels spiderman 2": {
+    "session_length": "long"
+  },
+  "marvels spiderman miles morales": {
+    "session_length": "long"
+  },
+  "marvels spiderman remastered": {
+    "session_length": "long"
+  },
+  "mass effect andromeda deluxe recruit edition": {
+    "session_length": "long"
+  },
+  "mass effect legendary edition": {
+    "session_length": "long"
+  },
+  "master spy": {
+    "session_length": "short"
+  },
+  "mega man": {
+    "session_length": "short"
+  },
+  "mega man 10": {
+    "session_length": "short"
+  },
+  "mega man 11": {
+    "session_length": "short"
+  },
+  "mega man 2": {
+    "session_length": "short"
+  },
+  "mega man 3": {
+    "session_length": "short"
+  },
+  "mega man 4": {
+    "session_length": "short"
+  },
+  "mega man 5": {
+    "session_length": "short"
+  },
+  "mega man 6": {
+    "session_length": "short"
+  },
+  "mega man 7": {
+    "session_length": "short"
+  },
+  "mega man 8": {
+    "session_length": "short"
+  },
+  "mega man 9": {
+    "session_length": "short"
+  },
+  "mega man battle network": {
+    "session_length": "short"
+  },
+  "mega man battle network 2": {
+    "session_length": "short"
+  },
+  "mega man battle network 3 blue": {
+    "session_length": "short"
+  },
+  "mega man battle network 3 white": {
+    "session_length": "short"
+  },
+  "mega man battle network 4 blue moon": {
+    "session_length": "short"
+  },
+  "mega man battle network 4 red sun": {
+    "session_length": "short"
+  },
+  "mega man battle network 5 team colonel": {
+    "session_length": "short"
+  },
+  "mega man battle network 5 team protoman": {
+    "session_length": "short"
+  },
+  "mega man battle network 6 cybeast falzar": {
+    "session_length": "short"
+  },
+  "mega man battle network 6 cybeast gregar": {
+    "session_length": "short"
+  },
+  "mega man x": {
+    "session_length": "short"
+  },
+  "mega man x2": {
+    "session_length": "short"
+  },
+  "mega man x3": {
+    "session_length": "short"
+  },
+  "mega man x4": {
+    "session_length": "short"
+  },
+  "mega man x5": {
+    "session_length": "short"
+  },
+  "mega man x6": {
+    "session_length": "short"
+  },
+  "mega man x7": {
+    "session_length": "short"
+  },
+  "mega man x8": {
+    "session_length": "short"
+  },
+  "mega man zero": {
+    "session_length": "short"
+  },
+  "mega man zero 2": {
+    "session_length": "short"
+  },
+  "mega man zero 3": {
+    "session_length": "short"
+  },
+  "mega man zero 4": {
+    "session_length": "short"
+  },
+  "mega man zx": {
+    "session_length": "short"
+  },
+  "mega man zx advent": {
+    "session_length": "short"
+  },
+  "metal gear rising revengeance": {
+    "session_length": "short"
+  },
+  "metal gear solid v ground zeroes": {
+    "session_length": "short"
+  },
+  "metal gear solid v the phantom pain": {
+    "session_length": "short"
+  },
+  "mgs pw hd": {
+    "session_length": "short"
+  },
+  "mighty no 9": {
+    "session_length": "short"
+  },
+  "minighost": {
+    "session_length": "short"
+  },
+  "mining mechs": {
+    "session_length": "short"
+  },
+  "minit": {
+    "session_length": "short"
+  },
+  "mob control": {
+    "session_length": "short"
+  },
+  "momodora reverie under the moonlight": {
+    "session_length": "long"
+  },
+  "monopoly for nintendo switch": {
+    "session_length": "long"
+  },
+  "monster harvest": {
+    "session_length": "long"
+  },
+  "monster hunter stories": {
+    "session_length": "long"
+  },
+  "monster hunter stories 2 wings of ruin": {
+    "session_length": "long"
+  },
+  "monster of the deep final fantasy xv": {
+    "session_length": "short"
+  },
+  "monster sanctuary": {
+    "session_length": "long"
+  },
+  "monster train 2": {
+    "session_length": "short"
+  },
+  "monster train first class": {
+    "session_length": "short"
+  },
+  "monster world iv": {
+    "session_length": "long"
+  },
+  "moonlighter": {
+    "session_length": "short"
+  },
+  "moonstone island": {
+    "session_length": "long"
+  },
+  "moonstone island deluxe edition": {
+    "session_length": "long"
+  },
+  "moss": {
+    "session_length": "short"
+  },
+  "nexomon": {
+    "session_length": "short"
+  },
+  "nexomon extinction": {
+    "session_length": "short"
+  },
+  "ni no kuni ii revenant kingdom princes edition": {
+    "session_length": "long"
+  },
+  "nier automata": {
+    "session_length": "long"
+  },
+  "nintendo switch 2 welcome tour": {
+    "session_length": "short"
+  },
+  "nobody saves the world": {
+    "session_length": "short"
+  },
+  "nobody saves the world frozen hearth bundle": {
+    "session_length": "short"
+  },
+  "nova111": {
+    "session_length": "short"
+  },
+  "octodad dadliest catch": {
+    "session_length": "short"
+  },
+  "octopath traveler": {
+    "session_length": "short"
+  },
+  "odin sphere leifthrasir": {
+    "session_length": "short"
+  },
+  "okage shadow king": {
+    "session_length": "long"
+  },
+  "okami hd": {
+    "session_length": "long"
+  },
+  "oneshot world machine edition": {
+    "session_length": "long"
+  },
+  "outbuddies dx": {
+    "session_length": "long"
+  },
+  "outlast": {
+    "session_length": "long"
+  },
+  "outlast 2": {
+    "session_length": "long"
+  },
+  "overcooked 2": {
+    "session_length": "short"
+  },
+  "overcooked special edition": {
+    "session_length": "short"
+  },
+  "owlboy": {
+    "session_length": "long"
+  },
+  "paladins": {
+    "session_length": "short"
+  },
+  "pandemic shooter": {
+    "session_length": "short"
+  },
+  "paper beast": {
+    "session_length": "long"
+  },
+  "paranormasight the seven mysteries of honjo": {
+    "session_length": "short"
+  },
+  "part time ufo": {
+    "session_length": "short"
+  },
+  "pepper grinder": {
+    "session_length": "short"
+  },
+  "persona 4 golden": {
+    "session_length": "long"
+  },
+  "persona 5 royal": {
+    "session_length": "long"
+  },
+  "phantasy star online 2 new genesis": {
+    "session_length": "short"
+  },
+  "phoenix wright ace attorney": {
+    "session_length": "short"
+  },
+  "phoenix wright ace attorney justice for all": {
+    "session_length": "short"
+  },
+  "phoenix wright ace attorney trials and tribulations": {
+    "session_length": "short"
+  },
+  "pikmin 1": {
+    "session_length": "long"
+  },
+  "pikmin 2": {
+    "session_length": "long"
+  },
+  "pixeljunk monsters 2": {
+    "session_length": "short"
+  },
+  "plants vs zombies battle for neighborville": {
+    "session_length": "short"
+  },
+  "plants vs zombies garden warfare": {
+    "session_length": "short"
+  },
+  "plants vs zombies replanted": {
+    "session_length": "short"
+  },
+  "platform 8": {
+    "session_length": "short"
+  },
+  "playstation vr worlds": {
+    "session_length": "short"
+  },
+  "pocket mini golf": {
+    "session_length": "short"
+  },
+  "pocket mini golf 2": {
+    "session_length": "short"
+  },
+  "pokémon firered version": {
+    "session_length": "long"
+  },
+  "pokémon home": {
+    "session_length": "short"
+  },
+  "pokémon quest": {
+    "session_length": "short"
+  },
+  "pokémon unite": {
+    "session_length": "short"
+  },
+  "pool pro gold": {
+    "session_length": "short"
+  },
+  "portal": {
+    "session_length": "short"
+  },
+  "portal 2": {
+    "session_length": "short"
+  },
+  "potion permit": {
+    "session_length": "long"
+  },
+  "powerslave exhumed": {
+    "session_length": "short"
+  },
+  "powertris": {
+    "session_length": "short"
+  },
+  "prey": {
+    "session_length": "long"
+  },
+  "prey digital deluxe edition": {
+    "session_length": "long"
+  },
+  "primal light": {
+    "session_length": "short"
+  },
+  "prince of persia the lost crown": {
+    "session_length": "long"
+  },
+  "prototype": {
+    "session_length": "short"
+  },
+  "prototype 2": {
+    "session_length": "short"
+  },
+  "puzzle book": {
+    "session_length": "short"
+  },
+  "quake": {
+    "session_length": "short"
+  },
+  "quake ii": {
+    "session_length": "short"
+  },
+  "rainbow billy the curse of the leviathan": {
+    "session_length": "long"
+  },
+  "red faction guerrilla remarstered": {
+    "session_length": "short"
+  },
+  "rekt": {
+    "session_length": "short"
+  },
+  "rekt high octane stunts": {
+    "session_length": "short"
+  },
+  "remedium sentinels": {
+    "session_length": "short"
+  },
+  "resident evil 4": {
+    "session_length": "short"
+  },
+  "resident evil 7 biohazard": {
+    "session_length": "long"
+  },
+  "retro drive revamped": {
+    "session_length": "short"
+  },
+  "rez infinite": {
+    "session_length": "short"
+  },
+  "rhapsody a musical adventure": {
+    "session_length": "short"
+  },
+  "rise of the third power": {
+    "session_length": "short"
+  },
+  "ritual crown of horns": {
+    "session_length": "short"
+  },
+  "rock band 4 rivals bundle": {
+    "session_length": "short"
+  },
+  "rocksmith 2014 edition remastered": {
+    "session_length": "short"
+  },
+  "rogue legacy": {
+    "session_length": "short"
+  },
+  "rotwood": {
+    "session_length": "short"
+  },
+  "rubber bandits": {
+    "session_length": "short"
+  },
+  "rubber bandits go wild pack": {
+    "session_length": "short"
+  },
+  "run sausage run": {
+    "session_length": "short"
+  },
+  "saga scarlet grace ambitions": {
+    "session_length": "long"
+  },
+  "saints row iv": {
+    "session_length": "long"
+  },
+  "sakuna of rice and ruin": {
+    "session_length": "long"
+  },
+  "sakura wars": {
+    "session_length": "long"
+  },
+  "save me mr tako definitive edition": {
+    "session_length": "short"
+  },
+  "scarlet nexus": {
+    "session_length": "long"
+  },
+  "scott pilgrim vs the world the game": {
+    "session_length": "short"
+  },
+  "screencheat unplugged": {
+    "session_length": "short"
+  },
+  "scribblenauts mega pack": {
+    "session_length": "short"
+  },
+  "sea of solitude": {
+    "session_length": "long"
+  },
+  "sea of stars": {
+    "session_length": "long"
+  },
+  "secret of mana": {
+    "session_length": "long"
+  },
+  "shadow complex": {
+    "session_length": "long"
+  },
+  "shadows of adam": {
+    "session_length": "long"
+  },
+  "shadows over loathing": {
+    "session_length": "long"
+  },
+  "shantae": {
+    "session_length": "long"
+  },
+  "shantae halfgenie hero": {
+    "session_length": "short"
+  },
+  "shantae riskys revenge directors cut": {
+    "session_length": "long"
+  },
+  "sheepo": {
+    "session_length": "short"
+  },
+  "shenmue i ii": {
+    "session_length": "long"
+  },
+  "shenmue iii": {
+    "session_length": "long"
+  },
+  "shining resonance refrain": {
+    "session_length": "long"
+  },
+  "shovel knight treasure trove": {
+    "session_length": "short"
+  },
+  "skellboy refractured": {
+    "session_length": "long"
+  },
+  "sky children of the light": {
+    "session_length": "short"
+  },
+  "skyrim vr": {
+    "session_length": "long"
+  },
+  "slime rancher": {
+    "session_length": "long"
+  },
+  "slime rancher 2": {
+    "session_length": "long"
+  },
+  "snake pass": {
+    "session_length": "short"
+  },
+  "snipperclips": {
+    "session_length": "short"
+  },
+  "soma": {
+    "session_length": "long"
+  },
+  "sonic mania": {
+    "session_length": "short"
+  },
+  "sonic origins": {
+    "session_length": "short"
+  },
+  "south park the fractured but whole gold edition": {
+    "session_length": "short"
+  },
+  "south park the stick of truth": {
+    "session_length": "short"
+  },
+  "speedrunners": {
+    "session_length": "short"
+  },
+  "spellbreak": {
+    "session_length": "short"
+  },
+  "spiderman far from home vr": {
+    "session_length": "short"
+  },
+  "spirit hunters infinite horde": {
+    "session_length": "short"
+  },
+  "spookys jump scare mansion hd renovation": {
+    "session_length": "short"
+  },
+  "star horizon": {
+    "session_length": "short"
+  },
+  "star ocean first departure r": {
+    "session_length": "long"
+  },
+  "star ocean integrity and faithlessness": {
+    "session_length": "long"
+  },
+  "star ocean the last hope 4k full hd remaster": {
+    "session_length": "long"
+  },
+  "star ocean till the end of time": {
+    "session_length": "long"
+  },
+  "star wars jedi fallen order deluxe edition": {
+    "session_length": "long"
+  },
+  "star wars knights of the old republic": {
+    "session_length": "long"
+  },
+  "star wars knights of the old republic ii": {
+    "session_length": "long"
+  },
+  "stardew valley": {
+    "session_length": "short"
+  },
+  "starfield": {
+    "session_length": "long"
+  },
+  "steamworld build": {
+    "session_length": "long"
+  },
+  "steamworld dig": {
+    "session_length": "short"
+  },
+  "steamworld dig 2": {
+    "session_length": "short"
+  },
+  "steamworld heist": {
+    "session_length": "short"
+  },
+  "steamworld heist ii": {
+    "session_length": "short"
+  },
+  "steamworld quest": {
+    "session_length": "short"
+  },
+  "stories untold": {
+    "session_length": "short"
+  },
+  "strange horticulture": {
+    "session_length": "short"
+  },
+  "stranger of paradise final fantasy origin": {
+    "session_length": "short"
+  },
+  "strikeforce kitty": {
+    "session_length": "short"
+  },
+  "subnautica": {
+    "session_length": "long"
+  },
+  "subsurface circular": {
+    "session_length": "short"
+  },
+  "suika game": {
+    "session_length": "short"
+  },
+  "suika game multiplayer mode expansion pack": {
+    "session_length": "short"
+  },
+  "suika game planet": {
+    "session_length": "short"
+  },
+  "sun haven": {
+    "session_length": "long"
+  },
+  "super alloy ranger": {
+    "session_length": "short"
+  },
+  "super castlevania iv": {
+    "session_length": "short"
+  },
+  "super dungeon maker": {
+    "session_length": "short"
+  },
+  "super kirby clash": {
+    "session_length": "short"
+  },
+  "super mario rpg": {
+    "session_length": "long"
+  },
+  "super motherload": {
+    "session_length": "short"
+  },
+  "super smash bros ultimate": {
+    "session_length": "short"
+  },
+  "sword of the vagrant": {
+    "session_length": "short"
+  },
+  "tales of arise": {
+    "session_length": "long"
+  },
+  "tales of berseria": {
+    "session_length": "long"
+  },
+  "tales of graces f remastered": {
+    "session_length": "long"
+  },
+  "tales of kenzera zau": {
+    "session_length": "long"
+  },
+  "tales of symphonia remastered": {
+    "session_length": "long"
+  },
+  "tales of vesperia definitive edition": {
+    "session_length": "long"
+  },
+  "tales of zestiria": {
+    "session_length": "long"
+  },
+  "teenage mutant ninja turtles shredders revenge": {
+    "session_length": "short"
+  },
+  "teenage mutant ninja turtles shredders revenge ultimate edition": {
+    "session_length": "short"
+  },
+  "terror of hemasaurus": {
+    "session_length": "short"
+  },
+  "teslagrad": {
+    "session_length": "short"
+  },
+  "the awesome adventures of captain spirit": {
+    "session_length": "short"
+  },
+  "the bridge": {
+    "session_length": "short"
+  },
+  "the dark pictures anthology house of ashes": {
+    "session_length": "long"
+  },
+  "the dark pictures anthology little hope": {
+    "session_length": "long"
+  },
+  "the dark pictures anthology man of medan": {
+    "session_length": "long"
+  },
+  "the darkness": {
+    "session_length": "long"
+  },
+  "the darkness ii": {
+    "session_length": "short"
+  },
+  "the elder scrolls iv oblivion": {
+    "session_length": "long"
+  },
+  "the elder scrolls v skyrim anniversary edition": {
+    "session_length": "long"
+  },
+  "the exit 8": {
+    "session_length": "short"
+  },
+  "the final fantasy legend": {
+    "session_length": "long"
+  },
+  "the flame in the flood complete edition": {
+    "session_length": "short"
+  },
+  "the great ace attorney chronicles": {
+    "session_length": "short"
+  },
+  "the house in fata morgana dreams of the revenants edition": {
+    "session_length": "short"
+  },
+  "the king of dragons": {
+    "session_length": "short"
+  },
+  "the last of us": {
+    "session_length": "long"
+  },
+  "the last of us part ii": {
+    "session_length": "long"
+  },
+  "the last remnant remastered": {
+    "session_length": "long"
+  },
+  "the legend of dragoon": {
+    "session_length": "long"
+  },
+  "the legend of zelda breath of the wild": {
+    "session_length": "long"
+  },
+  "the lego movie 2 videogame": {
+    "session_length": "short"
+  },
+  "the lego movie videogame": {
+    "session_length": "short"
+  },
+  "the longest five minutes": {
+    "session_length": "short"
+  },
+  "the messenger": {
+    "session_length": "short"
+  },
+  "the mummy demastered": {
+    "session_length": "long"
+  },
+  "the persistence": {
+    "session_length": "short"
+  },
+  "the persistence enhanced edition": {
+    "session_length": "short"
+  },
+  "the playroom vr": {
+    "session_length": "short"
+  },
+  "the plucky squire": {
+    "session_length": "short"
+  },
+  "the stanley parable ultra deluxe": {
+    "session_length": "short"
+  },
+  "the swords of ditto": {
+    "session_length": "short"
+  },
+  "the talos principle deluxe edition": {
+    "session_length": "short"
+  },
+  "the witcher 2 assassins of kings": {
+    "session_length": "long"
+  },
+  "the witcher 3 wild hunt complete edition": {
+    "session_length": "long"
+  },
+  "the witness": {
+    "session_length": "short"
+  },
+  "theatrhythm final bar line": {
+    "session_length": "short"
+  },
+  "thimbleweed park": {
+    "session_length": "long"
+  },
+  "thumper": {
+    "session_length": "short"
+  },
+  "timespinner": {
+    "session_length": "long"
+  },
+  "tiny tinas wonderlands": {
+    "session_length": "short"
+  },
+  "tools up": {
+    "session_length": "short"
+  },
+  "totally reliable delivery service": {
+    "session_length": "short"
+  },
+  "trinity trigger": {
+    "session_length": "long"
+  },
+  "turnip boy commits tax evasion": {
+    "session_length": "short"
+  },
+  "turnip boy robs a bank": {
+    "session_length": "short"
+  },
+  "tyrants blessing": {
+    "session_length": "short"
+  },
+  "ultra despair girls": {
+    "session_length": "long"
+  },
+  "uncharted 2 among thieves": {
+    "session_length": "short"
+  },
+  "uncharted 3 drakes deception": {
+    "session_length": "short"
+  },
+  "uncharted 4 a thiefs end": {
+    "session_length": "short"
+  },
+  "uncharted drakes fortune": {
+    "session_length": "short"
+  },
+  "uncharted the lost legacy": {
+    "session_length": "short"
+  },
+  "underhero": {
+    "session_length": "long"
+  },
+  "unpacking": {
+    "session_length": "short"
+  },
+  "unravel": {
+    "session_length": "short"
+  },
+  "unravel two": {
+    "session_length": "short"
+  },
+  "unsighted": {
+    "session_length": "long"
+  },
+  "valkyrie profile lenneth": {
+    "session_length": "long"
+  },
+  "valthirian arc hero school story": {
+    "session_length": "short"
+  },
+  "valthirian arc hero school story 2": {
+    "session_length": "short"
+  },
+  "vampire crawlers the turbo wildcard from vampire survivors": {
+    "session_length": "short"
+  },
+  "vampire survivors": {
+    "session_length": "short"
+  },
+  "voice of cards the beasts of burden": {
+    "session_length": "short"
+  },
+  "voice of cards the forsaken maiden": {
+    "session_length": "short"
+  },
+  "voice of cards the isle dragon roars": {
+    "session_length": "short"
+  },
+  "void scrappers": {
+    "session_length": "short"
+  },
+  "warframe": {
+    "session_length": "short"
+  },
+  "wargroove double trouble bundle": {
+    "session_length": "short"
+  },
+  "warriors of fate": {
+    "session_length": "short"
+  },
+  "watch dogs": {
+    "session_length": "long"
+  },
+  "watch dogs 2": {
+    "session_length": "long"
+  },
+  "we love katamari reroll royal reverie": {
+    "session_length": "short"
+  },
+  "west of loathing": {
+    "session_length": "long"
+  },
+  "whispike survivors": {
+    "session_length": "short"
+  },
+  "wild arms": {
+    "session_length": "long"
+  },
+  "windbound": {
+    "session_length": "long"
+  },
+  "wonder boy iii monster lair": {
+    "session_length": "short"
+  },
+  "wonder boy in monster world": {
+    "session_length": "long"
+  },
+  "world of final fantasy maxima": {
+    "session_length": "short"
+  },
+  "worldless": {
+    "session_length": "long"
+  },
+  "wreckin ball adventure": {
+    "session_length": "short"
+  },
+  "xcom 2 collection": {
+    "session_length": "short"
+  },
+  "xiii": {
+    "session_length": "short"
+  },
+  "yakuza 0": {
+    "session_length": "long"
+  },
+  "yakuza 3": {
+    "session_length": "long"
+  },
+  "yakuza 4": {
+    "session_length": "long"
+  },
+  "yakuza 5": {
+    "session_length": "long"
+  },
+  "yakuza 6 the song of life": {
+    "session_length": "long"
+  },
+  "yakuza kiwami": {
+    "session_length": "long"
+  },
+  "yakuza kiwami 2": {
+    "session_length": "long"
+  },
+  "yakuza like a dragon": {
+    "session_length": "long"
+  },
+  "yookalaylee": {
+    "session_length": "long"
+  },
+  "yookalaylee and the impossible lair": {
+    "session_length": "short"
+  },
+  "ys ix monstrum nox": {
+    "session_length": "long"
+  },
+  "ys memories of celceta": {
+    "session_length": "long"
+  },
+  "ys origin": {
+    "session_length": "short"
+  },
+  "ys viii lacrimosa of dana": {
+    "session_length": "long"
+  },
+  "yugioh master duel": {
+    "session_length": "short"
+  }
+}
