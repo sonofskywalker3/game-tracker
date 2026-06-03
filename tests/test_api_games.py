@@ -529,3 +529,28 @@ def test_igdb_candidates_and_pick(client, temp_db, monkeypatch):
     ).fetchone()
     conn.close()
     assert row["igdb_id"] == 1711 and row["igdb_locked"] == 1 and row["needs_igdb_review"] == 0
+    assert row["cover_url"] == "https://x/t_cover_big/2.jpg"
+
+
+def test_igdb_pick_coalesce_preserves_existing_cover(client, temp_db):
+    """Picking with cover_url=None must NOT overwrite an existing cover_url (COALESCE)."""
+    conn = models.get_db()
+    conn.execute(
+        "INSERT INTO games (id, title, normalized_title, cover_url) "
+        "VALUES (2, 'Test Game', 'test game', 'https://existing/cover.jpg')"
+    )
+    conn.commit()
+    conn.close()
+
+    r = client.post("/api/games/2/igdb-pick", json={"igdb_id": 9999, "cover_url": None})
+    assert r.status_code == 200
+
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT igdb_id, cover_url, igdb_locked, needs_igdb_review FROM games WHERE id=2"
+    ).fetchone()
+    conn.close()
+    assert row["igdb_id"] == 9999
+    assert row["igdb_locked"] == 1
+    assert row["needs_igdb_review"] == 0
+    assert row["cover_url"] == "https://existing/cover.jpg"

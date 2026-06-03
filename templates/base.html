@@ -1261,6 +1261,7 @@
             box.classList.remove('hidden');
             box.innerHTML = '<span class="text-xs text-gray-400 col-span-2">Searching IGDB…</span>';
             const res = await api.get(`/api/games/${gameId}/igdb-candidates`);
+            if (res.error) { box.innerHTML = `<span class="text-xs text-yellow-400 col-span-2">${escapeHtml(res.error)}</span>`; return; }
             const cands = (res.candidates || []);
             if (!cands.length) {
                 box.innerHTML = '<span class="text-xs text-yellow-400 col-span-2">No candidates found.</span>';
@@ -1269,14 +1270,15 @@
             box.innerHTML = cands.map(c => `
                 <button onclick='pickIgdb(${gameId}, ${c.igdb_id}, ${JSON.stringify(c.cover_url)})'
                         class="text-left bg-surface rounded-lg border border-gray-700 hover:border-accent p-2">
-                  ${c.cover_url ? `<img src="${c.cover_url}" class="w-full h-24 object-cover rounded mb-1">` : ''}
+                  ${c.cover_url ? `<img src="${escapeHtml(c.cover_url)}" class="w-full h-24 object-cover rounded mb-1">` : ''}
                   <div class="text-xs text-white">${escapeHtml(c.name || '')}</div>
                   <div class="text-[10px] text-gray-400">${c.source}${(c.platforms || []).length ? ' · ' + c.platforms.length + ' platforms' : ''}</div>
                 </button>`).join('');
         }
 
         async function pickIgdb(gameId, igdbId, coverUrl) {
-            await api.post(`/api/games/${gameId}/igdb-pick`, {igdb_id: igdbId, cover_url: coverUrl});
+            const res = await api.post(`/api/games/${gameId}/igdb-pick`, {igdb_id: igdbId, cover_url: coverUrl});
+            if (!res.ok) { alert(res.data?.error || 'Could not apply that match'); return; }
             closeModal();
             if (typeof refreshGameList === 'function') refreshGameList();
         }
