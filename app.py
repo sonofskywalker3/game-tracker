@@ -1817,7 +1817,10 @@ def api_get_settings():
     masked = {
         'twitch_client_id': config.get('twitch_client_id', ''),
         'twitch_client_secret': '••••••••' if config.get('twitch_client_secret') else '',
-        'has_credentials': bool(config.get('twitch_client_id') and config.get('twitch_client_secret'))
+        'has_credentials': bool(config.get('twitch_client_id') and config.get('twitch_client_secret')),
+        'anthropic_api_key': '••••••••' if config.get('anthropic_api_key') else '',
+        'decider_model': config.get('decider_model', 'claude-sonnet-4-6'),
+        'has_anthropic_key': bool(config.get('anthropic_api_key')),
     }
     return jsonify(masked)
 
@@ -1833,6 +1836,12 @@ def api_update_settings():
 
     if 'twitch_client_secret' in data and data['twitch_client_secret'] != '••••••••':
         updates['twitch_client_secret'] = data['twitch_client_secret'].strip()
+
+    if 'anthropic_api_key' in data and data['anthropic_api_key'] != '••••••••':
+        updates['anthropic_api_key'] = data['anthropic_api_key'].strip()
+
+    if 'decider_model' in data:
+        updates['decider_model'] = data['decider_model'].strip()
 
     if updates:
         save_config(updates)
