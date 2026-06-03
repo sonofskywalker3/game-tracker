@@ -49,7 +49,7 @@ for clause in ('category = 0', 'game_type = 0'):
 
 Expected: at least one clause returns 3 well-known high-rating games (e.g. Witcher 3, Zelda BotW, GTA V).
 
-- [ ] **Step 2: Record the working clause** in `popular_seed.py`'s `_MAIN_GAME_FILTER` constant (Task 1). If `category = 0` works, use it; else use whichever clause returned data. Note the result in the commit message for Task 1.
+- [x] **Step 2: Record the working clause.** ✅ DONE 2026-06-03: `category = 0` returned `[]` (deprecated); **`game_type = 0` is the field** (returned GTA V / Witcher 3 / Portal 2). `_MAIN_GAME_FILTER = "game_type = 0"` is baked into Task 1.
 
 ---
 
@@ -121,7 +121,7 @@ from pathlib import Path
 import igdb_dlc
 from models import GAME_TRAITS_DEFAULT_PATH, normalize_title
 
-_MAIN_GAME_FILTER = "category = 0"  # verified live in Phase 0; main_game only
+_MAIN_GAME_FILTER = "game_type = 0"  # verified live in Phase 0 (category=0 returns []; game_type=0 = main_game)
 _PAGE_SIZE = 500
 _REQ_PAUSE_SECONDS = 0.25  # IGDB courtesy (4 req/s)
 
@@ -185,7 +185,7 @@ Expected: All checks passed.
 git add popular_seed.py tests/test_popular_seed.py
 git commit -m "feat(seed): fetch_top_games pulls most-rated IGDB main games
 
-Phase 0 spike result: <category=0 | game_type=0> selects main games.
+Phase 0 spike result: game_type=0 selects main games (category=0 deprecated, returns []).
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
