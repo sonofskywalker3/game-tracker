@@ -642,6 +642,8 @@ def api_igdb_pick(game_id):
     """Apply a chosen IGDB identity: set igdb_id + cover_url, lock, clear review."""
     data = request.get_json(silent=True) or {}
     igdb_id = data.get('igdb_id')
+    if igdb_id is None:
+        return jsonify({'error': 'igdb_id is required'}), 400
     cover_url = (data.get('cover_url') or '').strip() or None
     conn = get_db()
     if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
