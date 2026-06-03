@@ -22,6 +22,7 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_game_traits(conn)
     models.migrate_collection_name(conn)
     models.migrate_series_source(conn)
+    models.migrate_igdb_review(conn)
     models.seed_default_slots(conn)
     conn.close()
     return db_path

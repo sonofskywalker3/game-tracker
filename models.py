@@ -747,6 +747,20 @@ def migrate_series_source(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_igdb_review(conn: sqlite3.Connection) -> None:
+    """Add games.igdb_locked + games.needs_igdb_review. Idempotent.
+    igdb_locked=1 protects a hand-picked IGDB identity from enrichment + audit.
+    needs_igdb_review=1 flags a game the audit thinks matched the wrong version.
+    """
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    additions = [("igdb_locked", "INTEGER NOT NULL DEFAULT 0"),
+                 ("needs_igdb_review", "INTEGER NOT NULL DEFAULT 0")]
+    for name, decl in additions:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE games ADD COLUMN {name} {decl}")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -842,6 +856,7 @@ def migrate_db():
     migrate_game_traits(conn)
     migrate_collection_name(conn)
     migrate_series_source(conn)
+    migrate_igdb_review(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)
