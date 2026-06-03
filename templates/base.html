@@ -969,6 +969,13 @@
                             <p class="text-xs text-gray-500 mt-1">Paste an IGDB or Steam URL above to pin this game's source. Use the cover field below to set a literal image URL.</p>
                         </div>
 
+                        <!-- Fix IGDB match -->
+                        <div class="mt-2">
+                          <button onclick="loadIgdbCandidates(${game.id})"
+                                  class="text-xs text-accent hover:underline">Wrong version? Fix match</button>
+                          <div id="igdb-candidates-${game.id}" class="mt-2 hidden grid grid-cols-2 gap-2"></div>
+                        </div>
+
                         <!-- Change cover + literal cover URL -->
                         <div>
                             <label class="block text-sm font-medium text-gray-400 mb-1">Cover image</label>
@@ -1247,6 +1254,31 @@
             if (!el) return;
             if (msg) { el.textContent = msg; el.classList.remove('hidden'); }
             else { el.textContent = ''; el.classList.add('hidden'); }
+        }
+
+        async function loadIgdbCandidates(gameId) {
+            const box = document.getElementById(`igdb-candidates-${gameId}`);
+            box.classList.remove('hidden');
+            box.innerHTML = '<span class="text-xs text-gray-400 col-span-2">Searching IGDB…</span>';
+            const res = await api.get(`/api/games/${gameId}/igdb-candidates`);
+            const cands = (res.candidates || []);
+            if (!cands.length) {
+                box.innerHTML = '<span class="text-xs text-yellow-400 col-span-2">No candidates found.</span>';
+                return;
+            }
+            box.innerHTML = cands.map(c => `
+                <button onclick='pickIgdb(${gameId}, ${c.igdb_id}, ${JSON.stringify(c.cover_url)})'
+                        class="text-left bg-surface rounded-lg border border-gray-700 hover:border-accent p-2">
+                  ${c.cover_url ? `<img src="${c.cover_url}" class="w-full h-24 object-cover rounded mb-1">` : ''}
+                  <div class="text-xs text-white">${escapeHtml(c.name || '')}</div>
+                  <div class="text-[10px] text-gray-400">${c.source}${(c.platforms || []).length ? ' · ' + c.platforms.length + ' platforms' : ''}</div>
+                </button>`).join('');
+        }
+
+        async function pickIgdb(gameId, igdbId, coverUrl) {
+            await api.post(`/api/games/${gameId}/igdb-pick`, {igdb_id: igdbId, cover_url: coverUrl});
+            closeModal();
+            if (typeof refreshGameList === 'function') refreshGameList();
         }
 
         async function setSourceLink(gameId, url) {
