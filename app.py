@@ -86,6 +86,7 @@ def api_games():
             g.collection_name,
             g.metacritic_score,
             g.opencritic_score,
+            COALESCE(g.needs_igdb_review, 0) AS needs_igdb_review,
             ur.status,
             ur.rating,
             ur.priority,
@@ -175,6 +176,7 @@ def api_games():
         """, (row['id'],)).fetchall()
         game['tags'] = [{'name': t['name'], 'category': t['category']} for t in tags]
         game['physical'] = any(t['name'] == 'Physical' for t in game['tags'])
+        game['needs_igdb_review'] = bool(game.get('needs_igdb_review'))
 
         games.append(game)
 
