@@ -7,10 +7,12 @@ into game_traits.default.json with a minimal diff. It never touches games.db.
 """
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import igdb_dlc
-from models import normalize_title
+from models import GAME_TRAITS_DEFAULT_PATH, normalize_title
 
 _MAIN_GAME_FILTER = "game_type = 0"  # verified live in Phase 0 (category=0 returns []; game_type=0 = main_game)
 _PAGE_SIZE = 500
@@ -57,4 +59,20 @@ def fetch_top_games(n: int, *, client_id: str, token: str,
                 break
         offset += page_size
         time.sleep(_REQ_PAUSE_SECONDS)
+    return out
+
+
+def select_unseeded(games: list[dict], *,
+                    catalog_path: Path = GAME_TRAITS_DEFAULT_PATH) -> list[dict]:
+    """Drop games whose normalized_title already has a catalog entry, and
+    intra-list normalized_title duplicates (first occurrence wins)."""
+    existing = set(json.loads(catalog_path.read_text(encoding="utf-8")))
+    out: list[dict] = []
+    seen: set[str] = set()
+    for g in games:
+        nt = g["normalized_title"]
+        if nt in existing or nt in seen:
+            continue
+        seen.add(nt)
+        out.append(g)
     return out
