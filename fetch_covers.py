@@ -151,51 +151,16 @@ def _igdb_search(clean_title, client_id, access_token):
     return response.json()
 
 
-def search_game(title, client_id, access_token, strict=False):
-    """Search IGDB for a game and return cover URL if found.
-
-    When strict, only a confident (normalized exact/containment) match is
-    accepted; the loose "first result with any cover" fallback is skipped so an
-    existing correct cover is never replaced by a wrong game's art.
-    """
-
-    # Clean up title for better matching (and to avoid query-breaking quotes)
-    clean_title = clean_search_title(title)
-
-    results = _igdb_search(clean_title, client_id, access_token)
-
-    if not results:
-        return None
-
-    # Find best match
-    normalized_search = normalize_title(clean_title)
-
-    for game in results:
-        normalized_result = normalize_title(game.get('name', ''))
-        # Check for exact or close match
-        if normalized_result == normalized_search or normalized_search in normalized_result or normalized_result in normalized_search:
-            cover = game.get('cover', {})
-            if cover and cover.get('url'):
-                # Convert to high-res URL
-                # IGDB returns //images.igdb.com/igdb/image/upload/t_thumb/xxx.jpg
-                # We want t_cover_big (264x374) or t_720p (1280x720)
-                url = cover['url']
-                url = url.replace('t_thumb', 't_cover_big')
-                if not url.startswith('http'):
-                    url = 'https:' + url
-                return url
-
-    # If no confident match, take first result with cover — unless strict.
-    if not strict:
-        for game in results:
-            cover = game.get('cover', {})
-            if cover and cover.get('url'):
-                url = cover['url']
-                url = url.replace('t_thumb', 't_cover_big')
-                if not url.startswith('http'):
-                    url = 'https:' + url
-                return url
-
+def search_game(title, client_id, access_token, strict=False,
+                platform_ids=None, collection_name=None):
+    """Return the cover URL for the best IGDB identity match (bundle-first,
+    platform-aware). `strict` is retained for callers that must not replace an
+    existing correct cover with a low-confidence guess."""
+    import igdb_match
+    identity = igdb_match.resolve_identity(
+        title, set(platform_ids or ()), collection_name, client_id, access_token)
+    if identity and identity.get("cover_url"):
+        return identity["cover_url"]
     return None
 
 
@@ -287,11 +252,15 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
 
     conn = get_db()
 
-    rows = conn.execute("SELECT id, title, cover_url FROM games ORDER BY title").fetchall()
+    rows = conn.execute(
+        "SELECT id, title, cover_url, collection_name, "
+        "COALESCE(igdb_locked, 0) AS igdb_locked FROM games ORDER BY title"
+    ).fetchall()
     if skip_existing:
-        games = [g for g in rows if needs_cover(g['cover_url'], upgrade=upgrade_non_igdb)]
+        games = [g for g in rows
+                 if not g["igdb_locked"] and needs_cover(g['cover_url'], upgrade=upgrade_non_igdb)]
     else:
-        games = list(rows)  # --all: re-fetch everything
+        games = [g for g in rows if not g["igdb_locked"]]
 
     if limit:
         games = games[:limit]
@@ -304,11 +273,18 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
         yield {'current': 0, 'total': 0, 'status': 'complete', 'found': 0, 'not_found': []}
         return
 
+    import igdb_match
     for i, game in enumerate(games, 1):
         title = game['title']
 
         try:
-            cover_url = search_game(title, client_id, access_token, strict=upgrade_non_igdb)
+            plat_short = [r[0] for r in conn.execute(
+                "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
+                "ON p.id = gp.platform_id WHERE gp.game_id = ?", (game["id"],))]
+            cover_url = search_game(
+                title, client_id, access_token, strict=upgrade_non_igdb,
+                platform_ids=igdb_match.platform_ids_for(plat_short),
+                collection_name=game["collection_name"])
 
             if cover_url:
                 conn.execute(

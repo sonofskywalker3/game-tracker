@@ -162,3 +162,15 @@ def test_classify_rename_reviews_questionable():
 
 def test_classify_rename_applies_clean_casing_fix():
     assert classify_rename("Bioshock", "BioShock") == "apply"
+
+
+def test_search_game_uses_platform_aware_resolver(monkeypatch):
+    import fetch_covers
+    import igdb_match
+    monkeypatch.setattr(igdb_match, "resolve_identity",
+                        lambda *a, **k: {"igdb_id": 1, "name": "Mega Man 2",
+                                         "cover_url": "https://x/t_cover_big/2.jpg",
+                                         "source": "bundle"})
+    url = fetch_covers.search_game("Mega Man 2", "c", "t",
+                                   platform_ids={130}, collection_name="Mega Man Legacy Collection 2")
+    assert url == "https://x/t_cover_big/2.jpg"
