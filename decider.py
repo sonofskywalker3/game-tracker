@@ -2,7 +2,7 @@
 blocking Messages call. The Anthropic client is injectable for testing."""
 import json
 import logging
-import re  # noqa: F401
+import re
 import sqlite3
 
 import config  # noqa: F401
@@ -87,3 +87,22 @@ def build_slot_context(conn: sqlite3.Connection, slot: dict) -> str:
     if slot.get("context_notes"):
         parts.append(f"Notes: {slot['context_notes']}")
     return "\n".join(parts)
+
+
+_SUGGESTIONS_RE = re.compile(r"<suggestions>(.*?)</suggestions>", re.IGNORECASE | re.DOTALL)
+
+
+def parse_suggestions(text: str, valid_ids: set[int]) -> tuple[str, list[int]]:
+    """Strip the trailing <suggestions> line from the prose and return (reply, ids).
+    Ids not present in valid_ids (the snapshot's games) are dropped — never pin a phantom."""
+    ids: list[int] = []
+    match = None
+    for match in _SUGGESTIONS_RE.finditer(text):
+        pass  # keep the last match
+    if match:
+        for tok in match.group(1).split(","):
+            tok = tok.strip()
+            if tok.isdigit() and int(tok) in valid_ids and int(tok) not in ids:
+                ids.append(int(tok))
+        text = _SUGGESTIONS_RE.sub("", text)
+    return text.strip(), ids
