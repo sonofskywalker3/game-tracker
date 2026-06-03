@@ -97,18 +97,26 @@ def test_resolve_identity_bundle_first(monkeypatch):
         if "where bundles = (28323)" in query:                   # constituents
             return [{"id": 1711, "name": "Mega Man 2", "platforms": [18],
                      "cover": {"url": "//x/t_thumb/2.jpg"}}]
-        raise AssertionError("should not fall back to search scorer")
+        # fetch_candidates IS called; it returns the same candidate so dedup
+        # suppresses it, and the bundle result still wins.
+        return [{"id": 1711, "name": "Mega Man 2", "platforms": [18],
+                 "cover": {"url": "//x/t_thumb/2.jpg"}}]
     monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
     got = igdb_match.resolve_identity(
         "Mega Man 2", {130}, "Mega Man Legacy Collection 2", "c", "t")
     assert got["igdb_id"] == 1711
     assert got["source"] == "bundle"
     assert got["cover_url"].endswith("t_cover_big/2.jpg")
+    # Confirm dedup: candidates_for returns exactly ONE entry (the bundle one)
+    # because the duplicate search result is filtered out by the seen-set.
+    cands = igdb_match.candidates_for(
+        "Mega Man 2", {130}, "Mega Man Legacy Collection 2", "c", "t")
+    assert len(cands) == 1
 
 
 def test_resolve_identity_falls_back_to_scorer(monkeypatch):
     def fake(query, cid, tok):
-        if "search \"Celeste\"" in query and "game_type" in query:
+        if "search \"Celeste\"" in query and "cover.url" in query:  # fetch_candidates only
             return [{"id": 5, "name": "Celeste", "platforms": [6],
                      "cover": {"url": "//x/t_thumb/c.jpg"},
                      "total_rating_count": 50}]
@@ -116,3 +124,27 @@ def test_resolve_identity_falls_back_to_scorer(monkeypatch):
     monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
     got = igdb_match.resolve_identity("Celeste", {6}, None, "c", "t")
     assert got["igdb_id"] == 5 and got["source"] == "search"
+
+
+def test_resolve_identity_bundle_resolves_but_no_constituent_match_falls_through(monkeypatch):
+    # The bundle is found and has constituents, but none match the game title.
+    # resolve_identity must fall through to the search scorer and return its result.
+    def fake(query, cid, tok):
+        # fetch_candidates uniquely has both "cover.url" AND "search"; bundle_constituents
+        # has "cover.url" but no "search"; resolve_bundle has "search" but no "cover.url".
+        if "cover.url" in query and "search" in query:           # fetch_candidates
+            return [{"id": 777, "name": "Returnal", "platforms": [167],
+                     "cover": {"url": "//x/t_thumb/r.jpg"},
+                     "total_rating_count": 100, "first_release_date": 2021}]
+        if "game_type" in query and "search" in query:           # resolve_bundle
+            return [{"id": 99, "name": "Some Bundle Pack",
+                     "game_type": 3, "platforms": [167]}]
+        if "where bundles = (99)" in query:                      # constituents — no title match
+            return [{"id": 555, "name": "Totally Different Game", "platforms": [167],
+                     "cover": {"url": "//x/t_thumb/x.jpg"}}]
+        return []
+    monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
+    got = igdb_match.resolve_identity("Returnal", {167}, "Some Bundle Pack", "c", "t")
+    assert got is not None
+    assert got["igdb_id"] == 777
+    assert got["source"] == "search"

@@ -10,6 +10,8 @@ All IGDB access goes through igdb_dlc._igdb_query (monkeypatched in tests).
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import igdb_dlc
 from models import normalize_title
 
@@ -33,9 +35,10 @@ _TITLE_CONTAINS = 40
 _PLATFORM_OVERLAP = 50
 _MOBILE_PENALTY = -80
 _HAS_COVER = 10
+_BUNDLE_GAME_TYPE = 3
 
 
-def platform_ids_for(short_names) -> set[int]:
+def platform_ids_for(short_names: Iterable[str] | None) -> set[int]:
     """Map app platform short_names to the set of IGDB platform ids."""
     out: set[int] = set()
     for sn in short_names or ():
@@ -78,6 +81,8 @@ def score_candidates(candidates: list[dict], *, game_platform_ids: set[int],
         out["_score"] = score
         out["_mobile_only"] = mobile_only
         ranked.append(out)
+    # -(first_release_date) makes the EARLIEST/original release win ties,
+    # so the canonical retro entry beats modern re-releases.
     ranked.sort(key=lambda c: (c["_score"], c.get("total_rating_count") or 0,
                                -(c.get("first_release_date") or 0)), reverse=True)
     return ranked
@@ -90,6 +95,8 @@ def _escape(title: str) -> str:
 def fetch_candidates(title: str, client_id: str, token: str,
                      limit: int = 10) -> list[dict]:
     """Title-search IGDB, returning candidates WITH platform + ranking signals."""
+    # game_type is surfaced for the Phase-4 disambiguation modal display,
+    # not used by the scorer.
     query = (
         f'search "{_escape(title)}"; '
         "fields name, cover.url, platforms, first_release_date, "
@@ -107,9 +114,6 @@ def cover_url_of(candidate: dict) -> str | None:
         return None
     url = url.replace("t_thumb", "t_cover_big")
     return url if url.startswith("http") else "https:" + url
-
-
-_BUNDLE_GAME_TYPE = 3
 
 
 def resolve_bundle(name: str, game_platform_ids: set[int],
@@ -155,7 +159,7 @@ def bundle_constituents(bundle_id: int, client_id: str, token: str) -> list[dict
     return out
 
 
-def _as_identity(igdb_id, name, cover_url, source) -> dict:
+def _as_identity(igdb_id: int | None, name: str | None, cover_url: str | None, source: str) -> dict:
     return {"igdb_id": igdb_id, "name": name, "cover_url": cover_url,
             "source": source}
 
@@ -175,6 +179,8 @@ def candidates_for(title: str, game_platform_ids: set[int],
                 if normalize_title(c["name"] or "") == target and c["igdb_id"] not in seen:
                     seen.add(c["igdb_id"])
                     out.append({**c, "source": "bundle"})
+    # Bundle constituents carry the IGDB id under "igdb_id"; raw search results
+    # carry it under "id" — same value, different dict shape — so the dedup is intentional.
     for c in score_candidates(fetch_candidates(title, client_id, token),
                               game_platform_ids=game_platform_ids, title=title):
         if c.get("id") in seen:
