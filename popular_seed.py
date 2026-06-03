@@ -7,7 +7,9 @@ into game_traits.default.json with a minimal diff. It never touches games.db.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -103,3 +105,38 @@ def merge_classifications(verdicts: list[dict], *,
         out += "\n"
     catalog_path.write_text(out, encoding="utf-8", newline="\n")
     return added, skipped
+
+
+logger = logging.getLogger(__name__)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="SP-B popular-games session_length seed")
+    parser.add_argument("--fetch", type=int, metavar="N",
+                        help="fetch top-N popular games from IGDB to --out (JSON)")
+    parser.add_argument("--out", type=str, help="output path for --fetch")
+    parser.add_argument("--merge", type=str, metavar="VERDICTS_JSON",
+                        help="merge approved {normalized_title, session_length} verdicts")
+    args = parser.parse_args(argv)
+
+    if args.fetch:
+        import config
+        cid, sec = config.get_twitch_credentials()
+        token = igdb_dlc.get_access_token(cid, sec)
+        games = select_unseeded(fetch_top_games(args.fetch, client_id=cid, token=token))
+        out_path = Path(args.out or "popular_seed_input.json")
+        out_path.write_text(json.dumps(games, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"fetched {len(games)} unseeded games -> {out_path}")
+        return
+
+    if args.merge:
+        verdicts = json.loads(Path(args.merge).read_text(encoding="utf-8"))
+        added, skipped = merge_classifications(verdicts, catalog_path=GAME_TRAITS_DEFAULT_PATH)
+        print(f"merged: added {added}, skipped {skipped}")
+        return
+
+    parser.error("nothing to do: pass --fetch N or --merge PATH")
+
+
+if __name__ == "__main__":
+    main()
