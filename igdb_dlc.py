@@ -132,8 +132,9 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
     Cover is overwritten when pinning by slug; on auto-resolution it is only set
     when the game has no cover (never clobbers a user/IGDB cover).
     """
-    row = conn.execute("SELECT title, igdb_id, cover_url FROM games WHERE id = ?",
-                       (game_id,)).fetchone()
+    row = conn.execute(
+        "SELECT title, igdb_id, cover_url, collection_name FROM games WHERE id = ?",
+        (game_id,)).fetchone()
     if not row:
         return {"matched": False, "cover_set": False, "added": 0, "existing": 0}
     if slug:
@@ -141,7 +142,14 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
     elif row["igdb_id"]:
         game = fetch_game_by_id(row["igdb_id"], client_id, token)
     else:
-        game = fetch_game_by_title(row["title"], client_id, token)
+        import igdb_match
+        plat_short = [r[0] for r in conn.execute(
+            "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
+            "ON p.id = gp.platform_id WHERE gp.game_id = ?", (game_id,))]
+        identity = igdb_match.resolve_identity(
+            row["title"], igdb_match.platform_ids_for(plat_short),
+            row["collection_name"], client_id, token)
+        game = fetch_game_by_id(identity["igdb_id"], client_id, token) if identity else None
     if not game:
         return {"matched": False, "cover_set": False, "added": 0, "existing": 0}
     conn.execute("UPDATE games SET igdb_id = ? WHERE id = ?", (game.get("id"), game_id))

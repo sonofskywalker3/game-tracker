@@ -113,6 +113,25 @@ def test_enrich_game_no_match_returns_unmatched(temp_db, monkeypatch):
     conn.close()
 
 
+def test_enrich_game_title_path_uses_resolver(temp_db, monkeypatch):
+    import igdb_match
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title, collection_name) "
+                 "VALUES ('Mega Man 2', 'mega man 2', 'Mega Man Legacy Collection 2')")
+    conn.commit()
+    gid = conn.execute("SELECT id FROM games WHERE title='Mega Man 2'").fetchone()[0]
+    monkeypatch.setattr(igdb_match, "resolve_identity",
+                        lambda *a, **k: {"igdb_id": 1711, "name": "Mega Man 2",
+                                         "cover_url": "https://x/t_cover_big/2.jpg",
+                                         "source": "bundle"})
+    monkeypatch.setattr(igdb_dlc, "fetch_game_by_id",
+                        lambda iid, c, t: {"id": iid, "name": "Mega Man 2", "dlcs": []})
+    report = igdb_dlc.enrich_game(conn, gid, "c", "t")
+    assert report["matched"]
+    assert conn.execute("SELECT igdb_id FROM games WHERE id=?", (gid,)).fetchone()[0] == 1711
+    conn.close()
+
+
 def test_enrich_missing_is_incremental(temp_db, monkeypatch):
     conn = models.get_db()
     g1 = _game(conn, "One")
