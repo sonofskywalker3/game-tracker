@@ -594,6 +594,9 @@ def api_pin_igdb(game_id):
     if not report['matched']:
         conn.close()
         return jsonify({'error': 'No IGDB game found for that URL'}), 404
+    conn.execute("UPDATE games SET igdb_locked = 1, needs_igdb_review = 0 WHERE id = ?",
+                 (game_id,))
+    conn.commit()
     game = conn.execute(
         "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
     dlc = conn.execute(
@@ -603,6 +606,52 @@ def api_pin_igdb(game_id):
     return jsonify({'game': dict(game),
                     'dlc': [{**dict(d), 'owned': bool(d['owned'])} for d in dlc],
                     'report': report})
+
+
+@app.route('/api/games/<int:game_id>/igdb-candidates', methods=['GET'])
+def api_igdb_candidates(game_id):
+    """Ranked IGDB identity candidates for a game (bundle-first, platform-aware)."""
+    import config
+    import igdb_dlc
+    import igdb_match
+    conn = get_db()
+    row = conn.execute(
+        "SELECT title, collection_name FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    client_id, secret = config.get_twitch_credentials()
+    if not client_id:
+        conn.close()
+        return jsonify({'error': 'IGDB credentials not configured'}), 400
+    plat_short = [r[0] for r in conn.execute(
+        "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
+        "ON p.id = gp.platform_id WHERE gp.game_id = ?", (game_id,))]
+    conn.close()
+    token = igdb_dlc.get_access_token(client_id, secret)
+    cands = igdb_match.candidates_for(
+        row['title'], igdb_match.platform_ids_for(plat_short),
+        row['collection_name'], client_id, token)
+    return jsonify({'candidates': cands})
+
+
+@app.route('/api/games/<int:game_id>/igdb-pick', methods=['POST'])
+def api_igdb_pick(game_id):
+    """Apply a chosen IGDB identity: set igdb_id + cover_url, lock, clear review."""
+    data = request.get_json(silent=True) or {}
+    igdb_id = data.get('igdb_id')
+    cover_url = (data.get('cover_url') or '').strip() or None
+    conn = get_db()
+    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    conn.execute(
+        "UPDATE games SET igdb_id = ?, cover_url = COALESCE(?, cover_url), "
+        "igdb_locked = 1, needs_igdb_review = 0, updated_at = CURRENT_TIMESTAMP "
+        "WHERE id = ?", (igdb_id, cover_url, game_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 
 @app.route('/api/games/<int:game_id>/steam', methods=['POST'])
