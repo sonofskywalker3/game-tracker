@@ -70,3 +70,17 @@ def test_merge_classifications_minimal_diff_skip_existing_and_unknown(tmp_path):
     # round-trips: sorted, 2-space indent, trailing newline preserved
     expected = json.dumps(result, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     assert catalog.read_text(encoding="utf-8") == expected
+
+
+def test_cli_merge_applies_verdicts(tmp_path, monkeypatch, capsys):
+    catalog = tmp_path / "game_traits.default.json"
+    catalog.write_text("{}\n", encoding="utf-8")
+    verdicts = tmp_path / "verdicts.json"
+    verdicts.write_text(json.dumps([{"normalized_title": "celeste", "session_length": "short"}]),
+                        encoding="utf-8")
+    monkeypatch.setattr(popular_seed, "GAME_TRAITS_DEFAULT_PATH", catalog)
+
+    popular_seed.main(["--merge", str(verdicts)])
+
+    assert json.loads(catalog.read_text(encoding="utf-8")) == {"celeste": {"session_length": "short"}}
+    assert "added 1" in capsys.readouterr().out
