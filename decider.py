@@ -5,7 +5,8 @@ import logging
 import re
 import sqlite3
 
-import config  # noqa: F401
+import anthropic
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +107,39 @@ def parse_suggestions(text: str, valid_ids: set[int]) -> tuple[str, list[int]]:
                 ids.append(int(tok))
         text = _SUGGESTIONS_RE.sub("", text)
     return text.strip(), ids
+
+
+def _make_client(api_key: str):
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
+           *, client=None, model: str | None = None) -> dict:
+    """Run one blocking decider turn. Returns {"reply", "suggestions": [game_id]} or
+    {"error": ...}. `client`/`model` are injectable for tests; otherwise built from config."""
+    if client is None:
+        key, cfg_model = config.get_anthropic_config()
+        if not key:
+            return {"error": "no_api_key"}
+        client = _make_client(key)
+        model = model or cfg_model
+    model = model or "claude-sonnet-4-6"
+
+    snapshot = build_library_snapshot(conn)
+    system = build_system_prompt(snapshot)
+    slot_context = build_slot_context(conn, slot)
+    payload = [{"role": "user", "content": slot_context}] + list(messages)
+    valid_ids = {r["id"] for r in conn.execute("SELECT id FROM games").fetchall()}
+
+    try:
+        resp = client.messages.create(
+            model=model, max_tokens=MODEL_MAX_TOKENS, system=system, messages=payload)
+    except anthropic.AuthenticationError:
+        return {"error": "auth_error"}
+    except anthropic.APIError as e:
+        logger.warning("decider API error: %s", e)
+        return {"error": "api_error"}
+
+    text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
+    reply, ids = parse_suggestions(text, valid_ids)
+    return {"reply": reply, "suggestions": ids}
