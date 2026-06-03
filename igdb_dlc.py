@@ -117,12 +117,6 @@ def fetch_game_by_slug(slug: str, client_id: str, token: str) -> dict | None:
     return res[0] if res else None
 
 
-def fetch_game_by_title(title: str, client_id: str, token: str) -> dict | None:
-    from fetch_covers import clean_search_title
-    safe = clean_search_title(title).replace('"', "")
-    res = _igdb_query(f'search "{safe}"; fields {_DLC_FIELDS}; limit 1;', client_id, token)
-    return res[0] if res else None
-
 
 def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: str,
                 *, slug: str | None = None) -> dict:
@@ -149,7 +143,8 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
         identity = igdb_match.resolve_identity(
             row["title"], igdb_match.platform_ids_for(plat_short),
             row["collection_name"], client_id, token)
-        game = fetch_game_by_id(identity["igdb_id"], client_id, token) if identity else None
+        game = (fetch_game_by_id(identity["igdb_id"], client_id, token)
+                if identity and identity.get("igdb_id") else None)
     if not game:
         return {"matched": False, "cover_set": False, "added": 0, "existing": 0}
     conn.execute("UPDATE games SET igdb_id = ? WHERE id = ?", (game.get("id"), game_id))
@@ -167,7 +162,8 @@ def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> d
     a per-game network error is logged and skipped (never aborts the run)."""
     placeholders = ",".join("?" * len(VENDOR_CATALOGUE_SOURCES))
     ids = [r[0] for r in conn.execute(
-        "SELECT id FROM games WHERE igdb_id IS NULL AND id NOT IN "
+        "SELECT id FROM games WHERE igdb_id IS NULL AND COALESCE(igdb_locked, 0) = 0 "
+        f"AND id NOT IN "
         f"(SELECT game_id FROM game_external_ids WHERE source IN ({placeholders}))",
         VENDOR_CATALOGUE_SOURCES)]
     totals = {"games": 0, "matched": 0, "added": 0, "errors": 0}

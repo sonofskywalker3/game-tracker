@@ -147,3 +147,47 @@ def test_enrich_missing_is_incremental(temp_db, monkeypatch):
     assert totals["games"] == 1 and totals["matched"] == 1
     assert conn.execute("SELECT igdb_id FROM games WHERE id=?", (g1,)).fetchone()[0] == 42
     conn.close()
+
+
+def test_enrich_missing_skips_locked(temp_db, monkeypatch):
+    import igdb_match
+    conn = models.get_db()
+    g_unlocked = _game(conn, "Unlocked Game")
+    g_locked = _game(conn, "Locked Game")
+    conn.execute("UPDATE games SET igdb_locked = 1 WHERE id = ?", (g_locked,))
+    conn.commit()
+
+    called_for = []
+    def fake_resolve(title, *a, **k):
+        called_for.append(title)
+        return {"igdb_id": 77, "name": title, "cover_url": None, "source": "search"}
+    monkeypatch.setattr(igdb_match, "resolve_identity", fake_resolve)
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: [{"id": 77, "name": "x", "dlcs": []}])
+
+    igdb_dlc.enrich_missing(conn, client_id="cid", token="tok")
+
+    assert conn.execute("SELECT igdb_id FROM games WHERE id=?",
+                        (g_locked,)).fetchone()[0] is None
+    assert conn.execute("SELECT igdb_id FROM games WHERE id=?",
+                        (g_unlocked,)).fetchone()[0] == 77
+    conn.close()
+
+
+def test_enrich_game_title_path_handles_null_igdb_id(temp_db, monkeypatch):
+    import igdb_match
+    conn = models.get_db()
+    gid = _game(conn, "Ghost Game")
+    conn.commit()
+
+    monkeypatch.setattr(igdb_match, "resolve_identity",
+                        lambda *a, **k: {"igdb_id": None, "name": "Ghost Game",
+                                         "cover_url": None, "source": "search"})
+    # _igdb_query should never be reached; make it raise to catch any accidental call
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: (_ for _ in ()).throw(AssertionError("unexpected query")))
+
+    rep = igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    assert rep["matched"] is False
+    assert rep["added"] == 0
+    conn.close()

@@ -154,14 +154,24 @@ def _igdb_search(clean_title, client_id, access_token):
 def search_game(title, client_id, access_token, strict=False,
                 platform_ids=None, collection_name=None):
     """Return the cover URL for the best IGDB identity match (bundle-first,
-    platform-aware). `strict` is retained for callers that must not replace an
-    existing correct cover with a low-confidence guess."""
+    platform-aware).
+
+    When ``strict=True``, the cover is only returned when the match is
+    confident: either the identity's source is ``"bundle"`` (authoritative) or
+    the resolved identity's name normalises equal to the searched title
+    (``models.normalize_title`` comparison).  Use strict mode when replacing an
+    existing cover so a loose search guess never overwrites a correct cover.
+    """
     import igdb_match
+    from models import normalize_title
     identity = igdb_match.resolve_identity(
         title, set(platform_ids or ()), collection_name, client_id, access_token)
-    if identity and identity.get("cover_url"):
-        return identity["cover_url"]
-    return None
+    if not identity or not identity.get("cover_url"):
+        return None
+    if strict and identity.get("source") != "bundle" \
+            and normalize_title(identity.get("name") or "") != normalize_title(title):
+        return None
+    return identity["cover_url"]
 
 
 def pick_canonical_name(search_title, results):

@@ -174,3 +174,19 @@ def test_search_game_uses_platform_aware_resolver(monkeypatch):
     url = fetch_covers.search_game("Mega Man 2", "c", "t",
                                    platform_ids={130}, collection_name="Mega Man Legacy Collection 2")
     assert url == "https://x/t_cover_big/2.jpg"
+
+
+def test_search_game_strict_rejects_loose_match(monkeypatch):
+    import fetch_covers
+    import igdb_match
+
+    loose_identity = {"source": "search", "name": "Some Other Game",
+                      "cover_url": "https://x/t_cover_big/y.jpg", "igdb_id": 9}
+    monkeypatch.setattr(igdb_match, "resolve_identity", lambda *a, **k: loose_identity)
+
+    # strict=True: name mismatch and source != "bundle" -> reject
+    assert fetch_covers.search_game("Celeste", "c", "t", strict=True) is None
+
+    # strict=False: loose match still returns the cover
+    assert fetch_covers.search_game("Celeste", "c", "t", strict=False) == \
+        "https://x/t_cover_big/y.jpg"
