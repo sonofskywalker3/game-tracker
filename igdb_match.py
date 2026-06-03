@@ -201,3 +201,27 @@ def resolve_identity(title: str, game_platform_ids: set[int],
     best = cands[0]
     return _as_identity(best["igdb_id"], best["name"], best.get("cover_url"),
                         best["source"])
+
+
+def audit_igdb_matches(conn, *, client_id: str, token: str) -> list[int]:
+    """Flag (needs_igdb_review=1) every non-locked game whose resolved best
+    identity's cover differs from the current cover. Never mutates cover/igdb_id;
+    games whose current cover already matches the resolved one are not flagged.
+    Returns the list of flagged game ids."""
+    rows = conn.execute(
+        "SELECT id, title, cover_url, collection_name FROM games "
+        "WHERE COALESCE(igdb_locked, 0) = 0 ORDER BY title").fetchall()
+    flagged: list[int] = []
+    for r in rows:
+        plat_short = [x[0] for x in conn.execute(
+            "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
+            "ON p.id = gp.platform_id WHERE gp.game_id = ?", (r["id"],))]
+        identity = resolve_identity(r["title"], platform_ids_for(plat_short),
+                                    r["collection_name"], client_id, token)
+        if not identity or not identity.get("cover_url"):
+            continue
+        if identity["cover_url"] != r["cover_url"]:
+            conn.execute("UPDATE games SET needs_igdb_review = 1 WHERE id = ?", (r["id"],))
+            flagged.append(r["id"])
+    conn.commit()
+    return flagged
