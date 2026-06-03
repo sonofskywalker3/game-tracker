@@ -134,6 +134,32 @@ def test_migrate_igdb_review_adds_columns(temp_db):
     conn.close()
 
 
+def test_audit_flags_disagreement_skips_locked_and_agreeing(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.executescript(
+        "INSERT INTO games (id,title,normalized_title,cover_url,collection_name,igdb_locked) "
+        "VALUES (1,'Mega Man 2','mega man 2','https://x/t_cover_big/MOBILE.jpg','MM LC2',0),"
+        "       (2,'Celeste','celeste','https://x/t_cover_big/c.jpg',NULL,0),"
+        "       (3,'Locked','locked','https://x/t_cover_big/old.jpg',NULL,1);")
+
+    def fake_resolve(title, plats, coll, c, t):
+        if title == 'Mega Man 2':
+            return {"igdb_id": 1711, "name": title,
+                    "cover_url": "https://x/t_cover_big/RIGHT.jpg", "source": "bundle"}
+        if title == 'Celeste':                       # agrees with current cover
+            return {"igdb_id": 5, "name": title,
+                    "cover_url": "https://x/t_cover_big/c.jpg", "source": "search"}
+        raise AssertionError("locked game must be skipped")
+    monkeypatch.setattr(igdb_match, "resolve_identity", fake_resolve)
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [1]                            # only Mega Man 2 disagrees
+    assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=1").fetchone()[0] == 1
+    assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=2").fetchone()[0] == 0
+    # never mutates cover/igdb_id
+    assert conn.execute("SELECT cover_url FROM games WHERE id=1").fetchone()[0].endswith("MOBILE.jpg")
+    conn.close()
+
+
 def test_resolve_identity_bundle_resolves_but_no_constituent_match_falls_through(monkeypatch):
     # The bundle is found and has constituents, but none match the game title.
     # resolve_identity must fall through to the search scorer and return its result.
