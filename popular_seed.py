@@ -40,6 +40,7 @@ def fetch_top_games(n: int, *, client_id: str, token: str,
         rows = igdb_dlc._igdb_query(query, client_id, token)
         if not rows:
             break
+        logger.info("fetched %d rows at offset %d", len(rows), offset)
         for r in rows:
             name = r.get("name")
             if not name:
@@ -100,6 +101,8 @@ def merge_classifications(verdicts: list[dict], *,
             continue
         catalog[nt] = {"session_length": sl}
         added += 1
+    if added == 0:
+        return added, skipped
     out = json.dumps(catalog, sort_keys=True, indent=2, ensure_ascii=False)
     if raw.endswith("\n"):
         out += "\n"
