@@ -45,7 +45,11 @@ This unifies every case under one comparison:
   overlap (+50), the PC original does not → stored scores higher → not flagged.
 - Mobile mismatch: stored mobile-only takes the −80 penalty, console candidate gets
   +50 → large positive delta → flagged.
-- Bundle disagreement / better platform match: candidate scores higher → flagged.
+- Better platform match: candidate scores higher → flagged.
+- Bundle disagreement: the bundle reverse-lookup is authoritative for a constituent,
+  so a bundle-source candidate with a different cover-stem is flagged directly (the
+  score-delta gate is bypassed — constituents often share a non-overlapping platform
+  with a wrong stored entry, which would otherwise tie on score).
 
 ## Components
 
@@ -75,22 +79,31 @@ Per non-locked game (`COALESCE(igdb_locked,0)=0`), ordered by title:
      score is treated as absent.
    - Best candidate: score its minimal dict (`name`, `platforms`,
      `cover` from its `cover_url`).
-4. **Flag decision:**
+4. **Flag decision** (evaluated in order):
    - Skip if there is no best candidate or it has no cover.
    - Skip if `_cover_stem(best) == _cover_stem(stored)` (same image — cosmetic only).
-   - **Stored igdb_id present and scorable:** flag iff
+   - **Best is bundle-source** → flag. The reverse-`bundles` lookup is authoritative
+     for a constituent, so a different cover-stem means the stored match is the wrong
+     version regardless of score. (Constituents often share a non-overlapping
+     platform — e.g. NES — with a wrong stored entry, so a score-delta alone would
+     miss real bundle disagreements. The owner's already-fixed constituents are
+     either `igdb_locked` (skipped) or already agree with the bundle truth — same
+     stem — so they do not re-flag.)
+   - **Stored igdb_id present and scorable** (search-source best): flag iff
      `best_score - stored_score >= _REVIEW_MARGIN`.
    - **Stored entry absent / unscorable** (no stored igdb_id, ~41 games; or
      fetch/title-match failure): flag iff the best candidate is a **strong** match —
-     exact title **and** platform overlap **and** not mobile-only — to avoid
-     reopening title-search drift.
+     score `>= _STRONG_MATCH` (exact title + platform overlap) **and** not
+     mobile-only — to avoid reopening title-search drift.
 5. On flag: `UPDATE games SET needs_igdb_review = 1, igdb_review_reason = ?`.
    Reason is derived from why the candidate won (see below). Never writes
    `cover_url`/`igdb_id`. Returns the list of flagged ids.
 
 `_REVIEW_MARGIN` is a named module constant. Default = `1` (strictly-better — the
 owner chose broadest recall without cosmetic noise; cosmetic ties are already
-excluded by the stem check).
+excluded by the stem check). `_STRONG_MATCH = _TITLE_EXACT + _PLATFORM_OVERLAP`
+(= 150) is the bar a candidate must clear to flag a game with no scorable stored
+entry.
 
 ### Reason labels
 Derived per flag, surfaced in the UI for faster review:
