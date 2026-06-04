@@ -134,31 +134,6 @@ def test_migrate_igdb_review_adds_columns(temp_db):
     conn.close()
 
 
-def test_audit_flags_disagreement_skips_locked_and_agreeing(temp_db, monkeypatch):
-    conn = models.get_db()
-    conn.executescript(
-        "INSERT INTO games (id,title,normalized_title,cover_url,collection_name,igdb_locked) "
-        "VALUES (1,'Mega Man 2','mega man 2','https://x/t_cover_big/MOBILE.jpg','MM LC2',0),"
-        "       (2,'Celeste','celeste','https://x/t_cover_big/c.jpg',NULL,0),"
-        "       (3,'Locked','locked','https://x/t_cover_big/old.jpg',NULL,1);")
-
-    def fake_resolve(title, plats, coll, c, t):
-        if title == 'Mega Man 2':
-            return {"igdb_id": 1711, "name": title,
-                    "cover_url": "https://x/t_cover_big/RIGHT.jpg", "source": "bundle"}
-        if title == 'Celeste':                       # agrees with current cover
-            return {"igdb_id": 5, "name": title,
-                    "cover_url": "https://x/t_cover_big/c.jpg", "source": "search"}
-        raise AssertionError("locked game must be skipped")
-    monkeypatch.setattr(igdb_match, "resolve_identity", fake_resolve)
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
-    assert flagged == [1]                            # only Mega Man 2 disagrees
-    assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=1").fetchone()[0] == 1
-    assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=2").fetchone()[0] == 0
-    # never mutates cover/igdb_id
-    assert conn.execute("SELECT cover_url FROM games WHERE id=1").fetchone()[0].endswith("MOBILE.jpg")
-    conn.close()
-
 
 def test_cover_stem_ignores_size_and_extension():
     base = "https://images.igdb.com/igdb/image/upload/"
@@ -217,3 +192,131 @@ def test_migrate_igdb_review_reason_adds_column(temp_db):
     cols = [c[1] for c in conn.execute("PRAGMA table_info(games)")]
     conn.close()
     assert "igdb_review_reason" in cols
+
+
+# --- rewritten audit: score-delta + reasons --------------------------------
+
+_BASE = "https://images.igdb.com/igdb/image/upload/"
+
+
+def _add_platform(conn, game_id, short_name):
+    """Link a game to a platform by short_name (platform_ids_for maps short_name ->
+    IGDB id via igdb_match.IGDB_PLATFORM_IDS, so no IGDB id is stored here).
+    platforms.name is NOT NULL UNIQUE, so supply it too."""
+    conn.execute("INSERT OR IGNORE INTO platforms (name, short_name) VALUES (?, ?)",
+                 (short_name, short_name))
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name=?", (short_name,)).fetchone()[0]
+    conn.execute("INSERT OR IGNORE INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
+                 (game_id, pid))
+    conn.commit()
+
+
+def test_audit_skips_cosmetic_webp_jpg(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (1,'Hades','hades',?,100)", (_BASE + "t_cover_big/co1zyu.webp",))
+    conn.commit()
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 100, "name": "Hades", "cover_url": _BASE + "t_cover_big/co1zyu.jpg",
+         "platforms": [6], "source": "search", "score": 110}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 100, "name": "Hades", "platforms": [6], "cover": {"url": _BASE + "t_thumb/co1zyu.jpg"}})
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=1").fetchone()[0] == 0
+    conn.close()
+
+
+def test_audit_flags_mobile_to_console(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (2,'Y','y',?,200)", (_BASE + "t_cover_big/mob.jpg",))
+    conn.commit()
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 201, "name": "Y", "cover_url": _BASE + "t_cover_big/con.jpg",
+         "platforms": [48], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 200, "name": "Y", "platforms": [igdb_match.IOS_ID],
+        "cover": {"url": _BASE + "t_thumb/mob.jpg"}})
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [2]
+    row = conn.execute("SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id=2").fetchone()
+    assert row[0] == 1 and row[1] == "mobile->console"
+    assert conn.execute("SELECT cover_url FROM games WHERE id=2").fetchone()[0].endswith("mob.jpg")
+    conn.close()
+
+
+def test_audit_not_flagged_when_stored_scores_higher(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (3,'Portal','portal',?,300)", (_BASE + "t_cover_big/switch.jpg",))
+    conn.commit()
+    _add_platform(conn, 3, "Switch")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 71, "name": "Portal", "cover_url": _BASE + "t_cover_big/pcorig.jpg",
+         "platforms": [6], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 300, "name": "Portal", "platforms": [130],
+        "cover": {"url": _BASE + "t_thumb/switch.jpg"}})
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()
+
+
+def test_audit_flags_bundle_authoritative(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,collection_name,igdb_id) "
+                 "VALUES (4,'Mega Man X','mega man x',?,'MM X LC',400)",
+                 (_BASE + "t_cover_big/wrong.jpg",))
+    conn.commit()
+    _add_platform(conn, 4, "Switch")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 1741, "name": "Mega Man X", "cover_url": _BASE + "t_cover_big/right.jpg",
+         "platforms": [18], "source": "bundle"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 400, "name": "Mega Man X", "platforms": [18],
+        "cover": {"url": _BASE + "t_thumb/wrong.jpg"}})
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [4]
+    assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=4").fetchone()[0] == "bundle"
+    conn.close()
+
+
+def test_audit_unmatched_strong_candidate_flags(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (5,'Celeste','celeste',?,NULL)", (_BASE + "t_cover_big/old.jpg",))
+    conn.commit()
+    _add_platform(conn, 5, "Steam")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 26226, "name": "Celeste", "cover_url": _BASE + "t_cover_big/celeste.jpg",
+         "platforms": [6], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no stored id")))
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [5]
+    assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=5").fetchone()[0] == "unmatched->match"
+    conn.close()
+
+
+def test_audit_unmatched_weak_candidate_not_flagged(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (6,'Celeste','celeste',?,NULL)", (_BASE + "t_cover_big/old.jpg",))
+    conn.commit()
+    _add_platform(conn, 6, "Switch")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 26226, "name": "Celeste", "cover_url": _BASE + "t_cover_big/celeste.jpg",
+         "platforms": [6], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()
+
+
+def test_audit_skips_locked(temp_db, monkeypatch):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id,igdb_locked) "
+                 "VALUES (7,'Locked','locked',?,700,1)", (_BASE + "t_cover_big/x.jpg",))
+    conn.commit()
+    monkeypatch.setattr(igdb_match, "candidates_for",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("locked must be skipped")))
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()

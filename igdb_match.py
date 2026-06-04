@@ -36,6 +36,8 @@ _PLATFORM_OVERLAP = 50
 _MOBILE_PENALTY = -80
 _HAS_COVER = 10
 _BUNDLE_GAME_TYPE = 3
+_REVIEW_MARGIN = 1                                 # flag when best beats stored by >= this
+_STRONG_MATCH = _TITLE_EXACT + _PLATFORM_OVERLAP   # bar for flagging an unmatched game
 
 
 def platform_ids_for(short_names: Iterable[str] | None) -> set[int]:
@@ -226,25 +228,81 @@ def resolve_identity(title: str, game_platform_ids: set[int],
                         best["source"])
 
 
+def _score_entry(entry: dict | None, *, game_platform_ids: set[int],
+                 title: str) -> dict | None:
+    """Score one IGDB entry dict with score_candidates. Returns the scored dict
+    (carrying _score / _mobile_only) or None if it is falsy or fails title match."""
+    if not entry:
+        return None
+    scored = score_candidates([entry], game_platform_ids=game_platform_ids, title=title)
+    return scored[0] if scored else None
+
+
+def _flag_reason(best: dict, best_scored: dict, stored_entry: dict | None,
+                 stored_scored: dict | None, game_platform_ids: set[int]) -> str:
+    """Short human reason a game was flagged, by why the candidate won."""
+    if best.get("source") == "bundle":
+        return "bundle"
+    if stored_scored is None:
+        return "unmatched->match"
+    if stored_scored.get("_mobile_only") and not best_scored.get("_mobile_only"):
+        return "mobile->console"
+    best_overlap = bool(set(best.get("platforms") or []) & game_platform_ids)
+    stored_overlap = bool(set((stored_entry or {}).get("platforms") or []) & game_platform_ids)
+    if best_overlap and not stored_overlap:
+        return "better platform match"
+    return "stronger match"
+
+
 def audit_igdb_matches(conn, *, client_id: str, token: str) -> list[int]:
-    """Flag (needs_igdb_review=1) every non-locked game whose resolved best
-    identity's cover differs from the current cover. Never mutates cover/igdb_id;
-    games whose current cover already matches the resolved one are not flagged.
+    """Flag (needs_igdb_review=1 + igdb_review_reason) every non-locked game whose
+    best IGDB candidate genuinely beats the currently-stored entry. Bundle-source
+    candidates are authoritative (flag on any cover-stem difference); search-source
+    candidates flag on a positive quality score-delta; games with no scorable stored
+    entry flag only on a strong candidate. Flag-only: never mutates cover_url/igdb_id.
     Returns the list of flagged game ids."""
     rows = conn.execute(
-        "SELECT id, title, cover_url, collection_name FROM games "
+        "SELECT id, title, cover_url, collection_name, igdb_id FROM games "
         "WHERE COALESCE(igdb_locked, 0) = 0 ORDER BY title").fetchall()
     flagged: list[int] = []
     for r in rows:
         plat_short = [x[0] for x in conn.execute(
             "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
             "ON p.id = gp.platform_id WHERE gp.game_id = ?", (r["id"],))]
-        identity = resolve_identity(r["title"], platform_ids_for(plat_short),
-                                    r["collection_name"], client_id, token)
-        if not identity or not identity.get("cover_url"):
+        gpi = platform_ids_for(plat_short)
+        cands = candidates_for(r["title"], gpi, r["collection_name"], client_id, token)
+        if not cands:
             continue
-        if identity["cover_url"] != r["cover_url"]:
-            conn.execute("UPDATE games SET needs_igdb_review = 1 WHERE id = ?", (r["id"],))
+        best = cands[0]
+        best_cover = best.get("cover_url")
+        if not best_cover:
+            continue
+        best_stem, stored_stem = _cover_stem(best_cover), _cover_stem(r["cover_url"])
+        if best_stem and stored_stem and best_stem == stored_stem:
+            continue
+
+        best_min = {"name": best.get("name"), "platforms": best.get("platforms") or [],
+                    "cover": {"url": best_cover}}
+        best_scored = _score_entry(best_min, game_platform_ids=gpi, title=r["title"])
+        if best_scored is None:
+            continue
+
+        stored_entry = fetch_entry(r["igdb_id"], client_id, token) if r["igdb_id"] else None
+        stored_scored = _score_entry(stored_entry, game_platform_ids=gpi, title=r["title"])
+
+        if best.get("source") == "bundle":
+            should_flag = True
+        elif stored_scored is not None:
+            should_flag = best_scored["_score"] - stored_scored["_score"] >= _REVIEW_MARGIN
+        else:
+            should_flag = (best_scored["_score"] >= _STRONG_MATCH
+                           and not best_scored.get("_mobile_only"))
+
+        if should_flag:
+            reason = _flag_reason(best, best_scored, stored_entry, stored_scored, gpi)
+            conn.execute(
+                "UPDATE games SET needs_igdb_review = 1, igdb_review_reason = ? WHERE id = ?",
+                (reason, r["id"]))
             flagged.append(r["id"])
     conn.commit()
     return flagged
