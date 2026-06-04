@@ -87,6 +87,7 @@ def api_games():
             g.metacritic_score,
             g.opencritic_score,
             COALESCE(g.needs_igdb_review, 0) AS needs_igdb_review,
+            g.igdb_review_reason,
             ur.status,
             ur.rating,
             ur.priority,
@@ -177,6 +178,7 @@ def api_games():
         game['tags'] = [{'name': t['name'], 'category': t['category']} for t in tags]
         game['physical'] = any(t['name'] == 'Physical' for t in game['tags'])
         game['needs_igdb_review'] = bool(game.get('needs_igdb_review'))
+        game['igdb_review_reason'] = game.get('igdb_review_reason')
 
         games.append(game)
 
@@ -596,8 +598,8 @@ def api_pin_igdb(game_id):
     if not report['matched']:
         conn.close()
         return jsonify({'error': 'No IGDB game found for that URL'}), 404
-    conn.execute("UPDATE games SET igdb_locked = 1, needs_igdb_review = 0 WHERE id = ?",
-                 (game_id,))
+    conn.execute("UPDATE games SET igdb_locked = 1, needs_igdb_review = 0, "
+                 "igdb_review_reason = NULL WHERE id = ?", (game_id,))
     conn.commit()
     game = conn.execute(
         "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
@@ -651,8 +653,8 @@ def api_igdb_pick(game_id):
         return jsonify({'error': 'Game not found'}), 404
     conn.execute(
         "UPDATE games SET igdb_id = ?, cover_url = COALESCE(?, cover_url), "
-        "igdb_locked = 1, needs_igdb_review = 0, updated_at = CURRENT_TIMESTAMP "
-        "WHERE id = ?", (igdb_id, cover_url, game_id))
+        "igdb_locked = 1, needs_igdb_review = 0, igdb_review_reason = NULL, "
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ?", (igdb_id, cover_url, game_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})

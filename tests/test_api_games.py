@@ -554,3 +554,30 @@ def test_igdb_pick_coalesce_preserves_existing_cover(client, temp_db):
     assert row["igdb_locked"] == 1
     assert row["needs_igdb_review"] == 0
     assert row["cover_url"] == "https://existing/cover.jpg"
+
+
+def test_igdb_pick_clears_review_reason_and_list_surfaces_it(client, temp_db):
+    # a flagged game with a reason
+    conn = models.get_db()
+    conn.execute(
+        "INSERT INTO games (id,title,normalized_title,needs_igdb_review,igdb_review_reason) "
+        "VALUES (1,'Mega Man X','mega man x',1,'bundle')")
+    conn.commit()
+    conn.close()
+
+    # the list surfaces the reason
+    r = client.get('/api/games')
+    assert r.status_code == 200
+    game = next(g for g in r.get_json() if g['id'] == 1)
+    assert game['needs_igdb_review'] is True
+    assert game['igdb_review_reason'] == 'bundle'
+
+    # picking an identity clears flag + reason
+    r = client.post('/api/games/1/igdb-pick',
+                    json={'igdb_id': 1741, 'cover_url': 'https://x/t_cover_big/r.jpg'})
+    assert r.status_code == 200
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id=1").fetchone()
+    conn.close()
+    assert row['needs_igdb_review'] == 0 and row['igdb_review_reason'] is None
