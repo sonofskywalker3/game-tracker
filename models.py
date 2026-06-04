@@ -761,6 +761,16 @@ def migrate_igdb_review(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_igdb_review_reason(conn: sqlite3.Connection) -> None:
+    """Add games.igdb_review_reason (TEXT, nullable). Idempotent. Holds a short
+    human reason the audit flagged a game (e.g. 'bundle', 'mobile->console'),
+    surfaced in the Needs-review UI. Cleared whenever needs_igdb_review is cleared."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    if "igdb_review_reason" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN igdb_review_reason TEXT")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -857,6 +867,7 @@ def migrate_db():
     migrate_collection_name(conn)
     migrate_series_source(conn)
     migrate_igdb_review(conn)
+    migrate_igdb_review_reason(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)
