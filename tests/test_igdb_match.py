@@ -221,7 +221,7 @@ def test_audit_skips_cosmetic_webp_jpg(temp_db, monkeypatch):
          "platforms": [6], "source": "search", "score": 110}])
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
         "id": 100, "name": "Hades", "platforms": [6], "cover": {"url": _BASE + "t_thumb/co1zyu.jpg"}})
-    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"] == []
     assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=1").fetchone()[0] == 0
     conn.close()
 
@@ -237,7 +237,7 @@ def test_audit_flags_mobile_to_console(temp_db, monkeypatch):
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
         "id": 200, "name": "Y", "platforms": [igdb_match.IOS_ID],
         "cover": {"url": _BASE + "t_thumb/mob.jpg"}})
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"]
     assert flagged == [2]
     row = conn.execute("SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id=2").fetchone()
     assert row[0] == 1 and row[1] == "mobile->console"
@@ -257,26 +257,31 @@ def test_audit_not_flagged_when_stored_scores_higher(temp_db, monkeypatch):
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
         "id": 300, "name": "Portal", "platforms": [130],
         "cover": {"url": _BASE + "t_thumb/switch.jpg"}})
-    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"] == []
     conn.close()
 
 
-def test_audit_flags_bundle_authoritative(temp_db, monkeypatch):
+def test_audit_applies_bundle_authoritative_not_flag(temp_db, monkeypatch):
     conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,collection_name,igdb_id) "
-                 "VALUES (4,'Mega Man X','mega man x',?,'MM X LC',400)",
+                 "VALUES (4,'Mega Man X','mega man x',?,'MM X LC',NULL)",
                  (_BASE + "t_cover_big/wrong.jpg",))
     conn.commit()
     _add_platform(conn, 4, "Switch")
     monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
         {"igdb_id": 1741, "name": "Mega Man X", "cover_url": _BASE + "t_cover_big/right.jpg",
          "platforms": [18], "source": "bundle"}])
-    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
-        "id": 400, "name": "Mega Man X", "platforms": [18],
-        "cover": {"url": _BASE + "t_thumb/wrong.jpg"}})
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
-    assert flagged == [4]
-    assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=4").fetchone()[0] == "bundle"
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
+    result = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert result["applied"] == [4]
+    assert result["flagged"] == []
+    row = conn.execute("SELECT igdb_id, cover_url, COALESCE(igdb_locked,0), "
+                       "COALESCE(needs_igdb_review,0), igdb_review_reason "
+                       "FROM games WHERE id=4").fetchone()
+    assert row[0] == 1741                      # id applied
+    assert row[1].endswith("right.jpg")        # cover applied
+    assert row[2] == 1                          # locked
+    assert row[3] == 0 and row[4] is None       # review cleared
     conn.close()
 
 
@@ -291,7 +296,7 @@ def test_audit_unmatched_strong_candidate_flags(temp_db, monkeypatch):
          "platforms": [6], "source": "search"}])
     monkeypatch.setattr(igdb_match, "fetch_entry",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("no stored id")))
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"]
     assert flagged == [5]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=5").fetchone()[0] == "unmatched->match"
     conn.close()
@@ -307,7 +312,7 @@ def test_audit_unmatched_weak_candidate_not_flagged(temp_db, monkeypatch):
         {"igdb_id": 26226, "name": "Celeste", "cover_url": _BASE + "t_cover_big/celeste.jpg",
          "platforms": [6], "source": "search"}])
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
-    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"] == []
     conn.close()
 
 
@@ -318,7 +323,7 @@ def test_audit_skips_locked(temp_db, monkeypatch):
     conn.commit()
     monkeypatch.setattr(igdb_match, "candidates_for",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("locked must be skipped")))
-    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"] == []
     conn.close()
 
 
@@ -336,7 +341,7 @@ def test_audit_flags_better_platform_match(temp_db, monkeypatch):
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
         "id": 800, "name": "Celeste", "platforms": [6],
         "cover": {"url": _BASE + "t_thumb/pc.jpg"}})
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"]
     assert flagged == [8]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=8").fetchone()[0] == "better platform match"
     conn.close()
@@ -357,7 +362,7 @@ def test_audit_flags_stronger_match_on_title(temp_db, monkeypatch):
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
         "id": 900, "name": "Portal Companion Collection", "platforms": [6],
         "cover": {"url": _BASE + "t_thumb/coll.jpg"}})
-    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")["flagged"]
     assert flagged == [9]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=9").fetchone()[0] == "stronger match"
     conn.close()

@@ -254,17 +254,18 @@ def _flag_reason(best: dict, best_scored: dict, stored_entry: dict | None,
     return "stronger match"
 
 
-def audit_igdb_matches(conn, *, client_id: str, token: str) -> list[int]:
-    """Flag (needs_igdb_review=1 + igdb_review_reason) every non-locked game whose
-    best IGDB candidate genuinely beats the currently-stored entry. Bundle-source
-    candidates are authoritative (flag on any cover-stem difference); search-source
-    candidates flag on a positive quality score-delta; games with no scorable stored
-    entry flag only on a strong candidate. Flag-only: never mutates cover_url/igdb_id.
-    Returns the list of flagged game ids."""
+def audit_igdb_matches(conn, *, client_id: str, token: str) -> dict[str, list[int]]:
+    """Reconcile every non-locked game against its best IGDB candidate.
+
+    Bundle-source candidates are authoritative: apply id + cover + lock and clear
+    review (self-heal). Search-source candidates flag for review on a positive
+    quality score-delta; games with no scorable stored entry flag only on a strong
+    candidate. Returns ``{"applied": [...], "flagged": [...]}`` of game ids."""
     rows = conn.execute(
         "SELECT id, title, cover_url, collection_name, igdb_id FROM games "
         "WHERE COALESCE(igdb_locked, 0) = 0 ORDER BY title").fetchall()
     flagged: list[int] = []
+    applied: list[int] = []
     for r in rows:
         plat_short = [x[0] for x in conn.execute(
             "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
@@ -291,7 +292,16 @@ def audit_igdb_matches(conn, *, client_id: str, token: str) -> list[int]:
         stored_scored = _score_entry(stored_entry, game_platform_ids=gpi, title=r["title"])
 
         if best.get("source") == "bundle":
-            should_flag = True
+            # Bundle constituents are authoritative (exact-title match inside the
+            # owned bundle). Apply + lock instead of flagging: the pipeline owns
+            # this identity, so heal it in place and clear any prior review flag.
+            conn.execute(
+                "UPDATE games SET igdb_id = ?, cover_url = ?, igdb_locked = 1, "
+                "needs_igdb_review = 0, igdb_review_reason = NULL, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (best["igdb_id"], best_cover, r["id"]))
+            applied.append(r["id"])
+            continue
         elif stored_scored is not None:
             should_flag = best_scored["_score"] - stored_scored["_score"] >= _REVIEW_MARGIN
         else:
@@ -305,4 +315,4 @@ def audit_igdb_matches(conn, *, client_id: str, token: str) -> list[int]:
                 (reason, r["id"]))
             flagged.append(r["id"])
     conn.commit()
-    return flagged
+    return {"applied": applied, "flagged": flagged}
