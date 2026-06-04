@@ -363,6 +363,10 @@
                             ).join('')}
                             <span class="status-badge status-${game.status || 'backlog'}">${game.status === '100' ? '100%' : game.status === 'completed' ? 'complete' : (game.status || 'backlog').replace('_', ' ')}</span>
                         </div>
+                        ${(game.needs_igdb_review && game.igdb_review_reason) ? `
+                            <div class="mt-1"><span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300"
+                                    title="IGDB audit: ${escapeHtml(game.igdb_review_reason)}">⚠ ${escapeHtml(game.igdb_review_reason)}</span></div>
+                        ` : ''}
                     </div>
                 </div>
             `;
