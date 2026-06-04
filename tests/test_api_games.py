@@ -557,6 +557,7 @@ def test_igdb_pick_coalesce_preserves_existing_cover(client, temp_db):
 
 
 def test_igdb_pick_clears_review_reason_and_list_surfaces_it(client, temp_db):
+    """List surfaces igdb_review_reason; igdb-pick clears flag + reason."""
     # a flagged game with a reason
     conn = models.get_db()
     conn.execute(
@@ -581,3 +582,33 @@ def test_igdb_pick_clears_review_reason_and_list_surfaces_it(client, temp_db):
         "SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id=1").fetchone()
     conn.close()
     assert row['needs_igdb_review'] == 0 and row['igdb_review_reason'] is None
+
+
+def test_pin_igdb_clears_review_reason(client, temp_db, monkeypatch):
+    """Pinning an IGDB identity clears needs_igdb_review and igdb_review_reason."""
+    import config
+    import igdb_dlc
+    conn = models.get_db()
+    conn.execute(
+        "INSERT INTO games (title, normalized_title, needs_igdb_review, igdb_review_reason) "
+        "VALUES ('G', 'g', 1, 'bundle')"
+    )
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_dlc, "_igdb_query",
+                        lambda q, c, t: [{"id": 50, "name": "G", "slug": "g",
+                                          "cover": {"url": "//img/t_thumb/co.jpg"},
+                                          "expansions": [{"id": 2, "name": "Exp"}]}])
+    resp = client.post(f"/api/games/{gid}/igdb",
+                       json={"url": "https://www.igdb.com/games/g"})
+    assert resp.status_code == 200
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id = ?", (gid,)
+    ).fetchone()
+    conn.close()
+    assert row["needs_igdb_review"] == 0
+    assert row["igdb_review_reason"] is None
