@@ -191,3 +191,21 @@ def test_resolve_identity_bundle_resolves_but_no_constituent_match_falls_through
     assert got is not None
     assert got["igdb_id"] == 777
     assert got["source"] == "search"
+
+
+def test_fetch_entry_queries_by_id(monkeypatch):
+    seen = {}
+    def fake(query, cid, tok):
+        seen["q"] = query
+        return [{"id": 1711, "name": "Mega Man 2", "platforms": [18],
+                 "cover": {"url": "//x/t_thumb/2.jpg"}, "total_rating_count": 80}]
+    monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
+    entry = igdb_match.fetch_entry(1711, "c", "t")
+    assert "where id = (1711)" in seen["q"]
+    assert "platforms" in seen["q"]
+    assert entry["name"] == "Mega Man 2"
+
+
+def test_fetch_entry_returns_none_when_missing(monkeypatch):
+    monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", lambda *a, **k: [])
+    assert igdb_match.fetch_entry(999, "c", "t") is None

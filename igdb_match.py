@@ -106,6 +106,18 @@ def fetch_candidates(title: str, client_id: str, token: str,
     return igdb_dlc._igdb_query(query, client_id, token) or []
 
 
+def fetch_entry(igdb_id: int, client_id: str, token: str) -> dict | None:
+    """Fetch one IGDB entry by id with the fields the scorer needs. Returns the
+    raw IGDB dict (name, cover.url, platforms, ...) or None if the id is gone."""
+    query = (
+        "fields name, cover.url, platforms, first_release_date, "
+        "total_rating_count, game_type; "
+        f"where id = ({int(igdb_id)}); limit 1;"
+    )
+    rows = igdb_dlc._igdb_query(query, client_id, token) or []
+    return rows[0] if rows else None
+
+
 def cover_url_of(candidate: dict) -> str | None:
     """Return a normalized https t_cover_big URL for a candidate, or None."""
     cover = candidate.get("cover") or {}
