@@ -319,10 +319,14 @@
                        <rect x="9.5" y="6" width="10" height="13" rx="2" fill="#2563eb" stroke="#7fb0ff" stroke-width="1.3" transform="rotate(11 14.5 12.5)"/>
                      </svg></span>`
                 : '';
+            const reviewChip = (game.needs_igdb_review && game.igdb_review_reason)
+                ? `<div class="mt-1"><span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300"
+                        title="IGDB audit: ${escapeHtml(game.igdb_review_reason)}">⚠ ${escapeHtml(game.igdb_review_reason)}</span></div>`
+                : '';
             return `<div class="game-card bg-surface-light rounded-lg overflow-hidden cursor-pointer" data-game-id="${game.id}" onclick="openModal(${game.id})">
                 <div class="aspect-[3/4] relative overflow-hidden">${cover}${collectionBadge}</div>
                 <div class="p-3"><h3 class="font-medium text-sm text-white leading-tight line-clamp-2 min-h-[2.5rem]" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</h3>
-                    <div class="mt-2 flex flex-wrap items-center gap-1">${badges}</div></div></div>`;
+                    <div class="mt-2 flex flex-wrap items-center gap-1">${badges}</div>${reviewChip}</div></div>`;
         }
 
         function showModalEl(id) {
