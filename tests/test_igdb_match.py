@@ -320,3 +320,44 @@ def test_audit_skips_locked(temp_db, monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("locked must be skipped")))
     assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
     conn.close()
+
+
+def test_audit_flags_better_platform_match(temp_db, monkeypatch):
+    # stored entry is PC-only (no overlap with owned Switch); best is the Switch
+    # edition (overlap). Both non-mobile, both exact title -> reason is platform.
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (8,'Celeste','celeste',?,800)", (_BASE + "t_cover_big/pc.jpg",))
+    conn.commit()
+    _add_platform(conn, 8, "Switch")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 801, "name": "Celeste", "cover_url": _BASE + "t_cover_big/switch.jpg",
+         "platforms": [130], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 800, "name": "Celeste", "platforms": [6],
+        "cover": {"url": _BASE + "t_thumb/pc.jpg"}})
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [8]
+    assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=8").fetchone()[0] == "better platform match"
+    conn.close()
+
+
+def test_audit_flags_stronger_match_on_title(temp_db, monkeypatch):
+    # both entries overlap the owned platform and are non-mobile, but the stored
+    # entry's name only CONTAINS the title (score 40) while the best is an EXACT
+    # match (score 100) -> positive delta, reason falls through to 'stronger match'.
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
+                 "VALUES (9,'Portal','portal',?,900)", (_BASE + "t_cover_big/coll.jpg",))
+    conn.commit()
+    _add_platform(conn, 9, "Steam")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 901, "name": "Portal", "cover_url": _BASE + "t_cover_big/portal.jpg",
+         "platforms": [6], "source": "search"}])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: {
+        "id": 900, "name": "Portal Companion Collection", "platforms": [6],
+        "cover": {"url": _BASE + "t_thumb/coll.jpg"}})
+    flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
+    assert flagged == [9]
+    assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=9").fetchone()[0] == "stronger match"
+    conn.close()
