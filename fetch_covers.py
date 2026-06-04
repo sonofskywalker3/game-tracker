@@ -153,14 +153,16 @@ def _igdb_search(clean_title, client_id, access_token):
 
 def search_game(title, client_id, access_token, strict=False,
                 platform_ids=None, collection_name=None):
-    """Return the cover URL for the best IGDB identity match (bundle-first,
-    platform-aware).
+    """Return the best IGDB identity to persist for a game, or None.
 
-    When ``strict=True``, the cover is only returned when the match is
-    confident: either the identity's source is ``"bundle"`` (authoritative) or
-    the resolved identity's name normalises equal to the searched title
-    (``models.normalize_title`` comparison).  Use strict mode when replacing an
-    existing cover so a loose search guess never overwrites a correct cover.
+    Returns a dict ``{igdb_id, name, cover_url, source, authoritative}``.
+    ``authoritative`` is True when the match is trustworthy enough to own the
+    game's identity: the source is ``"bundle"`` (a bundle constituent matched on
+    exact title) or the resolved name normalises equal to the searched title.
+
+    When ``strict=True``, a non-authoritative match returns None so a loose search
+    guess never overwrites an existing correct cover. A match with no cover URL is
+    treated as no match.
     """
     import igdb_match
     from models import normalize_title
@@ -168,10 +170,11 @@ def search_game(title, client_id, access_token, strict=False,
         title, set(platform_ids or ()), collection_name, client_id, access_token)
     if not identity or not identity.get("cover_url"):
         return None
-    if strict and identity.get("source") != "bundle" \
-            and normalize_title(identity.get("name") or "") != normalize_title(title):
+    authoritative = (identity.get("source") == "bundle"
+                     or normalize_title(identity.get("name") or "") == normalize_title(title))
+    if strict and not authoritative:
         return None
-    return identity["cover_url"]
+    return {**identity, "authoritative": authoritative}
 
 
 def pick_canonical_name(search_title, results):

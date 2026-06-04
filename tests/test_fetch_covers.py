@@ -164,29 +164,43 @@ def test_classify_rename_applies_clean_casing_fix():
     assert classify_rename("Bioshock", "BioShock") == "apply"
 
 
-def test_search_game_uses_platform_aware_resolver(monkeypatch):
+def test_search_game_returns_authoritative_identity(monkeypatch):
     import fetch_covers
     import igdb_match
     monkeypatch.setattr(igdb_match, "resolve_identity",
                         lambda *a, **k: {"igdb_id": 1, "name": "Mega Man 2",
                                          "cover_url": "https://x/t_cover_big/2.jpg",
                                          "source": "bundle"})
-    url = fetch_covers.search_game("Mega Man 2", "c", "t",
+    got = fetch_covers.search_game("Mega Man 2", "c", "t",
                                    platform_ids={130}, collection_name="Mega Man Legacy Collection 2")
-    assert url == "https://x/t_cover_big/2.jpg"
+    assert got["cover_url"] == "https://x/t_cover_big/2.jpg"
+    assert got["igdb_id"] == 1
+    assert got["authoritative"] is True
+
+
+def test_search_game_exact_title_is_authoritative_even_when_search_source(monkeypatch):
+    import fetch_covers
+    import igdb_match
+    monkeypatch.setattr(igdb_match, "resolve_identity",
+                        lambda *a, **k: {"igdb_id": 5, "name": "Celeste",
+                                         "cover_url": "https://x/t_cover_big/c.jpg",
+                                         "source": "search"})
+    got = fetch_covers.search_game("Celeste", "c", "t")
+    assert got["authoritative"] is True
+    assert got["igdb_id"] == 5
 
 
 def test_search_game_strict_rejects_loose_match(monkeypatch):
     import fetch_covers
     import igdb_match
-
     loose_identity = {"source": "search", "name": "Some Other Game",
                       "cover_url": "https://x/t_cover_big/y.jpg", "igdb_id": 9}
     monkeypatch.setattr(igdb_match, "resolve_identity", lambda *a, **k: loose_identity)
 
-    # strict=True: name mismatch and source != "bundle" -> reject
+    # strict=True: name mismatch and source != "bundle" -> reject entirely
     assert fetch_covers.search_game("Celeste", "c", "t", strict=True) is None
 
-    # strict=False: loose match still returns the cover
-    assert fetch_covers.search_game("Celeste", "c", "t", strict=False) == \
-        "https://x/t_cover_big/y.jpg"
+    # strict=False: loose match returns a non-authoritative identity (cover only)
+    got = fetch_covers.search_game("Celeste", "c", "t", strict=False)
+    assert got["cover_url"] == "https://x/t_cover_big/y.jpg"
+    assert got["authoritative"] is False
