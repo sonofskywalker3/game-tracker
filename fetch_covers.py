@@ -294,15 +294,28 @@ def fetch_covers_generator(client_id, client_secret, limit=None, skip_existing=T
             plat_short = [r[0] for r in conn.execute(
                 "SELECT p.short_name FROM game_platforms gp JOIN platforms p "
                 "ON p.id = gp.platform_id WHERE gp.game_id = ?", (game["id"],))]
-            cover_url = search_game(
+            match = search_game(
                 title, client_id, access_token, strict=upgrade_non_igdb,
                 platform_ids=igdb_match.platform_ids_for(plat_short),
                 collection_name=game["collection_name"])
 
-            if cover_url:
+            if match and match.get("authoritative"):
+                # The resolver owns this game's identity: persist id + cover, lock
+                # it, and retire any review flag. This is the self-correcting path.
+                conn.execute(
+                    "UPDATE games SET igdb_id = ?, cover_url = ?, igdb_locked = 1, "
+                    "needs_igdb_review = 0, igdb_review_reason = NULL, "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (match["igdb_id"], match["cover_url"], game['id'])
+                )
+                conn.commit()
+                found += 1
+                status = 'locked'
+            elif match:
+                # Non-authoritative fill (blank/non-IGDB cover, non-strict): cover only.
                 conn.execute(
                     "UPDATE games SET cover_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (cover_url, game['id'])
+                    (match["cover_url"], game['id'])
                 )
                 conn.commit()
                 found += 1

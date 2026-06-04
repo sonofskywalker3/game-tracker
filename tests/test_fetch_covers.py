@@ -204,3 +204,53 @@ def test_search_game_strict_rejects_loose_match(monkeypatch):
     got = fetch_covers.search_game("Celeste", "c", "t", strict=False)
     assert got["cover_url"] == "https://x/t_cover_big/y.jpg"
     assert got["authoritative"] is False
+
+
+def _run_cover_gen(monkeypatch, identity):
+    """Drive fetch_covers_generator over a single inserted game, with auth and
+    search_game stubbed. Returns the games row dict after the run."""
+    import fetch_covers
+    import models
+    monkeypatch.setattr(fetch_covers, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(fetch_covers, "search_game", lambda *a, **k: identity)
+    list(fetch_covers.fetch_covers_generator("c", "s", skip_existing=False))
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT igdb_id, cover_url, COALESCE(igdb_locked,0) AS locked, "
+        "COALESCE(needs_igdb_review,0) AS review FROM games WHERE id=1").fetchone()
+    conn.close()
+    return row
+
+
+def test_cover_gen_authoritative_match_persists_id_and_locks(temp_db, monkeypatch):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,needs_igdb_review,igdb_review_reason) "
+                 "VALUES (1,'Castlevania: Aria of Sorrow','castlevania aria of sorrow',"
+                 "'https://images.igdb.com/igdb/image/upload/t_cover_big/co687k.jpg',1,'bundle')")
+    conn.commit()
+    conn.close()
+    row = _run_cover_gen(monkeypatch, {
+        "igdb_id": 222412, "name": "Castlevania: Aria of Sorrow",
+        "cover_url": "https://images.igdb.com/igdb/image/upload/t_cover_big/cob949.jpg",
+        "source": "bundle", "authoritative": True})
+    assert row["igdb_id"] == 222412
+    assert row["cover_url"].endswith("cob949.jpg")
+    assert row["locked"] == 1
+    assert row["review"] == 0  # applying the authoritative match clears the flag
+
+
+def test_cover_gen_nonauthoritative_match_writes_cover_only(temp_db, monkeypatch):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id,title,normalized_title,cover_url) "
+                 "VALUES (1,'Some Game','some game',NULL)")
+    conn.commit()
+    conn.close()
+    row = _run_cover_gen(monkeypatch, {
+        "igdb_id": 9, "name": "A Loosely Related Game",
+        "cover_url": "https://x/t_cover_big/loose.jpg",
+        "source": "search", "authoritative": False})
+    assert row["cover_url"].endswith("loose.jpg")
+    assert row["igdb_id"] is None  # no id persisted on a loose cover fill
+    assert row["locked"] == 0
