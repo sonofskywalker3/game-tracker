@@ -210,3 +210,10 @@ def test_fetch_entry_queries_by_id(monkeypatch):
 def test_fetch_entry_returns_none_when_missing(monkeypatch):
     monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", lambda *a, **k: [])
     assert igdb_match.fetch_entry(999, "c", "t") is None
+
+
+def test_migrate_igdb_review_reason_adds_column(temp_db):
+    conn = models.get_db()
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)")]
+    conn.close()
+    assert "igdb_review_reason" in cols
