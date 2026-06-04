@@ -252,6 +252,8 @@ Remove `test_audit_flags_disagreement_skips_locked_and_agreeing` from `tests/tes
 
 - [ ] **Step 2: Write the failing tests** (append to `tests/test_igdb_match.py`)
 
+> **Fixture note:** in this codebase the `temp_db` fixture returns a `pathlib.Path` (it closes its own connection). Tests get a live connection with `conn = models.get_db()` and `conn.close()` at the end — exactly like the existing `test_audit_flags_disagreement_skips_locked_and_agreeing`. `models` is already imported at the top of `tests/test_igdb_match.py`. Do NOT write `conn = temp_db`.
+
 ```python
 # --- rewritten audit: score-delta + reasons --------------------------------
 
@@ -271,7 +273,7 @@ def _add_platform(conn, game_id, short_name):
 
 
 def test_audit_skips_cosmetic_webp_jpg(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
                  "VALUES (1,'Hades','hades',?,100)", (_BASE + "t_cover_big/co1zyu.webp",))
     conn.commit()
@@ -282,10 +284,11 @@ def test_audit_skips_cosmetic_webp_jpg(temp_db, monkeypatch):
         "id": 100, "name": "Hades", "platforms": [6], "cover": {"url": _BASE + "t_thumb/co1zyu.jpg"}})
     assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
     assert conn.execute("SELECT needs_igdb_review FROM games WHERE id=1").fetchone()[0] == 0
+    conn.close()
 
 
 def test_audit_flags_mobile_to_console(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
                  "VALUES (2,'Y','y',?,200)", (_BASE + "t_cover_big/mob.jpg",))
     conn.commit()
@@ -301,10 +304,11 @@ def test_audit_flags_mobile_to_console(temp_db, monkeypatch):
     assert row[0] == 1 and row[1] == "mobile->console"
     # never mutates cover/igdb_id
     assert conn.execute("SELECT cover_url FROM games WHERE id=2").fetchone()[0].endswith("mob.jpg")
+    conn.close()
 
 
 def test_audit_not_flagged_when_stored_scores_higher(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
                  "VALUES (3,'Portal','portal',?,300)", (_BASE + "t_cover_big/switch.jpg",))
     conn.commit()
@@ -317,10 +321,11 @@ def test_audit_not_flagged_when_stored_scores_higher(temp_db, monkeypatch):
         "id": 300, "name": "Portal", "platforms": [130],
         "cover": {"url": _BASE + "t_thumb/switch.jpg"}})
     assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()
 
 
 def test_audit_flags_bundle_authoritative(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,collection_name,igdb_id) "
                  "VALUES (4,'Mega Man X','mega man x',?,'MM X LC',400)",
                  (_BASE + "t_cover_big/wrong.jpg",))
@@ -337,10 +342,11 @@ def test_audit_flags_bundle_authoritative(temp_db, monkeypatch):
     flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
     assert flagged == [4]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=4").fetchone()[0] == "bundle"
+    conn.close()
 
 
 def test_audit_unmatched_strong_candidate_flags(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
                  "VALUES (5,'Celeste','celeste',?,NULL)", (_BASE + "t_cover_big/old.jpg",))
     conn.commit()
@@ -354,10 +360,11 @@ def test_audit_unmatched_strong_candidate_flags(temp_db, monkeypatch):
     flagged = igdb_match.audit_igdb_matches(conn, client_id="c", token="t")
     assert flagged == [5]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=5").fetchone()[0] == "unmatched->match"
+    conn.close()
 
 
 def test_audit_unmatched_weak_candidate_not_flagged(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id) "
                  "VALUES (6,'Celeste','celeste',?,NULL)", (_BASE + "t_cover_big/old.jpg",))
     conn.commit()
@@ -368,16 +375,18 @@ def test_audit_unmatched_weak_candidate_not_flagged(temp_db, monkeypatch):
          "platforms": [6], "source": "search"}])
     monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
     assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()
 
 
 def test_audit_skips_locked(temp_db, monkeypatch):
-    conn = temp_db
+    conn = models.get_db()
     conn.execute("INSERT INTO games (id,title,normalized_title,cover_url,igdb_id,igdb_locked) "
                  "VALUES (7,'Locked','locked',?,700,1)", (_BASE + "t_cover_big/x.jpg",))
     conn.commit()
     monkeypatch.setattr(igdb_match, "candidates_for",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("locked must be skipped")))
     assert igdb_match.audit_igdb_matches(conn, client_id="c", token="t") == []
+    conn.close()
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -512,13 +521,17 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test** (append to `tests/test_api_games.py`)
 
+> **Fixture note:** `temp_db` is a `Path`; `models` is already imported at the top of `tests/test_api_games.py`. Use the file's established pattern — open `conn = models.get_db()`, insert/commit/close BEFORE the client request, then reopen to verify (see `test_igdb_candidates_and_pick`). Do NOT write `temp_db.execute`.
+
 ```python
 def test_igdb_pick_clears_review_reason_and_list_surfaces_it(client, temp_db):
     # a flagged game with a reason
-    temp_db.execute(
+    conn = models.get_db()
+    conn.execute(
         "INSERT INTO games (id,title,normalized_title,needs_igdb_review,igdb_review_reason) "
         "VALUES (1,'Mega Man X','mega man x',1,'bundle')")
-    temp_db.commit()
+    conn.commit()
+    conn.close()
 
     # the list surfaces the reason
     r = client.get('/api/games')
@@ -531,8 +544,10 @@ def test_igdb_pick_clears_review_reason_and_list_surfaces_it(client, temp_db):
     r = client.post('/api/games/1/igdb-pick',
                     json={'igdb_id': 1741, 'cover_url': 'https://x/t_cover_big/r.jpg'})
     assert r.status_code == 200
-    row = temp_db.execute(
+    conn = models.get_db()
+    row = conn.execute(
         "SELECT needs_igdb_review, igdb_review_reason FROM games WHERE id=1").fetchone()
+    conn.close()
     assert row['needs_igdb_review'] == 0 and row['igdb_review_reason'] is None
 ```
 
