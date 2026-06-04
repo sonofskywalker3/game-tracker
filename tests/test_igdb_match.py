@@ -160,6 +160,15 @@ def test_audit_flags_disagreement_skips_locked_and_agreeing(temp_db, monkeypatch
     conn.close()
 
 
+def test_cover_stem_ignores_size_and_extension():
+    base = "https://images.igdb.com/igdb/image/upload/"
+    assert igdb_match._cover_stem(base + "t_thumb/co1zyu.jpg") == "co1zyu"
+    assert igdb_match._cover_stem(base + "t_cover_big/co1zyu.webp") == "co1zyu"
+    assert igdb_match._cover_stem("//x/t_cover_big/co1zyu.png") == "co1zyu"
+    assert igdb_match._cover_stem(None) is None
+    assert igdb_match._cover_stem("") is None
+
+
 def test_resolve_identity_bundle_resolves_but_no_constituent_match_falls_through(monkeypatch):
     # The bundle is found and has constituents, but none match the game title.
     # resolve_identity must fall through to the search scorer and return its result.

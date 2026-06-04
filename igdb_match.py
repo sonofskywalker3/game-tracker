@@ -116,6 +116,17 @@ def cover_url_of(candidate: dict) -> str | None:
     return url if url.startswith("http") else "https:" + url
 
 
+def _cover_stem(url: str | None) -> str | None:
+    """The IGDB image id from a cover URL, ignoring size token + extension, so
+    cosmetic differences (.webp vs .jpg, t_thumb vs t_cover_big) collapse to the
+    same value. '.../t_cover_big/co1zyu.jpg' -> 'co1zyu'. None if no usable id."""
+    if not url:
+        return None
+    last = url.rsplit("/", 1)[-1]      # 'co1zyu.jpg'
+    stem = last.rsplit(".", 1)[0]      # 'co1zyu'
+    return stem or None
+
+
 def resolve_bundle(name: str, game_platform_ids: set[int],
                    client_id: str, token: str) -> int | None:
     """Find the IGDB bundle (game_type==3) for `name`, preferring one whose
