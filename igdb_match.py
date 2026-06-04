@@ -112,7 +112,7 @@ def fetch_entry(igdb_id: int, client_id: str, token: str) -> dict | None:
     query = (
         "fields name, cover.url, platforms, first_release_date, "
         "total_rating_count, game_type; "
-        f"where id = ({int(igdb_id)}); limit 1;"
+        f"where id = {int(igdb_id)}; limit 1;"
     )
     rows = igdb_dlc._igdb_query(query, client_id, token) or []
     return rows[0] if rows else None

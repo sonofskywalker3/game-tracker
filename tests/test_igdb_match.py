@@ -201,7 +201,8 @@ def test_fetch_entry_queries_by_id(monkeypatch):
                  "cover": {"url": "//x/t_thumb/2.jpg"}, "total_rating_count": 80}]
     monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
     entry = igdb_match.fetch_entry(1711, "c", "t")
-    assert "where id = (1711)" in seen["q"]
+    assert "where id = 1711" in seen["q"]
+    assert "limit 1" in seen["q"]
     assert "platforms" in seen["q"]
     assert entry["name"] == "Mega Man 2"
 
