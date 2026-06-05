@@ -126,6 +126,11 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
             "SELECT g.title, d.name, d.kind, d.owned FROM dlc d JOIN games g ON g.id = d.game_id "
             "WHERE d.created_at >= ? ORDER BY g.title, d.name", (run_started,))
     ]
+    added_games = [
+        {"id": r["id"], "title": r["title"]}
+        for r in conn.execute(
+            "SELECT id, title FROM games WHERE created_at >= ? ORDER BY title", (run_started,))
+    ]
     newly_owned = []
     for dlc_id in marked_dlc_ids:
         row = conn.execute(
@@ -144,6 +149,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         "owned_marked": owned_marked,
         "created": created,
         "backup_path": backup_path,
+        "added_games": added_games,
         "added_dlc": added_dlc,
         "newly_owned": newly_owned,
         "review": review,

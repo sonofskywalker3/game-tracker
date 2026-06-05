@@ -1483,10 +1483,17 @@
         function renderScrapeResults(s) {
             const el = document.getElementById('scrape-results');
             if (!s) { el.innerHTML = ''; return; }
+            const addedGames = s.added_games || [];
             const added = s.added_dlc || [];
             const owned = s.newly_owned || [];
             const review = s.review || [];
             let html = '';
+            if (addedGames.length) {
+                const rows = addedGames.map(g =>
+                    `<div class="pl-3 text-gray-300">${escapeHtml(g.title)}</div>`).join('');
+                html += `<details class="mt-2" open><summary class="cursor-pointer text-gray-300">Added games (${addedGames.length})</summary>
+                         <div class="mt-1 max-h-64 overflow-y-auto pr-1">${rows}</div></details>`;
+            }
             if (added.length) {
                 const byGame = {};
                 added.forEach(d => { (byGame[d.game] = byGame[d.game] || []).push(d); });
@@ -1513,7 +1520,7 @@
                 html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Needs review (${review.length}) — <button type="button" onclick="event.preventDefault(); openDlcReviewModal();" class="text-accent hover:underline">resolve</button></summary>
                          <div class="mt-1 max-h-48 overflow-y-auto">${rows}</div></details>`;
             }
-            el.innerHTML = html || '<div class="text-gray-500">No DLC changes.</div>';
+            el.innerHTML = html || '<div class="text-gray-500">No new games or DLC.</div>';
         }
 
         function startScrapePolling() {
