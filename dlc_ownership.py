@@ -74,7 +74,8 @@ def title_id_prefix(external_id: str | None) -> str | None:
     """
     if not external_id or "-" not in external_id:
         return None
-    return external_id.rsplit("-", 1)[0]
+    prefix = external_id.rsplit("-", 1)[0]
+    return prefix or None
 
 
 def parent_by_title_id(prefix_map: dict[str, set[int]], source: str | None,
