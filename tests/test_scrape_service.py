@@ -337,6 +337,31 @@ def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
     conn.close()
 
 
+def test_run_pipeline_resolves_xbox_addon_parent_via_catalog(temp_db, monkeypatch):
+    import addon_parent
+    from addon_parent import ParentRef
+    # Skip IGDB enrichment (no creds) like test_run_pipeline_skips_enrich_without_creds.
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+    # Inject a fake xbox resolver: addon 'AON1' -> parent game 'PARENTPID' = 'Rock Band 4'.
+    monkeypatch.setitem(
+        addon_parent.RESOLVERS, "xbox",
+        lambda ids: {i: (ParentRef("PARENTPID", "Rock Band 4") if i == "AON1" else None) for i in ids})
+
+    conn = models.get_db()
+    games = [
+        ScrapedGame(title="Some Game", platform="Xbox", source="xbox", external_id="G1"),
+        ScrapedGame(title="Synth Track", platform="Xbox", source="xbox",
+                    external_id="AON1", kind="addon", source_title="Synth Track"),
+    ]
+    summary = scrape_service._run_pipeline(conn, "xbox", games)
+    conn.commit()
+    # The owned add-on is linked to a newly-created Rock Band 4 game.
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE owned=1").fetchone()[0] == 1
+    assert conn.execute("SELECT 1 FROM games WHERE title='Rock Band 4'").fetchone() is not None
+    assert summary["owned_marked"] >= 1
+    conn.close()
+
+
 def test_scrape_progress_updates_status_message():
     cb = scrape_service._scrape_progress("playstation")
     cb(150)
