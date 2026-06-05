@@ -82,6 +82,22 @@ def test_api_games_exposes_categories_and_physical(client):
     assert by_title["Desktop Game"]["categories"] == ["pc"]
 
 
+def test_api_games_exposes_created_at_and_newest_sort(client):
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title, created_at) VALUES (?, ?, ?)",
+        [("Older Game", "older game", "2020-01-01 00:00:00"),
+         ("Newer Game", "newer game", "2024-01-01 00:00:00")],
+    )
+    conn.commit()
+    conn.close()
+
+    rows = client.get("/api/games?sort=newest&order=desc").get_json()
+    titles = [g["title"] for g in rows]
+    assert titles.index("Newer Game") < titles.index("Older Game")
+    assert all("created_at" in g for g in rows)
+
+
 def test_duplicates_endpoint_lists_definite_and_candidates(client):
     conn = models.get_db()
     conn.executemany(

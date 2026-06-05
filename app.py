@@ -88,6 +88,7 @@ def api_games():
             g.opencritic_score,
             COALESCE(g.needs_igdb_review, 0) AS needs_igdb_review,
             g.igdb_review_reason,
+            g.created_at,
             ur.status,
             ur.rating,
             ur.priority,
@@ -134,7 +135,8 @@ def api_games():
         'priority': 'ur.priority',
         'metacritic': 'g.metacritic_score',
         'status': 'ur.status',
-        'manual': 'ur.sort_order'
+        'manual': 'ur.sort_order',
+        'newest': 'g.created_at'
     }
     sort_col = sort_columns.get(sort, 'g.title')
     sort_order = 'DESC' if order == 'desc' else 'ASC'
