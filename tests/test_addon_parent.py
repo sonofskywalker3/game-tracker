@@ -107,3 +107,25 @@ def test_ensure_parent_game_creates_when_missing(conn):
     row = conn.execute("SELECT game_id FROM game_external_ids "
                        "WHERE source='xbox' AND external_id='BNG8P3Q7C78Z'").fetchone()
     assert row["game_id"] == got
+
+
+def test_ensure_parent_game_create_missing_false_returns_none(conn):
+    before = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    pr = ParentRef(product_id="UNKNOWNPID", name="Some Game")
+    got, how = addon_parent._ensure_parent_game(conn, "xbox", "Xbox", pr,
+                                                create_missing=False)
+    assert got is None
+    assert how == ""
+    after = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    assert after == before  # no game created
+
+
+def test_ensure_parent_game_no_name_returns_none(conn):
+    before = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    pr = ParentRef(product_id="UNKNOWNPID2", name=None)
+    got, how = addon_parent._ensure_parent_game(conn, "xbox", "Xbox", pr,
+                                                create_missing=True)
+    assert got is None
+    assert how == ""
+    after = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    assert after == before  # no game created
