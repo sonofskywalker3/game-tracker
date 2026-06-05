@@ -1,8 +1,41 @@
 """xbox_catalog: resolve an add-on's parent GAME via Microsoft displaycatalog."""
 from __future__ import annotations
 
+import requests
+
 from scrapers import xbox_catalog
 from addon_parent import ParentRef
+
+
+class _FakeResp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+class _FakeSession:
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = 0
+
+    def get(self, *a, **k):
+        self.calls += 1
+        return _FakeResp(self._payload)
+
+
+class _BoomSession:
+    def get(self, *a, **k):
+        raise AssertionError("network should not be called")
+
+
+class _ConnErrSession:
+    def get(self, *a, **k):
+        raise requests.ConnectionError("down")
 
 
 def _product(pid, ptype, title, *, parent_id=None):
@@ -52,3 +85,30 @@ def test_resolve_missing_addon_is_none():
         return {i: None for i in ids}
     out = xbox_catalog.resolve_addon_parents(["NOPE"], fetch=fake_fetch)
     assert out["NOPE"] is None
+
+
+def test_fetch_products_caches_and_reads_back(tmp_path):
+    payload = {"Products": [
+        _product("A", "Game", "Alpha"),
+        _product("B", "Durable", "Bee", parent_id="A"),
+    ]}
+    fake = _FakeSession(payload)
+    out = xbox_catalog._fetch_products(["A", "B"], cache_dir=tmp_path, session=fake, delay_s=0)
+    assert out["A"] == _product("A", "Game", "Alpha")
+    assert out["B"] == _product("B", "Durable", "Bee", parent_id="A")
+    assert (tmp_path / "A.json").exists()
+    assert (tmp_path / "B.json").exists()
+    assert fake.calls == 1
+
+    # Second call must come from cache, never touching the network.
+    cached = xbox_catalog._fetch_products(
+        ["A", "B"], cache_dir=tmp_path, session=_BoomSession(), delay_s=0)
+    assert cached["A"] == _product("A", "Game", "Alpha")
+    assert cached["B"] == _product("B", "Durable", "Bee", parent_id="A")
+
+
+def test_fetch_products_does_not_cache_on_error(tmp_path):
+    out = xbox_catalog._fetch_products(
+        ["X"], cache_dir=tmp_path, session=_ConnErrSession(), delay_s=0)
+    assert out == {"X": None}
+    assert not (tmp_path / "X.json").exists()  # uncached -> a later run retries
