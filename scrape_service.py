@@ -296,7 +296,8 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                      message=f"checking add-ons for {len(targets)} games...")
                 owned_addons, visited_pids = addon_fn(
                     page, targets, captured,
-                    progress=_progress("scraping", "checking add-ons", "owned"))
+                    progress=_progress("scraping", "checking add-ons", "owned"),
+                    should_cancel=_cancel.is_set)
                 games = list(games) + owned_addons
         write_scrape(vendor, games)
         conn = models.get_db()

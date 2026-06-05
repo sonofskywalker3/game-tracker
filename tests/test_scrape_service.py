@@ -270,7 +270,7 @@ def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
         return [ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                             source="playstation", external_id=base_pid)]
 
-    def fake_collect_addons(page, product_ids, captured, progress=None):
+    def fake_collect_addons(page, product_ids, captured, progress=None, should_cancel=None):
         assert product_ids == [base_pid]   # backfill: nothing synced yet
         return ([ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone",
                              platform="PS5", source="playstation",
