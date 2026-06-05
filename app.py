@@ -614,13 +614,14 @@ def api_pin_igdb(game_id):
 
 @app.route('/api/games/<int:game_id>/igdb-candidates', methods=['GET'])
 def api_igdb_candidates(game_id):
-    """Ranked IGDB identity candidates for a game (bundle-first, platform-aware)."""
+    """Shaped IGDB identity candidates for the Fix-match modal, plus the game's
+    current cover (bundle-first, junk/duplicate-filtered)."""
     import config
     import igdb_dlc
     import igdb_match
     conn = get_db()
     row = conn.execute(
-        "SELECT title, collection_name FROM games WHERE id = ?", (game_id,)).fetchone()
+        "SELECT title, cover_url, collection_name FROM games WHERE id = ?", (game_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
@@ -636,7 +637,9 @@ def api_igdb_candidates(game_id):
     cands = igdb_match.candidates_for(
         row['title'], igdb_match.platform_ids_for(plat_short),
         row['collection_name'], client_id, token)
-    return jsonify({'candidates': cands})
+    shaped = igdb_match.modal_candidates(cands, row['title'])
+    return jsonify({'candidates': shaped,
+                    'current': {'cover_url': row['cover_url'], 'title': row['title']}})
 
 
 @app.route('/api/games/<int:game_id>/igdb-pick', methods=['POST'])
@@ -655,6 +658,22 @@ def api_igdb_pick(game_id):
         "UPDATE games SET igdb_id = ?, cover_url = COALESCE(?, cover_url), "
         "igdb_locked = 1, needs_igdb_review = 0, igdb_review_reason = NULL, "
         "updated_at = CURRENT_TIMESTAMP WHERE id = ?", (igdb_id, cover_url, game_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/games/<int:game_id>/igdb-keep', methods=['POST'])
+def api_igdb_keep(game_id):
+    """Keep the current IGDB match as-is: lock it and clear the review flag without
+    changing igdb_id or cover_url (the 'this one is fine' action)."""
+    conn = get_db()
+    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
+    conn.execute(
+        "UPDATE games SET igdb_locked = 1, needs_igdb_review = 0, "
+        "igdb_review_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (game_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
