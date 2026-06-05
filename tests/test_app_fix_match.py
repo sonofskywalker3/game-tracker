@@ -59,3 +59,24 @@ def test_keep_current_clears_review_without_changing_match(client):
 def test_keep_current_404_for_missing_game(client):
     res = client.post("/api/games/999999/igdb-keep")
     assert res.status_code == 404
+
+
+def test_candidates_attach_platform_labels_and_drop_current_dup(client, monkeypatch):
+    import config
+    import igdb_dlc
+    import igdb_match
+    gid = _insert_game("Bugsnax", cover="https://x/co_same.jpg")
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 10, "name": "Bugsnax", "cover_url": "https://x/co_same.jpg",
+         "source": "search", "platforms": [39], "score": 30},        # == current -> dropped
+        {"igdb_id": 11, "name": "Bugsnax", "cover_url": "https://x/co_full.jpg",
+         "source": "search", "platforms": [167, 48, 130], "score": 160},
+    ])
+    res = client.get(f"/api/games/{gid}/igdb-candidates")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert [c["igdb_id"] for c in body["candidates"]] == [11]         # current-dup removed
+    assert body["candidates"][0]["platforms_label"] == "PS5 · PS4 · Switch"
+    assert "platforms_label" in body["current"]

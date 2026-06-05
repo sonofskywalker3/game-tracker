@@ -637,9 +637,13 @@ def api_igdb_candidates(game_id):
     cands = igdb_match.candidates_for(
         row['title'], igdb_match.platform_ids_for(plat_short),
         row['collection_name'], client_id, token)
-    shaped = igdb_match.modal_candidates(cands, row['title'])
+    shaped = igdb_match.modal_candidates(cands, row['title'], current_cover=row['cover_url'])
+    for c in shaped:
+        c['platforms_label'] = ' · '.join(igdb_match.platform_labels(c.get('platforms') or []))
+    current_label = ' · '.join(igdb_match.platform_labels(igdb_match.platform_ids_for(plat_short)))
     return jsonify({'candidates': shaped,
-                    'current': {'cover_url': row['cover_url'], 'title': row['title']}})
+                    'current': {'cover_url': row['cover_url'], 'title': row['title'],
+                                'platforms_label': current_label}})
 
 
 @app.route('/api/games/<int:game_id>/igdb-pick', methods=['POST'])
