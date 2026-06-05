@@ -254,6 +254,44 @@ def test_run_pipeline_reports_added_games(temp_db, monkeypatch):
     conn.close()
 
 
+def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
+    import igdb_dlc
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+    monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
+
+    base_pid = "UP0082-PPSA10664_00-FF16SIEA00000002"
+
+    def fake_collect(page, captured):
+        return [ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
+                            source="playstation", external_id=base_pid)]
+
+    def fake_collect_addons(page, product_ids, captured):
+        assert product_ids == [base_pid]   # backfill: nothing synced yet
+        return [ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone",
+                            platform="PS5", source="playstation",
+                            external_id="UP0082-PPSA10664_00-ADDCONT000000300",
+                            kind="addon")]
+
+    ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
+                                 collect=fake_collect, collect_addons=fake_collect_addons)
+    assert ok
+    assert _wait_phase("awaiting_login")
+    scrape_service.signal_continue()
+    assert _wait_phase("complete")
+    st = scrape_service.status()
+    assert st["summary"]["owned_marked"] == 1
+
+    conn = models.get_db()
+    synced = conn.execute(
+        "SELECT g.psn_addons_synced_at FROM games g "
+        "JOIN game_external_ids ge ON ge.game_id = g.id "
+        "WHERE ge.source='playstation' AND ge.external_id = ?", (base_pid,)).fetchone()[0]
+    conn.close()
+    assert synced is not None   # marker stamped so future scrapes skip it
+
+
 def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
     import steam_dlc
     import import_scraped

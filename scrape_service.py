@@ -74,7 +74,28 @@ def backup_db() -> str | None:
     return str(dst)
 
 
-def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
+def _psn_addon_targets(games: list) -> list[str]:
+    """PS product ids to visit: scraped ids whose game is not yet add-on-synced.
+
+    New games aren't in the DB yet (import runs later), so they're naturally
+    included -> first run backfills all, later runs only hit unsynced/new games.
+    """
+    from scrapers import playstation
+    scraped = [g.external_id for g in games
+               if g.external_id and playstation.ADDON_PID_RE.fullmatch(g.external_id)]
+    conn = models.get_db()
+    try:
+        synced = {r[0] for r in conn.execute(
+            "SELECT ge.external_id FROM game_external_ids ge "
+            "JOIN games g ON g.id = ge.game_id "
+            "WHERE ge.source = 'playstation' AND g.psn_addons_synced_at IS NOT NULL")}
+    finally:
+        conn.close()
+    return [pid for pid in scraped if pid not in synced]
+
+
+def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
+                  visited_pids: list[str] | None = None) -> dict:
     """Back up the DB, import games, then populate DLC + ownership per vendor.
 
     Steam uses the id-based deep-fetch (steam_dlc: catalogue + appid ownership);
@@ -120,6 +141,15 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
         marked_dlc_ids = [m.dlc_id for m in report.marked_items]
         review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
+    if visited_pids:
+        placeholders = ",".join("?" for _ in visited_pids)
+        conn.execute(
+            f"UPDATE games SET psn_addons_synced_at = CURRENT_TIMESTAMP "
+            f"WHERE id IN (SELECT game_id FROM game_external_ids "
+            f"WHERE source = 'playstation' AND external_id IN ({placeholders}))",
+            visited_pids)
+        conn.commit()
+
     added_dlc = [
         {"game": r["title"], "name": r["name"], "kind": r["kind"], "owned": bool(r["owned"])}
         for r in conn.execute(
@@ -156,16 +186,18 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list) -> dict:
     }
 
 
-def start(vendor: str, *, browser_factory=None, collect=None) -> tuple[bool, str]:
+def start(vendor: str, *, browser_factory=None, collect=None,
+          collect_addons=None) -> tuple[bool, str]:
     """Begin a scrape in a daemon thread. Rejects if a scrape is active or the
-    vendor is unknown. browser_factory/collect are test seams."""
+    vendor is unknown. browser_factory/collect/collect_addons are test seams."""
     if vendor not in VENDORS:
         return False, f"unknown vendor: {vendor}"
     if _is_active():
         return False, "a scrape is already running"
     _reset(vendor=vendor)
-    thread = threading.Thread(target=_run, args=(vendor, browser_factory, collect),
-                              daemon=True)
+    thread = threading.Thread(
+        target=_run, args=(vendor, browser_factory, collect, collect_addons),
+        daemon=True)
     thread.start()
     return True, "started"
 
@@ -182,7 +214,7 @@ def cancel() -> bool:
     return True
 
 
-def _run(vendor: str, browser_factory, collect) -> None:
+def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
     """Daemon-thread body: own the browser, wait for login, scrape, run pipeline.
 
     Cancellation is honored during the (potentially long) login wait. Any error
@@ -191,6 +223,7 @@ def _run(vendor: str, browser_factory, collect) -> None:
     mod = SCRAPERS[vendor]
     factory = browser_factory or capturing_browser
     collect_fn = collect or mod.collect
+    visited_pids: list[str] = []
     _set(phase="launching", message=f"opening {vendor} in a browser...",
          started_at=datetime.now().isoformat())
     try:
@@ -210,10 +243,17 @@ def _run(vendor: str, browser_factory, collect) -> None:
                 return
             _set(phase="scraping", message=f"scraping your {vendor} library...")
             games = collect_fn(page, captured)
+            if vendor == "playstation":
+                addon_fn = collect_addons or mod.collect_addons
+                visited_pids = _psn_addon_targets(games)
+                _set(phase="scraping",
+                     message=f"checking add-ons for {len(visited_pids)} games...")
+                owned_addons = addon_fn(page, visited_pids, captured)
+                games = list(games) + owned_addons
         write_scrape(vendor, games)
         conn = models.get_db()
         try:
-            summary = _run_pipeline(conn, vendor, games)
+            summary = _run_pipeline(conn, vendor, games, visited_pids=visited_pids)
         finally:
             conn.close()
         _set(phase="complete", message="done", summary=summary,
