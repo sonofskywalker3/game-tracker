@@ -186,30 +186,43 @@ def parse_addons(bodies: list[dict]) -> list[ScrapedGame]:
 def collect_addons(page, product_ids: list[str],
                    captured: list | None = None,
                    progress: Callable[[int, int | None, int | None], None] | None = None,
+                   should_cancel: Callable[[], bool] | None = None,
                    ) -> tuple[list[ScrapedGame], list[str]]:
-    """Visit each game's Store product page and return (owned add-ons, completed ids).
+    """Visit each game's Store product page and return (owned add-ons, resolved ids).
 
     One page load per game: goto the product URL, scroll so the add-ons section
     lazy-loads, then parse the newly-captured GraphQL bodies. Per-game isolation
-    so one bad page doesn't abort the batch. `captured` is the shared response
-    log from capturing_browser; we parse only the slice each page adds. The second
-    return value is the product ids whose page loaded successfully (callers stamp
-    only these as synced, so a failed page is retried on the next scrape).
+    so one bad page doesn't abort the batch. `captured` is the shared response log
+    from capturing_browser; we parse only the slice each page adds.
+
+    A page that returns NO product data (PSN's "not found" page for a delisted or
+    otherwise unresolvable product id) is logged with its HTTP status + final URL
+    and is NOT added to the returned `completed` list, so the caller does not mark
+    it synced and it stays retryable. `completed` is therefore only the ids whose
+    real store page actually loaded. `should_cancel`, if given, is polled per game
+    so a long backfill can be stopped mid-run.
     """
     captured = captured if captured is not None else []
     out: list[ScrapedGame] = []
     completed: list[str] = []
+    not_found = 0
     seen: set[str] = set()
     done = 0
     for pid in product_ids:
+        if should_cancel and should_cancel():
+            logger.info("playstation: add-on pass cancelled after %d/%d games",
+                        done, len(product_ids))
+            break
         if not (pid and ADDON_PID_RE.fullmatch(pid)):
             done += 1
             if progress:
                 progress(done, len(product_ids), len(out))
             continue
         start = len(captured)
+        status = None
         try:
-            page.goto(STORE_PRODUCT_URL.format(pid=pid))
+            resp = page.goto(STORE_PRODUCT_URL.format(pid=pid))
+            status = getattr(resp, "status", None)
             scroll_until_idle(page, captured)
         except Exception as exc:  # one bad page must not sink the run
             logger.warning("playstation: add-on page failed for %s: %s", pid, exc)
@@ -217,13 +230,24 @@ def collect_addons(page, product_ids: list[str],
             if progress:
                 progress(done, len(product_ids), len(out))
             continue
-        completed.append(pid)
         bodies = []
         for entry in captured[start:]:
             try:
                 bodies.append(json.loads(entry.get("body", "")))
             except (json.JSONDecodeError, TypeError):
                 continue
+        has_product = any(True for b in bodies for _ in _iter_product_objects(b))
+        if not has_product:
+            not_found += 1
+            logger.warning(
+                "playstation: no product data for %s (status=%s, url=%s) — store "
+                "page not found; skipping (retryable, not marked synced)",
+                pid, status, getattr(page, "url", "?"))
+            done += 1
+            if progress:
+                progress(done, len(product_ids), len(out))
+            continue
+        completed.append(pid)
         for addon in parse_addons(bodies):
             if addon.external_id not in seen:
                 seen.add(addon.external_id)
@@ -232,6 +256,7 @@ def collect_addons(page, product_ids: list[str],
         done += 1
         if progress:
             progress(done, len(product_ids), len(out))
-    logger.info("playstation: %d owned add-ons across %d/%d games",
-                len(out), len(completed), len(product_ids))
+    logger.info(
+        "playstation: %d owned add-ons; %d/%d store pages resolved, %d not found",
+        len(out), len(completed), len(product_ids), not_found)
     return out, completed

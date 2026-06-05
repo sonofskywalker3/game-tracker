@@ -108,3 +108,41 @@ def test_collect_addons_only_marks_successfully_loaded_games(monkeypatch):
     addons, completed = playstation.collect_addons(page, [good, bad], captured)
     assert completed == [good]                       # bad page not marked synced
     assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
+
+
+def test_collect_addons_skips_pages_with_no_product_data(monkeypatch):
+    """A PSN 'not found' page (no product objects) is not marked synced -> retryable."""
+    monkeypatch.setattr(playstation, "scroll_until_idle", lambda *a, **k: None)
+    good = "UP0082-PPSA10664_00-FF16SIEA00000002"
+    dead = "UP1023-PPSA10513_00-0000000000000000"
+    captured = []
+    page = FakePage(captured, {
+        good: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
+        dead: [{"data": {"productRetrieve": None}}],   # no product objects on the page
+    })
+    addons, completed = playstation.collect_addons(page, [good, dead], captured)
+    assert page.visited[-1].endswith(dead)            # it did attempt the dead page
+    assert completed == [good]                        # but dead page is NOT marked synced
+    assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
+
+
+def test_collect_addons_respects_should_cancel(monkeypatch):
+    """should_cancel is polled per game so a long backfill can be stopped mid-run."""
+    monkeypatch.setattr(playstation, "scroll_until_idle", lambda *a, **k: None)
+    first = "UP0082-PPSA10664_00-FF16SIEA00000002"
+    second = "UP1023-PPSA10513_00-0000000000000000"
+    captured = []
+    page = FakePage(captured, {
+        first: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300")],
+        second: [_owned_body("UP1023-PPSA10513_00-DLCITEM000000001")],
+    })
+    seen = {"n": 0}
+
+    def cancel():
+        seen["n"] += 1
+        return seen["n"] > 1   # allow the first game, cancel before the second
+
+    addons, completed = playstation.collect_addons(page, [first, second], captured,
+                                                   should_cancel=cancel)
+    assert page.visited == ["https://store.playstation.com/en-us/product/" + first]
+    assert completed == [first]
