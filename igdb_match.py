@@ -216,6 +216,31 @@ def candidates_for(title: str, game_platform_ids: set[int],
     return out
 
 
+def modal_candidates(cands: list[dict], game_title: str) -> list[dict]:
+    """Shape `candidates_for` output for the Fix-match modal.
+
+    Keeps candidates that have a cover AND either come from the bundle or whose name
+    normalises equal to the game's title (drops mod/hack junk like "... Alter"). If
+    no candidate matches the title, falls back to all cover-bearing candidates so the
+    modal is never empty when art exists. De-duplicates by cover stem, keeping the
+    first of each identical-art group (input is already best-first)."""
+    target = normalize_title(game_title)
+    with_cover = [c for c in cands if c.get("cover_url")]
+    matched = [c for c in with_cover
+               if c.get("source") == "bundle"
+               or normalize_title(c.get("name") or "") == target]
+    pool = matched or with_cover
+    out: list[dict] = []
+    seen: set[str | None] = set()
+    for c in pool:
+        stem = _cover_stem(c.get("cover_url"))
+        if stem in seen:
+            continue
+        seen.add(stem)
+        out.append(c)
+    return out
+
+
 def resolve_identity(title: str, game_platform_ids: set[int],
                      collection_name: str | None, client_id: str, token: str
                      ) -> dict | None:

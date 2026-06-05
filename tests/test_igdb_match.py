@@ -366,3 +366,33 @@ def test_audit_flags_stronger_match_on_title(temp_db, monkeypatch):
     assert flagged == [9]
     assert conn.execute("SELECT igdb_review_reason FROM games WHERE id=9").fetchone()[0] == "stronger match"
     conn.close()
+
+
+def test_modal_candidates_drops_junk_and_dedupes():
+    cands = [
+        {"igdb_id": 1, "name": "Aria of Sorrow", "cover_url": "https://x/co_a.jpg",
+         "source": "search", "score": 110},
+        {"igdb_id": 2, "name": "Aria of Sorrow", "cover_url": "https://x/co_a.jpg",
+         "source": "search", "score": 100},                       # duplicate art -> collapsed
+        {"igdb_id": 3, "name": "Aria of Sorrow Alter", "cover_url": "https://x/co_b.jpg",
+         "source": "search", "score": 50},                        # title mismatch (mod) -> dropped
+        {"igdb_id": 4, "name": "Anything", "cover_url": "https://x/co_c.jpg",
+         "source": "bundle"},                                     # bundle -> kept regardless of title
+        {"igdb_id": 5, "name": "Aria of Sorrow", "cover_url": None,
+         "source": "search"},                                     # no cover -> dropped
+    ]
+    out = igdb_match.modal_candidates(cands, "Aria of Sorrow")
+    assert [c["igdb_id"] for c in out] == [1, 4]
+
+
+def test_modal_candidates_fallback_when_no_title_match():
+    cands = [
+        {"igdb_id": 7, "name": "Totally Different Name", "cover_url": "https://x/co_z.jpg",
+         "source": "search", "score": 40},
+    ]
+    out = igdb_match.modal_candidates(cands, "Aria of Sorrow")
+    assert [c["igdb_id"] for c in out] == [7]   # no title match -> fall back to all-with-cover
+
+
+def test_modal_candidates_empty_input():
+    assert igdb_match.modal_candidates([], "Whatever") == []
