@@ -39,6 +39,7 @@ BUNDLE_CONTENTS: dict[tuple[str, str], tuple[str, ...]] = {
         "Borderlands", "Borderlands 2", "Borderlands: The Pre-Sequel", "Borderlands 3",
     ),
     ("nintendo", "70070000014049"): ("Deponia", "Chaos on Deponia", "Goodbye Deponia"),
+    ("nintendo", "70010000078053"): ("Doom", "Doom II"),
     # FF I-VI Pixel Remaster: the plain titles match the existing FF I-VI rows
     # (one row per playable game), so this links them rather than creating dupes.
     ("nintendo", "70070000017105"): (
