@@ -242,6 +242,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         progress=_progress("importing", "importing games", "new"))
     conn.commit()
 
+    link = None  # set only when a vendor catalogue resolver runs (non-Steam path)
     if vendor == "steam":
         _set(phase="matching", message="fetching Steam DLC catalogue...")
         owned_app_ids = {int(r["external_id"]) for r in addons if r.get("external_id")}
@@ -265,7 +266,6 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
             conn.commit()
             remaining = link.unresolved
         else:
-            link = None
             remaining = addons
         report = dlc_ownership.mark_ownership(conn, remaining)
         conn.commit()
@@ -273,7 +273,6 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         marked_dlc_ids = [m.dlc_id for m in report.marked_items]
         if link is not None:
             owned_marked += link.linked
-            created += link.created_parents
             marked_dlc_ids += [m.dlc_id for m in link.linked_items]
         dlc_added = (enrich or {}).get("added", 0)
         enrich_skipped = enrich is None
@@ -310,7 +309,8 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
     return {
         "vendor": vendor,
         "scraped": len(rows),
-        "new_games": stats.new_games,
+        # + parent games auto-created from the vendor catalogue
+        "new_games": stats.new_games + (link.created_parents if link else 0),
         "platform_links": stats.platform_links_added,
         "dlc_added": dlc_added,
         "enrich_skipped": enrich_skipped,
