@@ -13,6 +13,7 @@ import logging
 import shutil
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -52,7 +53,8 @@ def _set(**kw) -> None:
         _state.update(kw)
 
 
-def _progress(phase: str, label: str, found_word: str | None = None):
+def _progress(phase: str, label: str,
+              found_word: str | None = None) -> Callable[[int, int | None, int | None], None]:
     """Return a callback(done, total=None, found=None) that updates the live status
     message the modal polls, so long loops show climbing counts."""
     def cb(done: int, total: int | None = None, found: int | None = None) -> None:
