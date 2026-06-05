@@ -585,7 +585,7 @@ def api_refresh_psn_dlc(game_id: int):
     conn.commit()
     conn.close()
     ok, msg = scrape_service.start("playstation")
-    return jsonify({"started": ok, "message": msg})
+    return jsonify({"started": ok, "message": msg}), (200 if ok else 409)
 
 
 @app.route('/api/games/<int:game_id>/igdb', methods=['POST'])

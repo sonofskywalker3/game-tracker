@@ -664,3 +664,20 @@ def test_refresh_psn_404_without_psn_id(client, temp_db):
     gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
     conn.close()
     assert client.post(f"/api/games/{gid}/dlc/refresh-psn").status_code == 404
+
+
+def test_refresh_psn_409_when_scrape_busy(client, temp_db, monkeypatch):
+    import app as app_module
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title, psn_addons_synced_at) "
+                 "VALUES ('G', 'g', '2020-01-01 00:00:00')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.execute("INSERT INTO game_external_ids (game_id, source, external_id) "
+                 "VALUES (?, 'playstation', 'UP0082-PPSA10664_00-FF16SIEA00000002')", (gid,))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(app_module.scrape_service, "start",
+                        lambda vendor, **kw: (False, "a scrape is already running"))
+    resp = client.post(f"/api/games/{gid}/dlc/refresh-psn")
+    assert resp.status_code == 409
+    assert resp.get_json()["started"] is False
