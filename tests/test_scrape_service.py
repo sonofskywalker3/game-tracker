@@ -362,6 +362,42 @@ def test_run_pipeline_resolves_xbox_addon_parent_via_catalog(temp_db, monkeypatc
     conn.close()
 
 
+def test_run_pipeline_xbox_mixed_resolved_and_unresolved(temp_db, monkeypatch):
+    import addon_parent
+    from addon_parent import ParentRef
+    # Skip IGDB enrichment (no creds).
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+    # Fake xbox resolver: 'AON1' resolves to Rock Band 4; 'AON2' returns None.
+    monkeypatch.setitem(
+        addon_parent.RESOLVERS, "xbox",
+        lambda ids: {i: (ParentRef("PARENTPID", "Rock Band 4") if i == "AON1" else None) for i in ids})
+
+    conn = models.get_db()
+    games = [
+        ScrapedGame(title="Some Game", platform="Xbox", source="xbox", external_id="G1"),
+        ScrapedGame(title="Synth Track", platform="Xbox", source="xbox",
+                    external_id="AON1", kind="addon", source_title="Synth Track"),
+        # Unresolved by the catalogue, and its title matches no library game,
+        # so the name matcher leaves it for review ("no parent game").
+        ScrapedGame(title="Random Unmatched Pack", platform="Xbox", source="xbox",
+                    external_id="AON2", kind="addon", source_title="Random Unmatched Pack"),
+    ]
+    summary = scrape_service._run_pipeline(conn, "xbox", games)
+    conn.commit()
+    # Resolved add-on: owned DLC under a newly-created Rock Band 4 game.
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE owned=1").fetchone()[0] >= 1
+    assert conn.execute("SELECT 1 FROM games WHERE title='Rock Band 4'").fetchone() is not None
+    # Auto-created parent game counts toward new_games (Some Game + Rock Band 4).
+    assert summary["new_games"] >= 2
+    # Unresolved add-on fell through to the name matcher and is in the review queue.
+    assert summary["review"], "expected the unresolved add-on in the review summary"
+    open_review = conn.execute(
+        "SELECT 1 FROM dlc_review_queue WHERE external_id = 'AON2' AND resolved_at IS NULL"
+    ).fetchone()
+    assert open_review is not None
+    conn.close()
+
+
 def test_scrape_progress_updates_status_message():
     cb = scrape_service._scrape_progress("playstation")
     cb(150)
