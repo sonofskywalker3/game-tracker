@@ -621,7 +621,7 @@ def api_igdb_candidates(game_id):
     import igdb_match
     conn = get_db()
     row = conn.execute(
-        "SELECT title, cover_url, collection_name FROM games WHERE id = ?", (game_id,)).fetchone()
+        "SELECT title, cover_url, collection_name, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
@@ -640,7 +640,8 @@ def api_igdb_candidates(game_id):
     shaped = igdb_match.modal_candidates(cands, row['title'], current_cover=row['cover_url'])
     for c in shaped:
         c['platforms_label'] = ' · '.join(igdb_match.platform_labels(c.get('platforms') or []))
-    current_label = ' · '.join(igdb_match.platform_labels(igdb_match.platform_ids_for(plat_short)))
+    stored = igdb_match.fetch_entry(row['igdb_id'], client_id, token) if row['igdb_id'] else None
+    current_label = ' · '.join(igdb_match.platform_labels((stored or {}).get('platforms') or []))
     return jsonify({'candidates': shaped,
                     'current': {'cover_url': row['cover_url'], 'title': row['title'],
                                 'platforms_label': current_label}})

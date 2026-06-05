@@ -31,6 +31,7 @@ def test_candidates_returns_shaped_list_and_current(client, monkeypatch):
         {"igdb_id": 3, "name": "Aria of Sorrow Alter", "cover_url": "https://x/co_b.jpg",
          "source": "search", "score": 50},          # junk -> dropped
     ])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
     res = client.get(f"/api/games/{gid}/igdb-candidates")
     assert res.status_code == 200
     body = res.get_json()
@@ -74,9 +75,30 @@ def test_candidates_attach_platform_labels_and_drop_current_dup(client, monkeypa
         {"igdb_id": 11, "name": "Bugsnax", "cover_url": "https://x/co_full.jpg",
          "source": "search", "platforms": [167, 48, 130], "score": 160},
     ])
+    monkeypatch.setattr(igdb_match, "fetch_entry", lambda *a, **k: None)
     res = client.get(f"/api/games/{gid}/igdb-candidates")
     assert res.status_code == 200
     body = res.get_json()
     assert [c["igdb_id"] for c in body["candidates"]] == [11]         # current-dup removed
     assert body["candidates"][0]["platforms_label"] == "PS5 · PS4 · Switch"
     assert "platforms_label" in body["current"]
+
+
+def test_current_label_uses_matched_entry_platforms_not_owned(client, monkeypatch):
+    import config
+    import igdb_dlc
+    import igdb_match
+    gid = _insert_game("Bugsnax", cover="https://x/co6qjm.jpg")   # _insert_game sets igdb_id=999
+    monkeypatch.setattr(config, "get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda *a, **k: "tok")
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 11, "name": "Bugsnax", "cover_url": "https://x/co_full.jpg",
+         "source": "search", "platforms": [167, 48, 130], "score": 160}])
+    # The matched (stored) entry 999 is the iOS-only record:
+    monkeypatch.setattr(igdb_match, "fetch_entry",
+                        lambda *a, **k: {"id": 999, "name": "Bugsnax", "platforms": [39]})
+    res = client.get(f"/api/games/{gid}/igdb-candidates")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["current"]["platforms_label"] == "iOS"          # matched-entry platforms, not owned
+    assert body["candidates"][0]["platforms_label"] == "PS5 · PS4 · Switch"
