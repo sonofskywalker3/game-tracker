@@ -81,8 +81,9 @@ def _psn_addon_targets(games: list) -> list[str]:
     included -> first run backfills all, later runs only hit unsynced/new games.
     """
     from scrapers import playstation
-    scraped = [g.external_id for g in games
-               if g.external_id and playstation.ADDON_PID_RE.fullmatch(g.external_id)]
+    scraped = list(dict.fromkeys(
+        g.external_id for g in games
+        if g.external_id and playstation.ADDON_PID_RE.fullmatch(g.external_id)))
     conn = models.get_db()
     try:
         synced = {r[0] for r in conn.execute(
@@ -245,10 +246,10 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
             games = collect_fn(page, captured)
             if vendor == "playstation":
                 addon_fn = collect_addons or mod.collect_addons
-                visited_pids = _psn_addon_targets(games)
+                targets = _psn_addon_targets(games)
                 _set(phase="scraping",
-                     message=f"checking add-ons for {len(visited_pids)} games...")
-                owned_addons = addon_fn(page, visited_pids, captured)
+                     message=f"checking add-ons for {len(targets)} games...")
+                owned_addons, visited_pids = addon_fn(page, targets, captured)
                 games = list(games) + owned_addons
         write_scrape(vendor, games)
         conn = models.get_db()

@@ -35,12 +35,13 @@ def test_collect_addons_visits_targets_and_returns_owned(monkeypatch):
         base1: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
         base2: [_owned_body("UP4497-PPSA03974_00-EXPANSION1000000", "PL", price="$29.99")],
     })
-    addons = playstation.collect_addons(page, [base1, base2], captured)
+    addons, completed = playstation.collect_addons(page, [base1, base2], captured)
     assert page.visited == [
         "https://store.playstation.com/en-us/product/" + base1,
         "https://store.playstation.com/en-us/product/" + base2,
     ]
     assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
+    assert completed == [base1, base2]
 
 
 def test_collect_addons_skips_non_product_ids_and_survives_errors(monkeypatch):
@@ -52,7 +53,28 @@ def test_collect_addons_skips_non_product_ids_and_survives_errors(monkeypatch):
 
     captured = []
     page = Boom(captured, {})
-    addons = playstation.collect_addons(page, ["TITLEID_ONLY",
-                                               "UP0082-PPSA10664_00-FF16SIEA00000002"],
-                                        captured)
+    addons, completed = playstation.collect_addons(page, ["TITLEID_ONLY",
+                                                          "UP0082-PPSA10664_00-FF16SIEA00000002"],
+                                                   captured)
     assert addons == []
+    assert completed == []
+
+
+def test_collect_addons_only_marks_successfully_loaded_games(monkeypatch):
+    monkeypatch.setattr(playstation, "scroll_until_idle", lambda *a, **k: None)
+    good = "UP0082-PPSA10664_00-FF16SIEA00000002"
+    bad = "UP4497-PPSA03974_00-0000000000000CP1"
+
+    class PartialPage(FakePage):
+        def goto(self, url):
+            if url.endswith(bad):
+                raise RuntimeError("nav failed")
+            super().goto(url)
+
+    captured = []
+    page = PartialPage(captured, {
+        good: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
+    })
+    addons, completed = playstation.collect_addons(page, [good, bad], captured)
+    assert completed == [good]                       # bad page not marked synced
+    assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]

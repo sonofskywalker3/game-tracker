@@ -1208,7 +1208,7 @@
                 alert(res.data?.error || res.data?.message || 'Could not start PSN refresh');
                 return;
             }
-            alert('PSN refresh started — this re-checks your full PlayStation library for add-ons. Log in if prompted, then watch the scrape status.');
+            alert('PSN refresh started — re-checks unsynced add-ons (usually just this game after the first full sync). Log in if prompted, then watch the scrape status.');
         }
 
         async function addTag(gameId, tagName, input) {
