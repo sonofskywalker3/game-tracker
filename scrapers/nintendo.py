@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 
 from scrapers.base import (
     ScrapedGame,
@@ -126,7 +127,8 @@ def _request_page(page, page_num: int, headers: dict) -> dict:
     return resp.json()
 
 
-def collect(page, captured: list | None = None) -> list[ScrapedGame]:
+def collect(page, captured: list | None = None,
+            progress: Callable[[int], None] | None = None) -> list[ScrapedGame]:
     """Page through the authenticated order-history API and return owned games.
 
     Reuses the page's captured auth headers (the cross-origin graph.nintendo.com
@@ -145,6 +147,8 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
         if not _orders(body):
             break
         responses.append(body)
+        if progress:
+            progress(sum(len(_orders(b)) for b in responses))
         logger.info("nintendo: fetched page %d (%d orders so far)",
                     page_num, sum(len(_orders(b)) for b in responses))
         page.wait_for_timeout(REQUEST_DELAY_MS)

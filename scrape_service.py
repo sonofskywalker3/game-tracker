@@ -65,6 +65,21 @@ def _progress(phase: str, label: str,
     return cb
 
 
+_SCRAPE_UNITS = {"playstation": "games", "steam": "games",
+                 "nintendo": "orders", "xbox": "pages"}
+
+
+def _scrape_progress(vendor: str) -> Callable[[int], None]:
+    """Return a callback(done) that ticks the base-scrape status message with the
+    vendor's natural unit, so a long library fetch shows it's still working."""
+    unit = _SCRAPE_UNITS.get(vendor, "items")
+
+    def cb(done: int) -> None:
+        _set(phase="scraping",
+             message=f"scraping your {vendor} library — {done} {unit} so far…")
+    return cb
+
+
 def status() -> dict:
     """A snapshot of the current scrape state (safe to call from any thread)."""
     with _lock:
@@ -259,7 +274,7 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                      finished_at=datetime.now().isoformat())
                 return
             _set(phase="scraping", message=f"scraping your {vendor} library...")
-            games = collect_fn(page, captured)
+            games = collect_fn(page, captured, progress=_scrape_progress(vendor))
             if vendor == "playstation":
                 addon_fn = collect_addons or mod.collect_addons
                 targets = _psn_addon_targets(games)

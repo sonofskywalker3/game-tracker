@@ -9,6 +9,7 @@ parsers are unit-tested; `collect` drives the live calls and is verified manuall
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import requests
 
@@ -52,7 +53,8 @@ def parse_userdata(payload: dict) -> list[ScrapedGame]:
             for appid in owned]
 
 
-def collect(page, captured: list | None = None) -> list[ScrapedGame]:
+def collect(page, captured: list | None = None,
+            progress: Callable[[int], None] | None = None) -> list[ScrapedGame]:
     """Owned Steam games (via Web API key) + owned-appid carriers (via session).
 
     GetOwnedGames needs the key + SteamID64 from config; if absent, no games are
@@ -67,6 +69,8 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
         resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
         resp.raise_for_status()
         games = parse_owned_games(resp.json())
+        if progress:
+            progress(len(games))
         logger.info("steam: %d owned games via GetOwnedGames", len(games))
     else:
         logger.warning("steam: no API key / SteamID in config.json; skipping owned-games fetch")
@@ -78,4 +82,6 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
         logger.info("steam: %d owned appids (games+DLC) via userdata", len(owned))
     else:
         logger.warning("steam: userdata fetch failed (%s); owned DLC will be empty", resp.status)
+    if progress:
+        progress(len(games) + len(owned))
     return games + owned
