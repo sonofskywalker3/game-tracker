@@ -1626,6 +1626,10 @@
                 }
                 await loadDlcReview();                 // re-render the open list
                 refreshDlcReviewBadge(res.data.count); // update the badge/count
+                const n = res.data.resolved || 0;
+                alert(n > 0
+                    ? `Auto-matched ${n} add-on${n === 1 ? '' : 's'}; ${res.data.count} left to review.`
+                    : `0 auto-matches found. ${res.data.count} item${res.data.count === 1 ? '' : 's'} need manual review.`);
             } finally {
                 dlcReviewBusy = false;
                 if (btn) { btn.disabled = false; btn.textContent = 'Auto-match'; }
