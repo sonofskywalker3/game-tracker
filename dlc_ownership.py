@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 # None ("no match at all").
 AMBIGUOUS = "__ambiguous__"
 
+# Vendor whose product ids carry a game-unique title-id we can resolve a parent
+# by. PS Store ids are REGION-TITLEID_00-CONCEPT16; the title-id prefix is shared
+# by the base game and all its add-ons. Other vendors do not share this shape, so
+# the title-id fallback is guarded to this source only.
+PLAYSTATION_SOURCE = "playstation"
+
 
 def norm(title: str | None) -> str:
     """Normalized match key (normalize_title(clean_title(...)))."""
@@ -56,6 +62,63 @@ def parent_of(addon_title: str, library: list[tuple[int, str]]) -> int | str | N
     if len(winners) > 1:
         return AMBIGUOUS
     return next(iter(winners))
+
+
+def title_id_prefix(external_id: str | None) -> str | None:
+    """The PS-Store title-id prefix of a product id, or None.
+
+    A PS Store product id is REGION-TITLEID_00-CONCEPT16, e.g.
+    JP0177-PPSA24478_00-MAJIMAOUTFITPACK. The title-id prefix is everything up to
+    the last '-' (JP0177-PPSA24478_00) and is shared by the base game and all its
+    add-ons. Returns None when external_id is empty or carries no '-'.
+    """
+    if not external_id or "-" not in external_id:
+        return None
+    return external_id.rsplit("-", 1)[0]
+
+
+def parent_by_title_id(prefix_map: dict[str, set[int]], source: str | None,
+                       external_id: str | None) -> int | None:
+    """Resolve a PSN add-on's parent game by shared title-id prefix.
+
+    Source-guarded: returns None unless `source` is PLAYSTATION_SOURCE (only PS
+    ids share this game-unique prefix). `prefix_map` is {title_id_prefix:
+    {game_id, ...}}. Returns the game_id only when the add-on's prefix maps to
+    exactly one game; an unknown or ambiguous (>=2 games) prefix returns None so
+    the add-on is left for review.
+    """
+    if source != PLAYSTATION_SOURCE:
+        return None
+    prefix = title_id_prefix(external_id)
+    if prefix is None:
+        return None
+    gids = prefix_map.get(prefix)
+    if gids is None or len(gids) != 1:
+        return None
+    return next(iter(gids))
+
+
+def psn_prefix_map(conn: sqlite3.Connection) -> dict[str, set[int]]:
+    """Build {title_id_prefix: {game_id, ...}} from playstation game_external_ids.
+
+    Rows whose external_id has no '-' (no resolvable title-id) are skipped. A
+    schema predating game_external_ids yields an empty map (the fallback is
+    purely additive, so its absence must not break ownership marking).
+    """
+    prefix_map: dict[str, set[int]] = {}
+    try:
+        rows = conn.execute(
+            "SELECT game_id, external_id FROM game_external_ids WHERE source = ?",
+            (PLAYSTATION_SOURCE,)).fetchall()
+    except sqlite3.OperationalError:
+        logger.debug("game_external_ids table absent; PSN title-id fallback disabled")
+        return prefix_map
+    for row in rows:
+        prefix = title_id_prefix(row["external_id"])
+        if prefix is None:
+            continue
+        prefix_map.setdefault(prefix, set()).add(row["game_id"])
+    return prefix_map
 
 
 def remainder(addon_title: str, parent_norm: str) -> str:
@@ -285,11 +348,19 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
     library = [(r["id"], r["normalized_title"])
                for r in conn.execute("SELECT id, normalized_title FROM games")]
     titles = {r["id"]: r["title"] for r in conn.execute("SELECT id, title FROM games")}
+    prefix_map = psn_prefix_map(conn)
 
     report = OwnershipReport()
     for addon in addons:
         title = _addon_field(addon, "title")
         parent = parent_of(title, library)
+        if not isinstance(parent, int):
+            # Name matching missed/tied. Try the PSN title-id fallback (source-
+            # guarded) before giving up to review.
+            by_id = parent_by_title_id(
+                prefix_map, _addon_field(addon, "source"), _addon_field(addon, "external_id"))
+            if by_id is not None:
+                parent = by_id
         if parent is None:
             report.review.append(Match(title, reason="no parent game"))
             if not dry_run:
