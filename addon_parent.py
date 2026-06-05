@@ -17,9 +17,9 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-import dlc_ownership  # noqa: F401  (used by resolve_and_link in a later task)
+import dlc_ownership
 import import_scraped
-from dlc_ownership import Match, OwnershipReport  # noqa: F401  (OwnershipReport: later task)
+from dlc_ownership import Match, OwnershipReport
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +82,70 @@ def _ensure_parent_game(
         logger.warning("addon_parent: parent %r (%s) did not import", parent.name, parent.product_id)
         return None, ""
     return row[0], ("created" if stats.new_games > 0 else "backfill")
+
+
+def _clear_review(conn: sqlite3.Connection, source: str, ext: str | None) -> int:
+    """Mark any open review rows for this vendor add-on resolved. Returns rowcount."""
+    if not ext:
+        return 0
+    cur = conn.execute(
+        "UPDATE dlc_review_queue SET resolved_at = CURRENT_TIMESTAMP "
+        "WHERE source = ? AND external_id = ? "
+        "AND resolved_at IS NULL AND dismissed_at IS NULL",
+        (source, ext))
+    return cur.rowcount
+
+
+def resolve_and_link(
+    conn: sqlite3.Connection, source: str, platform: str, addons: list,
+    resolver: ParentResolver, *, create_missing: bool = True,
+) -> ResolveReport:
+    """Resolve each owned add-on to its parent game and mark it owned.
+
+    For every add-on (a scrape dict with title/source/external_id/source_title):
+    ask `resolver` for its parent, ensure that parent game exists (see
+    `_ensure_parent_game`), link the add-on owned via the shared engine
+    `dlc_ownership.apply_addon_to_parent`, and clear matching open review rows.
+    Add-ons with no catalogue parent go to `report.unresolved` for the caller to
+    fall back on `dlc_ownership.mark_ownership`. Caller owns commit.
+    """
+    report = ResolveReport()
+    ids = [dlc_ownership._addon_field(a, "external_id") for a in addons]
+    ids = [i for i in ids if i]
+    parents = resolver(ids) if ids else {}
+
+    for addon in addons:
+        ext = dlc_ownership._addon_field(addon, "external_id")
+        parent_ref = parents.get(ext) if ext else None
+        if parent_ref is None:
+            report.unresolved.append(addon)
+            continue
+        parent_id, how = _ensure_parent_game(
+            conn, source, platform, parent_ref, create_missing=create_missing)
+        if parent_id is None:
+            report.unresolved.append(addon)
+            continue
+        if how == "created":
+            report.created_parents += 1
+        elif how == "backfill":
+            report.backfilled_ids += 1
+
+        prow = conn.execute(
+            "SELECT title, normalized_title FROM games WHERE id = ?", (parent_id,)).fetchone()
+        parent_norm = (prow["normalized_title"] if prow else "") or ""
+        titles = {parent_id: prow["title"] if prow else ""}
+
+        sub = OwnershipReport()
+        dlc_ownership.apply_addon_to_parent(
+            conn, sub, parent_id, parent_norm, titles, addon, dry_run=False)
+        report.linked += sub.marked
+        report.linked_items.extend(sub.marked_items)
+        if sub.marked or sub.already_owned:
+            report.review_cleared += _clear_review(conn, source, ext)
+
+    return report
+
+
+# Per-source add-on parent resolvers. Populated at import time by scrape wiring
+# (see scrape_service). A source with no resolver falls back to name matching.
+RESOLVERS: dict[str, ParentResolver] = {}
