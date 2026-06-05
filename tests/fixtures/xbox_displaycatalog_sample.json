@@ -1,0 +1,19 @@
+{
+  "Products": [
+    {
+      "ProductId": "9MZKJPZXTVGM",
+      "ProductType": "Durable",
+      "LocalizedProperties": [{"ProductTitle": "Borderlands®4: Gilded Glory Pack"}],
+      "MarketProperties": [{"RelatedProducts": [
+        {"RelatedProductId": "9MX6HKF5647G", "RelationshipType": "addOnParent"},
+        {"RelatedProductId": "9MX6HKF5647G", "RelationshipType": "SellableBy"}
+      ]}]
+    },
+    {
+      "ProductId": "9MX6HKF5647G",
+      "ProductType": "Game",
+      "LocalizedProperties": [{"ProductTitle": "Borderlands®4"}],
+      "MarketProperties": [{"RelatedProducts": []}]
+    }
+  ]
+}

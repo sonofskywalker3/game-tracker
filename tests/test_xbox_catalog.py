@@ -1,6 +1,9 @@
 """xbox_catalog: resolve an add-on's parent GAME via Microsoft displaycatalog."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import requests
 
 from scrapers import xbox_catalog
@@ -112,3 +115,17 @@ def test_fetch_products_does_not_cache_on_error(tmp_path):
         ["X"], cache_dir=tmp_path, session=_ConnErrSession(), delay_s=0)
     assert out == {"X": None}
     assert not (tmp_path / "X.json").exists()  # uncached -> a later run retries
+
+
+def test_resolve_against_real_shaped_fixture():
+    body = json.loads(
+        (Path(__file__).parent / "fixtures" / "xbox_displaycatalog_sample.json")
+        .read_text(encoding="utf-8"))
+    by_id = {p["ProductId"]: p for p in body["Products"]}
+
+    def fake_fetch(ids):
+        return {i: by_id.get(i) for i in ids}
+
+    out = xbox_catalog.resolve_addon_parents(["9MZKJPZXTVGM"], fetch=fake_fetch)
+    assert out["9MZKJPZXTVGM"].product_id == "9MX6HKF5647G"
+    assert out["9MZKJPZXTVGM"].name.startswith("Borderlands")
