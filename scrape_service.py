@@ -26,6 +26,8 @@ from scrapers.base import capturing_browser, write_scrape
 logger = logging.getLogger(__name__)
 
 VENDORS = ("playstation", "xbox", "nintendo", "steam")
+# Vendor -> platform label for parent games created from a vendor catalogue.
+_PLATFORM_BY_VENDOR = {"xbox": "Xbox", "nintendo": "Switch", "playstation": "PS4"}
 # Phases during which a scrape is considered "running" (start() is rejected).
 _ACTIVE = frozenset({"launching", "awaiting_login", "scraping",
                      "importing", "enriching", "matching"})
@@ -256,12 +258,26 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         enrich = import_scraped.run_dlc_enrichment(conn,
                                                    progress=_progress("enriching", "enriching DLC", "added"))
         _set(phase="matching", message="matching DLC ownership...")
-        report = dlc_ownership.mark_ownership(conn, addons)
+        import addon_parent
+        platform = _PLATFORM_BY_VENDOR.get(vendor, vendor.title())
+        resolver = addon_parent.RESOLVERS.get(vendor)
+        if resolver and addons:
+            link = addon_parent.resolve_and_link(conn, vendor, platform, addons, resolver)
+            conn.commit()
+            remaining = link.unresolved
+        else:
+            link = None
+            remaining = addons
+        report = dlc_ownership.mark_ownership(conn, remaining)
         conn.commit()
         owned_marked, created = report.marked, report.created
+        marked_dlc_ids = [m.dlc_id for m in report.marked_items]
+        if link is not None:
+            owned_marked += link.linked
+            created += link.created_parents
+            marked_dlc_ids += [m.dlc_id for m in link.linked_items]
         dlc_added = (enrich or {}).get("added", 0)
         enrich_skipped = enrich is None
-        marked_dlc_ids = [m.dlc_id for m in report.marked_items]
         review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
     if visited_pids:

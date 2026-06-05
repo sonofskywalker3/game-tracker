@@ -149,3 +149,16 @@ def resolve_and_link(
 # Per-source add-on parent resolvers. Populated at import time by scrape wiring
 # (see scrape_service). A source with no resolver falls back to name matching.
 RESOLVERS: dict[str, ParentResolver] = {}
+
+
+def _register_default_resolvers() -> None:
+    """Register built-in vendor resolvers (called once at import)."""
+    try:
+        from scrapers import xbox_catalog
+    except ImportError:  # pragma: no cover - scrapers always present in app runtime
+        logger.warning("addon_parent: xbox_catalog unavailable; xbox parent resolution disabled")
+        return
+    RESOLVERS.setdefault("xbox", xbox_catalog.resolve_addon_parents)
+
+
+_register_default_resolvers()
