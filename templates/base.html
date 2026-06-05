@@ -1272,9 +1272,13 @@
             const cover = (url) => url
                 ? `<img src="${escapeHtml(url)}" class="w-full aspect-[3/4] object-contain rounded mb-2 bg-black/20">`
                 : `<div class="w-full aspect-[3/4] rounded mb-2 bg-black/20 flex items-center justify-center text-2xl">🎮</div>`;
+            const labelLine = (t) => t
+                ? `<div class="text-[10px] text-gray-400 mb-2 truncate" title="${escapeHtml(t)}">${escapeHtml(t)}</div>`
+                : '';
             const currentTile = tile(
                 `<div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Current</div>`
                 + cover(current.cover_url)
+                + labelLine(current.platforms_label)
                 + `<button onclick='keepCurrentIgdb(${gameId})'
                           class="mt-auto text-xs bg-surface-light hover:bg-gray-600 rounded px-2 py-1">Keep this one</button>`);
             if (!cands.length) {
@@ -1285,6 +1289,7 @@
             const candTiles = cands.map((c, i) => tile(
                 `<div class="text-[10px] uppercase tracking-wide ${i === 0 ? 'text-accent' : 'text-gray-500'} mb-1">${i === 0 ? 'Recommended' : '&nbsp;'}</div>`
                 + cover(c.cover_url)
+                + labelLine(c.platforms_label)
                 + `<button onclick='pickIgdb(${gameId}, ${c.igdb_id}, ${JSON.stringify(c.cover_url)})'
                           class="mt-auto text-xs bg-accent/80 hover:bg-accent text-white rounded px-2 py-1">Use this</button>`)).join('');
             box.innerHTML = currentTile + candTiles;
