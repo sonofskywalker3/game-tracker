@@ -191,3 +191,35 @@ def test_enrich_game_title_path_handles_null_igdb_id(temp_db, monkeypatch):
     assert rep["matched"] is False
     assert rep["added"] == 0
     conn.close()
+
+
+def _rec():
+    calls = []
+    def cb(done, total=None, found=None):
+        calls.append((done, total, found))
+    cb.calls = calls
+    return cb
+
+
+def test_enrich_missing_progress_called_per_game(temp_db, monkeypatch):
+    """progress fires once per game (including errors); done climbs; found tracks added."""
+    conn = models.get_db()
+    _game(conn, "Alpha")
+    _game(conn, "Beta")
+    conn.commit()
+
+    def fake_enrich_game(c, gid, client_id, token, *, slug=None):
+        return {"matched": True, "cover_set": False, "added": 1, "existing": 0}
+
+    monkeypatch.setattr(igdb_dlc, "enrich_game", fake_enrich_game)
+    rec = _rec()
+    igdb_dlc.enrich_missing(conn, client_id="c", token="t", progress=rec)
+    assert len(rec.calls) == 2
+    dones = [c[0] for c in rec.calls]
+    assert dones == [1, 2]
+    totals_param = [c[1] for c in rec.calls]
+    assert totals_param[0] == totals_param[1] == 2
+    # found should equal running total of added (1 per game -> 1, then 2)
+    founds = [c[2] for c in rec.calls]
+    assert founds == [1, 2]
+    conn.close()

@@ -52,6 +52,17 @@ def _set(**kw) -> None:
         _state.update(kw)
 
 
+def _progress(phase: str, label: str, found_word: str | None = None):
+    """Return a callback(done, total=None, found=None) that updates the live status
+    message the modal polls, so long loops show climbing counts."""
+    def cb(done: int, total: int | None = None, found: int | None = None) -> None:
+        msg = f"{label} {done}/{total}" if total else f"{label} {done}"
+        if found is not None and found_word:
+            msg += f" ({found} {found_word})"
+        _set(phase=phase, message=msg)
+    return cb
+
+
 def status() -> dict:
     """A snapshot of the current scrape state (safe to call from any thread)."""
     with _lock:
@@ -118,13 +129,15 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
     _set(phase="importing", message=f"importing {len(games_only)} {vendor} games...")
     backup_path = backup_db()
     stats = import_scraped.import_games(
-        conn, games_only, vendor, confirm_fn=import_scraped._safe_auto_confirm)
+        conn, games_only, vendor, confirm_fn=import_scraped._safe_auto_confirm,
+        progress=_progress("importing", "importing games", "new"))
     conn.commit()
 
     if vendor == "steam":
         _set(phase="matching", message="fetching Steam DLC catalogue...")
         owned_app_ids = {int(r["external_id"]) for r in addons if r.get("external_id")}
-        sr = steam_dlc.enrich_and_mark(conn, owned_app_ids)
+        sr = steam_dlc.enrich_and_mark(conn, owned_app_ids,
+                                       progress=_progress("matching", "fetching Steam DLC", "DLC"))
         conn.commit()
         owned_marked, created, dlc_added = sr.owned_marked, sr.catalogue_added, sr.catalogue_added
         enrich_skipped = True
@@ -132,7 +145,8 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         review = []
     else:
         _set(phase="enriching", message="enriching DLC from IGDB...")
-        enrich = import_scraped.run_dlc_enrichment(conn)
+        enrich = import_scraped.run_dlc_enrichment(conn,
+                                                   progress=_progress("enriching", "enriching DLC", "added"))
         _set(phase="matching", message="matching DLC ownership...")
         report = dlc_ownership.mark_ownership(conn, addons)
         conn.commit()
@@ -249,7 +263,9 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                 targets = _psn_addon_targets(games)
                 _set(phase="scraping",
                      message=f"checking add-ons for {len(targets)} games...")
-                owned_addons, visited_pids = addon_fn(page, targets, captured)
+                owned_addons, visited_pids = addon_fn(
+                    page, targets, captured,
+                    progress=_progress("scraping", "checking add-ons", "owned"))
                 games = list(games) + owned_addons
         write_scrape(vendor, games)
         conn = models.get_db()

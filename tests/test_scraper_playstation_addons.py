@@ -60,6 +60,36 @@ def test_collect_addons_skips_non_product_ids_and_survives_errors(monkeypatch):
     assert completed == []
 
 
+def _rec():
+    calls = []
+    def cb(done, total=None, found=None):
+        calls.append((done, total, found))
+    cb.calls = calls
+    return cb
+
+
+def test_collect_addons_progress_called_per_pid(monkeypatch):
+    """progress fires once per pid with climbing done, total==len(product_ids), found==owned so far."""
+    monkeypatch.setattr(playstation, "scroll_until_idle", lambda *a, **k: None)
+    base1 = "UP0082-PPSA10664_00-FF16SIEA00000002"
+    base2 = "UP4497-PPSA03974_00-0000000000000CP1"
+    captured = []
+    page = FakePage(captured, {
+        base1: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
+        base2: [],
+    })
+    rec = _rec()
+    addons, completed = playstation.collect_addons(page, [base1, base2], captured, progress=rec)
+    assert len(rec.calls) == 2
+    dones = [c[0] for c in rec.calls]
+    assert dones == [1, 2]
+    totals_col = [c[1] for c in rec.calls]
+    assert totals_col == [2, 2]
+    # found = owned add-ons accumulated: 1 after base1 (FF16 DLC), still 1 after base2 (no addon)
+    founds = [c[2] for c in rec.calls]
+    assert founds == [1, 1]
+
+
 def test_collect_addons_only_marks_successfully_loaded_games(monkeypatch):
     monkeypatch.setattr(playstation, "scroll_until_idle", lambda *a, **k: None)
     good = "UP0082-PPSA10664_00-FF16SIEA00000002"

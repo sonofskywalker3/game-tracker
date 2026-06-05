@@ -15,6 +15,7 @@ import logging
 import re
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -142,7 +143,8 @@ def _mark_owned(conn: sqlite3.Connection, report: SteamReport, dlc_id: int) -> N
 
 
 def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
-                    fetch=None) -> SteamReport:
+                    fetch=None,
+                    progress: Callable[[int, int | None, int | None], None] | None = None) -> SteamReport:
     """Populate each owned Steam game's DLC catalogue and mark owned by appid.
 
     For every game with a `steam` external id: fetch its catalogue, reconcile-or-
@@ -157,11 +159,16 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
         "SELECT g.id AS game_id, gx.external_id AS appid "
         "FROM games g JOIN game_external_ids gx ON gx.game_id = g.id "
         "WHERE gx.source = 'steam'").fetchall()
+    total = len(steam_games)
+    done = 0
     for grow in steam_games:
         game_id = grow["game_id"]
         try:
             game_appid = int(grow["appid"])
         except (TypeError, ValueError):
+            done += 1
+            if progress:
+                progress(done, total, report.catalogue_added)
             continue
         try:
             data = fetch(game_appid)
@@ -169,6 +176,9 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
             report.errors += 1
             logger.warning("steam appdetails failed for game %s (app %s): %s",
                            game_id, game_appid, exc)
+            done += 1
+            if progress:
+                progress(done, total, report.catalogue_added)
             continue
         report.games += 1
         for dlc_appid in parse_catalogue(data):
@@ -190,4 +200,7 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
             if dlc_appid in owned_app_ids:
                 _mark_owned(conn, report, dlc_id)
         conn.commit()                  # commit per game (mirrors igdb_dlc.enrich_missing)
+        done += 1
+        if progress:
+            progress(done, total, report.catalogue_added)
     return report

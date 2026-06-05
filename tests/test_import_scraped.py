@@ -377,9 +377,37 @@ def test_main_runs_steam_dlc_for_steam_files(temp_db, monkeypatch, tmp_path):
     conn.close()
 
 
+def _rec():
+    calls = []
+    def cb(done, total=None, found=None):
+        calls.append((done, total, found))
+    cb.calls = calls
+    return cb
+
+
+def test_import_games_progress_called_per_game(temp_db):
+    """progress callback is fired once per game; final call shows done==total, found==new_games."""
+    conn = models.get_db()
+    games = [
+        _g("Hades",   "PS4", external_id="G1"),
+        _g("Celeste",  "PS4", external_id="G2"),
+        _g("Hollow Knight", "PS4", external_id="G3"),
+    ]
+    rec = _rec()
+    stats = imp.import_games(conn, games, "playstation",
+                             confirm_fn=imp._safe_auto_confirm, progress=rec)
+    conn.commit()
+    assert len(rec.calls) == len(games)
+    last_done, last_total, last_found = rec.calls[-1]
+    assert last_done == len(games)
+    assert last_total == len(games)
+    assert last_found == stats.new_games
+    conn.close()
+
+
 def test_main_runs_ownership_after_enrichment(temp_db, monkeypatch, tmp_path):
     # Mock IGDB enrichment so importing the base game populates a DLC row.
-    def fake_enrich_missing(conn, *, client_id, token):
+    def fake_enrich_missing(conn, *, client_id, token, progress=None):
         for (gid,) in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL").fetchall():
             conn.execute("UPDATE games SET igdb_id = 1 WHERE id = ?", (gid,))
             conn.execute("INSERT OR IGNORE INTO dlc (game_id, name, source) "
