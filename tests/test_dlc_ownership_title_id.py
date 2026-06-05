@@ -102,6 +102,11 @@ def test_title_id_prefix_none_is_none():
     assert title_id_prefix(None) is None
 
 
+def test_title_id_prefix_leading_dash_is_none():
+    # A leading-dash id splits to an empty prefix; falsy -> None, not "".
+    assert title_id_prefix("-CONCEPT") is None
+
+
 # --- parent_by_title_id ----------------------------------------------------
 
 def test_parent_by_title_id_single_match():
@@ -186,3 +191,40 @@ def test_mark_ownership_non_playstation_source_guard(conn):
     assert report.marked == 0
     assert len(report.review) == 1
     assert report.review[0].reason == "no parent game"
+
+
+def test_mark_ownership_ambiguous_name_rescued_by_title_id(conn):
+    # TWO games with the same normalized title tie as name-prefixes for the
+    # add-on (parent_of -> AMBIGUOUS). The PSN title-id prefix uniquely matches
+    # ONE of them in game_external_ids, so the fallback resolves the tie.
+    g1 = _add_game(conn, "Like a Dragon")
+    g2 = _add_game(conn, "Like a Dragon")  # same normalized title -> ties g1
+    _add_game_ext(conn, g1, "JP0177-PPSA24478_00-DELUXEEDITION000")  # only g1 has the prefix
+    report = mark_ownership(conn, [{
+        "title": "Like a Dragon Legendary Outfit Pack",
+        "source": "playstation",
+        "external_id": "JP0177-PPSA24478_00-MAJIMAOUTFITPACK",
+        "source_title": "Like a Dragon Legendary Outfit Pack",
+    }])
+    assert report.marked == 1
+    assert report.review == []
+    row = conn.execute("SELECT owned, source FROM dlc WHERE game_id = ?", (g1,)).fetchone()
+    assert row is not None and row["owned"] == 1 and row["source"] == "playstation"
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id = ?", (g2,)).fetchone()[0] == 0
+
+
+def test_mark_ownership_ambiguous_name_no_title_id_match_stays_ambiguous(conn):
+    # Inverse regression: the name ties AMBIGUOUS, but the add-on's title-id
+    # prefix matches NO base game -> the fallback can't break the tie, so it is
+    # reported as "ambiguous parent" (NOT "no parent game").
+    _add_game(conn, "Like a Dragon")
+    _add_game(conn, "Like a Dragon")  # same normalized title -> ties
+    report = mark_ownership(conn, [{
+        "title": "Like a Dragon Legendary Outfit Pack",
+        "source": "playstation",
+        "external_id": "US9999-PPSA99999_00-MAJIMAOUTFITPACK",  # prefix unknown
+        "source_title": "Like a Dragon Legendary Outfit Pack",
+    }])
+    assert report.marked == 0
+    assert len(report.review) == 1
+    assert report.review[0].reason == "ambiguous parent"
