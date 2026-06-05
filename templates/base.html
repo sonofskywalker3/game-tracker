@@ -1620,6 +1620,10 @@
             if (btn) { btn.disabled = true; btn.textContent = 'Matching…'; }
             try {
                 const res = await api.post('/api/dlc/review/rematch', {});
+                if (!res.ok) {
+                    alert((res.data && res.data.error) || 'Auto-match failed');
+                    return;
+                }
                 await loadDlcReview();                 // re-render the open list
                 refreshDlcReviewBadge(res.data.count); // update the badge/count
             } finally {
