@@ -69,8 +69,6 @@ def collect(page, captured: list | None = None,
         resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
         resp.raise_for_status()
         games = parse_owned_games(resp.json())
-        if progress:
-            progress(len(games))
         logger.info("steam: %d owned games via GetOwnedGames", len(games))
     else:
         logger.warning("steam: no API key / SteamID in config.json; skipping owned-games fetch")
@@ -83,5 +81,5 @@ def collect(page, captured: list | None = None,
     else:
         logger.warning("steam: userdata fetch failed (%s); owned DLC will be empty", resp.status)
     if progress:
-        progress(len(games) + len(owned))
+        progress(len(games))  # owned base games (accurate "N games"; carriers are DLC)
     return games + owned

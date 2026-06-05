@@ -154,7 +154,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         _set(phase="matching", message="fetching Steam DLC catalogue...")
         owned_app_ids = {int(r["external_id"]) for r in addons if r.get("external_id")}
         sr = steam_dlc.enrich_and_mark(conn, owned_app_ids,
-                                       progress=_progress("matching", "fetching Steam DLC", "DLC"))
+                                       progress=_progress("matching", "fetching Steam DLC", "added"))
         conn.commit()
         owned_marked, created, dlc_added = sr.owned_marked, sr.catalogue_added, sr.catalogue_added
         enrich_skipped = True
