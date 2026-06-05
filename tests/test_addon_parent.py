@@ -129,3 +129,84 @@ def test_ensure_parent_game_no_name_returns_none(conn):
     assert how == ""
     after = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
     assert after == before  # no game created
+
+
+def _addon(title, ext, source="xbox"):
+    return {"title": title, "source": source, "external_id": ext, "source_title": title}
+
+
+def _fake_resolver(mapping):
+    """mapping: {addon_ext: ParentRef | None} -> a ParentResolver."""
+    return lambda ids: {i: mapping.get(i) for i in ids}
+
+
+def test_resolve_and_link_creates_parent_and_owns_addon(conn):
+    addons = [_addon("Gilded Glory Pack", "ADDON1")]
+    resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4")})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 1
+    assert rep.created_parents == 1
+    d = conn.execute("SELECT d.owned, d.game_id FROM dlc d "
+                     "JOIN games g ON g.id=d.game_id WHERE g.title='Borderlands 4'").fetchone()
+    assert d["owned"] == 1
+    assert conn.execute("SELECT 1 FROM dlc_external_ids "
+                        "WHERE source='xbox' AND external_id='ADDON1'").fetchone()
+
+
+def test_resolve_and_link_shared_parent_for_many_addons(conn):
+    rb = ParentRef("RBPID", "Rock Band 4")
+    addons = [_addon("Song A", "S1"), _addon("Song B", "S2"), _addon("Song C", "S3")]
+    resolver = _fake_resolver({"S1": rb, "S2": rb, "S3": rb})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 3
+    assert rep.created_parents == 1  # parent created once, not thrice
+    n_games = conn.execute("SELECT COUNT(*) FROM games WHERE title='Rock Band 4'").fetchone()[0]
+    assert n_games == 1
+    n_dlc = conn.execute("SELECT COUNT(*) FROM dlc WHERE owned=1").fetchone()[0]
+    assert n_dlc == 3
+
+
+def test_resolve_and_link_backfills_existing_game(conn):
+    gid = _add_game(conn, "Borderlands 4")  # exists, no xbox id
+    addons = [_addon("Gilded Glory Pack", "ADDON1")]
+    resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4")})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 1
+    assert rep.backfilled_ids == 1
+    assert rep.created_parents == 0
+    row = conn.execute("SELECT game_id FROM game_external_ids "
+                       "WHERE source='xbox' AND external_id='PARENTPID'").fetchone()
+    assert row["game_id"] == gid
+
+
+def test_resolve_and_link_clears_open_review_row(conn):
+    conn.execute("INSERT INTO dlc_review_queue (addon_title, source, external_id, reason) "
+                 "VALUES ('Gilded Glory Pack', 'xbox', 'ADDON1', 'no parent game')")
+    addons = [_addon("Gilded Glory Pack", "ADDON1")]
+    resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4")})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.review_cleared == 1
+    r = conn.execute("SELECT resolved_at FROM dlc_review_queue "
+                     "WHERE source='xbox' AND external_id='ADDON1'").fetchone()
+    assert r["resolved_at"] is not None
+
+
+def test_resolve_and_link_unresolved_passes_through(conn):
+    addons = [_addon("Mystery DLC", "M1")]
+    resolver = _fake_resolver({"M1": None})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 0
+    assert len(rep.unresolved) == 1
+    assert rep.unresolved[0]["external_id"] == "M1"
+
+
+def test_resolve_and_link_idempotent(conn):
+    addons = [_addon("Gilded Glory Pack", "ADDON1")]
+    resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4")})
+    addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    n_games = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    n_dlc = conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0]
+    rep2 = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep2.linked == 0
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == n_games
+    assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == n_dlc
