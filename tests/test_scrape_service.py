@@ -227,6 +227,33 @@ def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
     conn.close()
 
 
+def test_run_pipeline_reports_added_games(temp_db, monkeypatch):
+    """The summary lists base games newly created this run (id + title)."""
+    import igdb_dlc
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+
+    # one pre-existing game (created before this run) must NOT be listed
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title, created_at) "
+                 "VALUES ('Old Game', 'old game', '2000-01-01 00:00:00')")
+    conn.commit()
+    conn.close()
+
+    games = [
+        ScrapedGame(title="Hades", platform="PS5", source="playstation", external_id="G1"),
+        ScrapedGame(title="Celeste", platform="PS5", source="playstation", external_id="G2"),
+    ]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.commit()
+    titles = sorted(g["title"] for g in summary["added_games"])
+    assert titles == ["Celeste", "Hades"]
+    assert all("id" in g and "title" in g for g in summary["added_games"])
+    conn.close()
+
+
 def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
     import steam_dlc
     import import_scraped
