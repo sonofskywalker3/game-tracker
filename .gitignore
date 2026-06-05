@@ -30,6 +30,7 @@ My Game Backlog.html
 .recon/
 scraped/
 .steam_cache/
+.xbox_cache/
 
 # ---- Python ----
 __pycache__/
