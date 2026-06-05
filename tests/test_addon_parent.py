@@ -200,6 +200,53 @@ def test_resolve_and_link_unresolved_passes_through(conn):
     assert rep.unresolved[0]["external_id"] == "M1"
 
 
+def test_resolve_and_link_mixed_batch(conn):
+    # One resolvable + one unresolved (resolver returns None) in a single call --
+    # the realistic scrape shape: some add-ons map to a parent, some don't.
+    addons = [_addon("Gilded Glory Pack", "ADDON1"), _addon("Mystery DLC", "M1")]
+    resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4"),
+                               "M1": None})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 1
+    assert len(rep.unresolved) == 1
+    assert rep.unresolved[0]["external_id"] == "M1"
+
+
+def test_resolve_and_link_addon_without_external_id(conn):
+    # An add-on carrying no vendor id can't be resolved (resolver is never asked
+    # for it); it must pass through to unresolved without erroring.
+    addons = [{"title": "Mystery", "source": "xbox",
+               "external_id": None, "source_title": "Mystery"}]
+    resolver = _fake_resolver({})  # returns None for anything
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", addons, resolver)
+    assert rep.linked == 0
+    assert len(rep.unresolved) == 1
+    assert rep.unresolved[0] is addons[0]
+
+
+def test_resolve_and_link_ambiguous_dlc_leaves_review_open(conn):
+    # Drive apply_addon_to_parent down its AMBIGUOUS-dlc branch: two existing dlc
+    # rows whose names normalize to the same key as the add-on's remainder, so
+    # match_equal returns AMBIGUOUS. The add-on must NOT be marked, and its open
+    # review row must stay open (resolve_and_link only clears on marked/owned).
+    gid = _add_game(conn, "Hades", source="xbox", ext="PARENTPID")
+    # "Soundtrack" and "SOUNDTRACK!" are distinct raw names (so UNIQUE(game_id,
+    # name) is satisfied) that both norm() to "soundtrack".
+    conn.execute("INSERT INTO dlc (game_id, name, owned) VALUES (?, 'Soundtrack', 0)", (gid,))
+    conn.execute("INSERT INTO dlc (game_id, name, owned) VALUES (?, 'SOUNDTRACK!', 0)", (gid,))
+    # "Hades Soundtrack" -> remainder "soundtrack" (parent norm "hades" stripped).
+    addon = _addon("Hades Soundtrack", "ADDON_AMB")
+    conn.execute("INSERT INTO dlc_review_queue (addon_title, source, external_id, reason) "
+                 "VALUES ('Hades Soundtrack', 'xbox', 'ADDON_AMB', 'no parent game')")
+    resolver = _fake_resolver({"ADDON_AMB": ParentRef("PARENTPID", "Hades")})
+    rep = addon_parent.resolve_and_link(conn, "xbox", "Xbox", [addon], resolver)
+    assert rep.linked == 0
+    assert rep.review_cleared == 0
+    r = conn.execute("SELECT resolved_at FROM dlc_review_queue "
+                     "WHERE source='xbox' AND external_id='ADDON_AMB'").fetchone()
+    assert r["resolved_at"] is None  # ambiguity leaves the review open
+
+
 def test_resolve_and_link_idempotent(conn):
     addons = [_addon("Gilded Glory Pack", "ADDON1")]
     resolver = _fake_resolver({"ADDON1": ParentRef("PARENTPID", "Borderlands 4")})
