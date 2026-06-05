@@ -65,6 +65,7 @@
         <option value="rating">Sort: Rating</option>
         <option value="priority">Sort: Priority</option>
         <option value="metacritic">Sort: Metacritic</option>
+        <option value="newest">Sort: Newest</option>
     </select>
 
     <!-- Tile size -->
@@ -289,6 +290,7 @@
         if (sort === 'rating')      arr.sort((a, b) => (b.rating || 0) - (a.rating || 0));
         else if (sort === 'priority') arr.sort((a, b) => (b.priority || 0) - (a.priority || 0));
         else if (sort === 'metacritic') arr.sort((a, b) => (b.metacritic_score || 0) - (a.metacritic_score || 0));
+        else if (sort === 'newest') arr.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
         else arr.sort((a, b) => (a.series_name || a.title).localeCompare(b.series_name || b.title));
         return arr;
     }
