@@ -571,6 +571,23 @@ def api_refresh_dlc(game_id):
                     'report': report})
 
 
+@app.route('/api/games/<int:game_id>/dlc/refresh-psn', methods=['POST'])
+def api_refresh_psn_dlc(game_id: int):
+    """Clear the PSN add-on marker for one game and kick a scrape to re-check it."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT external_id FROM game_external_ids "
+        "WHERE game_id = ? AND source = 'playstation'", (game_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({"error": "no PlayStation id for this game"}), 404
+    conn.execute("UPDATE games SET psn_addons_synced_at = NULL WHERE id = ?", (game_id,))
+    conn.commit()
+    conn.close()
+    ok, msg = scrape_service.start("playstation")
+    return jsonify({"started": ok, "message": msg})
+
+
 @app.route('/api/games/<int:game_id>/igdb', methods=['POST'])
 def api_pin_igdb(game_id):
     """Pin a game's IGDB identity from an igdb.com/games/<slug> URL: sets igdb_id,

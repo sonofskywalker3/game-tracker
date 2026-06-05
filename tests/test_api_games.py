@@ -628,3 +628,39 @@ def test_pin_igdb_clears_review_reason(client, temp_db, monkeypatch):
     conn.close()
     assert row["needs_igdb_review"] == 0
     assert row["igdb_review_reason"] is None
+
+
+def test_refresh_psn_nulls_marker_and_starts_scrape(client, temp_db, monkeypatch):
+    import app as app_module
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title, psn_addons_synced_at) "
+                 "VALUES ('G', 'g', '2020-01-01 00:00:00')")
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.execute("INSERT INTO game_external_ids (game_id, source, external_id) "
+                 "VALUES (?, 'playstation', 'UP0082-PPSA10664_00-FF16SIEA00000002')", (gid,))
+    conn.commit()
+    conn.close()
+
+    started = {}
+
+    def _fake_start(vendor: str, **kw) -> tuple[bool, str]:
+        started["vendor"] = vendor
+        return (True, "started")
+
+    monkeypatch.setattr(app_module.scrape_service, "start", _fake_start)
+    resp = client.post(f"/api/games/{gid}/dlc/refresh-psn")
+    assert resp.status_code == 200
+    conn = models.get_db()
+    val = conn.execute("SELECT psn_addons_synced_at FROM games WHERE id=?", (gid,)).fetchone()[0]
+    conn.close()
+    assert val is None
+    assert started["vendor"] == "playstation"
+
+
+def test_refresh_psn_404_without_psn_id(client, temp_db):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (title, normalized_title) VALUES ('G', 'g')")
+    conn.commit()
+    gid = conn.execute("SELECT id FROM games WHERE title='G'").fetchone()[0]
+    conn.close()
+    assert client.post(f"/api/games/{gid}/dlc/refresh-psn").status_code == 404

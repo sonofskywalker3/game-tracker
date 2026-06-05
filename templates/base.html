@@ -1170,6 +1170,8 @@
                             class="px-3 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Add</button>
                         <button onclick="refreshDlc(${game.id})"
                             class="px-3 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">Refresh from IGDB</button>
+                        <button type="button" onclick="refreshPsnDlc(${game.id})"
+                            class="text-accent hover:underline text-sm">Refresh PSN DLC</button>
                     </div>
                 </div>`;
         }
@@ -1198,6 +1200,15 @@
             if (res && !res.ok) alert(res.data?.error || 'IGDB refresh failed');
             await loadGameModal(gameId);
             switchGameTab(gameId, 'dlc');
+        }
+
+        async function refreshPsnDlc(gameId) {
+            const r = await api.post(`/api/games/${gameId}/dlc/refresh-psn`, {});
+            if (!r.ok) {
+                alert((r.data && r.data.message) || r.data?.error || 'Could not start PSN refresh');
+                return;
+            }
+            alert('PSN refresh started - log in if prompted, then watch the scrape status.');
         }
 
         async function addTag(gameId, tagName, input) {
