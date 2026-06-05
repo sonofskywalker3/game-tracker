@@ -123,6 +123,7 @@ def init_db():
             igdb_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            psn_addons_synced_at TIMESTAMP,
             UNIQUE(normalized_title)
         );
 
@@ -771,6 +772,16 @@ def migrate_igdb_review_reason(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_psn_addons_synced_at(conn: sqlite3.Connection) -> None:
+    """Add games.psn_addons_synced_at (TIMESTAMP, nullable). Idempotent. Tracks
+    when PSN add-on ownership was last synced for a game; NULL means never synced,
+    allowing the add-on pass to backfill the whole library then run incrementally."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    if "psn_addons_synced_at" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN psn_addons_synced_at TIMESTAMP")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -868,6 +879,7 @@ def migrate_db():
     migrate_series_source(conn)
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
+    migrate_psn_addons_synced_at(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)
