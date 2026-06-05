@@ -72,6 +72,13 @@ def _add_game(conn, title):
     return cur.lastrowid
 
 
+def _add_dlc(conn, game_id, name, *, owned=0, source="igdb"):
+    cur = conn.execute(
+        "INSERT INTO dlc (game_id, name, owned, source) VALUES (?, ?, ?, ?)",
+        (game_id, name, owned, source))
+    return cur.lastrowid
+
+
 def _add_game_ext(conn, game_id, source, external_id, source_title=None):
     conn.execute(
         "INSERT INTO game_external_ids (game_id, source, external_id, source_title) "
@@ -110,6 +117,38 @@ def test_psn_title_id_fallback_resolves_open_row(conn):
     row = conn.execute(
         "SELECT resolved_at FROM dlc_review_queue WHERE id = ?", (review_id,)).fetchone()
     assert row["resolved_at"] is not None
+
+
+def test_parent_resolves_but_ambiguous_dlc_stays_open(conn):
+    """Parent resolves by name, but the remainder equality-ties two existing DLC
+    rows -> apply_addon_to_parent yields an ambiguous-dlc review, NOT a
+    marked/already_owned outcome. The guard must leave the row OPEN: a refined
+    ambiguous-dlc review is not a resolution.
+
+    "Hades Soundtrack" -> parent_of resolves game "Hades"; remainder "soundtrack"
+    equals norm("Soundtrack") and norm("SOUNDTRACK!") (distinct strings, so
+    UNIQUE(game_id, name) holds), so match_equal returns AMBIGUOUS."""
+    gid = _add_game(conn, "Hades")
+    # Two distinct names that both normalize to the add-on remainder "soundtrack".
+    dlc_a = _add_dlc(conn, gid, "Soundtrack")
+    dlc_b = _add_dlc(conn, gid, "SOUNDTRACK!")
+    assert normalize_title(models.clean_title("Soundtrack")) == "soundtrack"
+    assert normalize_title(models.clean_title("SOUNDTRACK!")) == "soundtrack"
+    review_id = _seed_review(
+        conn, "Hades Soundtrack", source="steam", external_id="STEAM-OST-1",
+        reason="no parent game")
+
+    report = dlc_review.rematch_unresolved(conn)
+
+    assert report.resolved == 0
+    assert report.marked == 0
+    row = conn.execute(
+        "SELECT resolved_at FROM dlc_review_queue WHERE id = ?", (review_id,)).fetchone()
+    assert row["resolved_at"] is None
+    # Neither existing DLC was flipped owned, and no third row was created.
+    owned = conn.execute(
+        "SELECT id, owned FROM dlc WHERE game_id = ? ORDER BY id", (gid,)).fetchall()
+    assert [(r["id"], r["owned"]) for r in owned] == [(dlc_a, 0), (dlc_b, 0)]
 
 
 def test_psn_row_with_no_prefix_match_stays_open(conn):
