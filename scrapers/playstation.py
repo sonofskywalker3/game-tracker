@@ -17,6 +17,7 @@ from scrapers.base import (
     auth_from_captured,
     capture_request_headers,
     replay_headers,
+    scroll_until_idle,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,14 +179,38 @@ def parse_addons(bodies: list[dict]) -> list[ScrapedGame]:
     return out
 
 
-def collect_addons(page, captured: list | None = None) -> list[ScrapedGame]:
-    """Owned PSN add-ons (kind="addon"), for DLC ownership matching.
+def collect_addons(page, product_ids: list[str],
+                   captured: list | None = None) -> list[ScrapedGame]:
+    """Visit each game's Store product page and return its OWNED add-ons.
 
-    Disabled until the PSN add-on GraphQL operation + persisted-query hash are
-    captured from a fresh recon (.recon/playstation.responses.jsonl); returns []
-    so base-game scraping is unaffected. Enabling this is the recon-gated
-    follow-up in docs/superpowers/specs/2026-05-25-dlc-scrape-ownership-design.md
-    (PSN section).
+    One page load per game: goto the product URL, scroll so the add-ons section
+    lazy-loads, then parse the newly-captured GraphQL bodies. Per-game isolation
+    so one bad page doesn't abort the batch. `captured` is the shared response
+    log from capturing_browser; we parse only the slice each page adds.
     """
-    logger.info("playstation: add-on capture not yet enabled (needs recon hash)")
-    return []
+    captured = captured if captured is not None else []
+    out: list[ScrapedGame] = []
+    seen: set[str] = set()
+    for pid in product_ids:
+        if not (pid and ADDON_PID_RE.fullmatch(pid)):
+            continue
+        start = len(captured)
+        try:
+            page.goto(STORE_PRODUCT_URL.format(pid=pid))
+            scroll_until_idle(page, captured)
+        except Exception as exc:  # one bad page must not sink the run
+            logger.warning("playstation: add-on page failed for %s: %s", pid, exc)
+            continue
+        bodies = []
+        for entry in captured[start:]:
+            try:
+                bodies.append(json.loads(entry.get("body", "")))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        for addon in parse_addons(bodies):
+            if addon.external_id not in seen:
+                seen.add(addon.external_id)
+                out.append(addon)
+        page.wait_for_timeout(REQUEST_DELAY_MS)
+    logger.info("playstation: %d owned add-ons across %d games", len(out), len(product_ids))
+    return out
