@@ -32,7 +32,7 @@ VALID_SOURCES = frozenset({"playstation", "xbox", "nintendo", "steam"})
 # Chromium's automation fingerprint); fall back to bundled Chromium.
 BROWSER_CHANNELS = ("chrome", "msedge")
 # Hides the navigator.webdriver / AutomationControlled signal many logins check.
-LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled",)
+LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled", "--start-maximized")
 # Default switches Playwright adds that we suppress. "--enable-automation" drives
 # the "browser is controlled by automated software" banner and is a common login
 # bot-check trigger (Nintendo's authorize step returns 400 "invalid params" with

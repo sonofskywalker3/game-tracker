@@ -100,6 +100,9 @@ class _FakePage:
     def wait_for_timeout(self, ms):
         pass
 
+    def bring_to_front(self):
+        pass
+
 
 @contextlib.contextmanager
 def _fake_browser(headless=False):
