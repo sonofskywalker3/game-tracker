@@ -1203,12 +1203,12 @@
         }
 
         async function refreshPsnDlc(gameId) {
-            const r = await api.post(`/api/games/${gameId}/dlc/refresh-psn`, {});
-            if (!r.ok) {
-                alert((r.data && r.data.message) || r.data?.error || 'Could not start PSN refresh');
+            const res = await api.post(`/api/games/${gameId}/dlc/refresh-psn`, {});
+            if (!res.ok) {
+                alert(res.data?.error || res.data?.message || 'Could not start PSN refresh');
                 return;
             }
-            alert('PSN refresh started - log in if prompted, then watch the scrape status.');
+            alert('PSN refresh started — this re-checks your full PlayStation library for add-ons. Log in if prompted, then watch the scrape status.');
         }
 
         async function addTag(gameId, tagName, input) {
