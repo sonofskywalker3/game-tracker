@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from scrapers.base import (
     ScrapedGame,
@@ -36,6 +37,13 @@ REQUEST_DELAY_MS = 400  # gentle pacing between API page requests
 # The API returns platform as "PS4"/"PS5" directly.
 PLATFORM_LABELS = {"PS5": "PS5", "PS4": "PS4"}
 DEFAULT_PLATFORM = "PS4"
+
+# Full PS Store product id, e.g. UP0082-CUSA09377_00-PT00000000000000 (region UP/EP/JP).
+ADDON_PID_RE = re.compile(r"[A-Z]{2}\d{4}-[A-Z]{4}\d{5}_00-[A-Z0-9]{16}")
+STORE_PRODUCT_URL = "https://store.playstation.com/en-us/product/{pid}"
+# storeDisplayClassification values that are NOT add-ons.
+NON_ADDON_CLASS = frozenset({"FULL_GAME", "GAME_BUNDLE", "DEMO"})
+OWNED_PRICE = "Purchased"
 
 
 def parse_games(items: list[dict]) -> list[ScrapedGame]:
@@ -117,6 +125,57 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
     if not games:
         logger.warning("playstation: 0 games — auth likely failed (see any error above)")
     return games
+
+
+def _iter_product_objects(node):
+    """Yield dicts anywhere in the structure that look like a store product."""
+    if isinstance(node, dict):
+        pid = node.get("id")
+        if isinstance(pid, str) and ADDON_PID_RE.fullmatch(pid):
+            yield node
+        for v in node.values():
+            yield from _iter_product_objects(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _iter_product_objects(v)
+
+
+def parse_addons(bodies: list[dict]) -> list[ScrapedGame]:
+    """Map captured game-page GraphQL bodies to OWNED add-on ScrapedGame records.
+
+    An add-on is a product object with a non-null price.basePrice and a
+    classification that is not a base game/bundle/demo. Owned == basePrice ==
+    "Purchased" (the en-us Store label). Dedupes by product id.
+    """
+    out: list[ScrapedGame] = []
+    seen: set[str] = set()
+    for body in bodies:
+        if not isinstance(body, dict):
+            continue
+        for obj in _iter_product_objects(body):
+            pid = obj["id"]
+            if pid in seen:
+                continue
+            cls = obj.get("storeDisplayClassification")
+            if cls in NON_ADDON_CLASS:
+                continue
+            price = obj.get("price") or {}
+            base_price = price.get("basePrice") if isinstance(price, dict) else None
+            if not base_price:                 # base/edition/demo objects have price=None
+                continue
+            if base_price != OWNED_PRICE:       # priced / "Unavailable" -> not owned
+                continue
+            name = obj.get("name")
+            if not name:
+                continue
+            seen.add(pid)
+            platforms = obj.get("platforms") or []
+            platform = platforms[0] if platforms else DEFAULT_PLATFORM
+            out.append(ScrapedGame(
+                title=name, platform=PLATFORM_LABELS.get(platform, DEFAULT_PLATFORM),
+                source=SOURCE, external_id=pid, source_title=name, kind="addon",
+            ))
+    return out
 
 
 def collect_addons(page, captured: list | None = None) -> list[ScrapedGame]:
