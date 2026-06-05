@@ -13,11 +13,20 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from dataclasses import dataclass, field
 
 import dlc_ownership
 from dlc_ownership import Match, OwnershipReport
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RematchReport:
+    """Outcome of a re-match pass over still-open review rows."""
+    resolved: int = 0  # review rows newly marked resolved this pass
+    marked: int = 0     # dlc rows newly set owned this pass (created + reconciled)
+    resolved_items: list[Match] = field(default_factory=list)
 
 
 def resolve(
@@ -97,6 +106,59 @@ def resolve(
         return report.marked_items[0]
     # marked_items is empty when _apply hit "already_owned"; synthesize a Match.
     return Match(row["addon_title"], game_id=parent, reason="already owned")
+
+
+def rematch_unresolved(conn: sqlite3.Connection) -> RematchReport:
+    """Re-run the full matcher over still-open review rows; clear those now linkable.
+
+    Review rows queued before a matcher improvement (e.g. the PSN title-id
+    fallback) never get a second chance from a re-scrape unless the vendor library
+    is fetched again. This replays the exact engine `mark_ownership` uses against
+    every open (not resolved, not dismissed) row: it resolves a parent by name
+    prefix, then by the PSN title-id fallback, and applies the add-on through
+    `apply_addon_to_parent` (no one-off UPDATE -- same pipeline as the live
+    scrape). A row is marked resolved only when the apply yields a real
+    create/reconcile/already-owned outcome; rows that merely refine to an
+    ambiguous-dlc review are left open. Pure DB; the caller owns commit.
+    """
+    library = [(r["id"], r["normalized_title"])
+               for r in conn.execute("SELECT id, normalized_title FROM games")]
+    titles = {r["id"]: r["title"] for r in conn.execute("SELECT id, title FROM games")}
+    prefix_map = dlc_ownership.psn_prefix_map(conn)
+
+    rows = conn.execute(
+        "SELECT id, addon_title, source, external_id, source_title, reason, game_id "
+        "FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL ORDER BY id").fetchall()
+
+    report = RematchReport()
+    for row in rows:
+        addon = {"title": row["addon_title"], "source": row["source"],
+                 "external_id": row["external_id"], "source_title": row["source_title"]}
+
+        parent = dlc_ownership.parent_of(row["addon_title"], library)
+        if not isinstance(parent, int):
+            parent = dlc_ownership.parent_by_title_id(
+                prefix_map, row["source"], row["external_id"])
+        if not isinstance(parent, int):
+            continue  # still unresolvable -- leave the row open
+
+        parent_norm = next((gnorm for gid, gnorm in library if gid == parent), "") or ""
+        sub = OwnershipReport()
+        dlc_ownership.apply_addon_to_parent(
+            conn, sub, parent, parent_norm, titles, addon, dry_run=False)
+
+        if sub.marked or sub.already_owned:
+            conn.execute(
+                "UPDATE dlc_review_queue SET resolved_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (row["id"],))
+            report.resolved += 1
+            report.marked += sub.marked
+            report.resolved_items.extend(sub.marked_items)
+
+    logger.info("rematch_unresolved: %d row(s) resolved, %d dlc row(s) newly owned",
+                report.resolved, report.marked)
+    return report
 
 
 def dismiss(conn: sqlite3.Connection, review_id: int) -> None:
