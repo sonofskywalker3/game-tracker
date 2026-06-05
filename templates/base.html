@@ -238,7 +238,10 @@
             <div class="p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-xl font-bold text-white">Resolve DLC review <span id="dlc-review-count-header" class="text-gray-400 text-base"></span></h2>
-                    <button onclick="closeDlcReviewModal()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                    <div class="flex items-center gap-3">
+                        <button id="dlc-review-rematch-btn" onclick="rematchDlcReview()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded text-white text-sm">Auto-match</button>
+                        <button onclick="closeDlcReviewModal()" class="text-white/70 hover:text-white text-2xl">&times;</button>
+                    </div>
                 </div>
                 <div id="dlc-review-body" class="space-y-3">
                     <div class="text-gray-400 text-sm">Loading…</div>
@@ -1608,6 +1611,21 @@
             const cnt = document.getElementById('dlc-review-count');
             if (cnt) cnt.textContent = n;
             if (entry) entry.classList.toggle('hidden', n === 0);
+        }
+
+        async function rematchDlcReview() {
+            if (dlcReviewBusy) return;
+            dlcReviewBusy = true;
+            const btn = document.getElementById('dlc-review-rematch-btn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Matching…'; }
+            try {
+                const res = await api.post('/api/dlc/review/rematch', {});
+                await loadDlcReview();                 // re-render the open list
+                refreshDlcReviewBadge(res.data.count); // update the badge/count
+            } finally {
+                dlcReviewBusy = false;
+                if (btn) { btn.disabled = false; btn.textContent = 'Auto-match'; }
+            }
         }
 
         function dlcReviewCard(it) {

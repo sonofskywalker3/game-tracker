@@ -151,6 +151,61 @@ def test_dismiss_404_on_missing_review_id(client):
     assert res.status_code == 404
 
 
+def test_rematch_resolves_psn_title_id_row(client):
+    """An open PSN 'no parent game' row whose title-id prefix maps to exactly one
+    game (via game_external_ids) is re-matched, owned, and marked resolved."""
+    from models import normalize_title
+    with sqlite3.connect(models.DB_PATH) as c:
+        c.execute("INSERT INTO games (id, title, normalized_title) VALUES (1, 'Like a Dragon', ?)",
+                  (normalize_title("Like a Dragon"),))
+        c.execute(
+            "INSERT INTO game_external_ids (game_id, source, external_id, source_title) "
+            "VALUES (1, 'playstation', 'JP0177-PPSA24478_00-DELUXEEDITION000', 'Like a Dragon')")
+        c.commit()
+    rid = _seed_review(
+        models.DB_PATH, source="playstation",
+        external_id="JP0177-PPSA24478_00-MAJIMAOUTFITPACK",
+        addon_title="Majima Outfit Pack", source_title="Majima Outfit Pack",
+        reason="no parent game", game_id=None)
+    res = client.post("/api/dlc/review/rematch", json={})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["resolved"] == 1
+    assert body["marked"] == 1
+    assert body["count"] == 0
+    with sqlite3.connect(models.DB_PATH) as c:
+        owned = c.execute("SELECT owned FROM dlc WHERE game_id = 1").fetchone()
+        resolved = c.execute(
+            "SELECT resolved_at FROM dlc_review_queue WHERE id = ?", (rid,)).fetchone()[0]
+    assert owned[0] == 1
+    assert resolved is not None
+
+
+def test_rematch_empty_queue_returns_zeros(client):
+    res = client.post("/api/dlc/review/rematch", json={})
+    assert res.status_code == 200
+    assert res.get_json() == {"ok": True, "resolved": 0, "marked": 0, "count": 0}
+
+
+def test_rematch_leaves_unmatchable_row(client):
+    """A PSN 'no parent game' row whose title-id prefix maps to no game is left
+    open: resolved == 0 and the count still reflects the open row."""
+    rid = _seed_review(
+        models.DB_PATH, source="playstation",
+        external_id="US9999-PPSA99999_00-SOMEADDON0000000",
+        addon_title="Some Add-on", source_title="Some Add-on",
+        reason="no parent game", game_id=None)
+    res = client.post("/api/dlc/review/rematch", json={})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["resolved"] == 0
+    assert body["count"] == 1
+    with sqlite3.connect(models.DB_PATH) as c:
+        resolved = c.execute(
+            "SELECT resolved_at FROM dlc_review_queue WHERE id = ?", (rid,)).fetchone()[0]
+    assert resolved is None
+
+
 def test_resolve_create_new_dlc_collision_returns_409(client):
     """When 'create_new_dlc' is requested but the cleaned-remainder name already
     exists for the parent game, the route returns 409 (not 500) and closes the
