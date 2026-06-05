@@ -396,3 +396,24 @@ def test_modal_candidates_fallback_when_no_title_match():
 
 def test_modal_candidates_empty_input():
     assert igdb_match.modal_candidates([], "Whatever") == []
+
+
+def test_platform_labels_known_ids_ordered():
+    assert igdb_match.platform_labels([169, 48, 6, 167, 130]) == ["PS5", "PS4", "Switch", "Xbox", "PC"]
+
+
+def test_platform_labels_mobile_and_unknown():
+    assert igdb_match.platform_labels([39]) == ["iOS"]
+    assert igdb_match.platform_labels([99999]) == []
+    assert igdb_match.platform_labels([]) == []
+
+
+def test_modal_candidates_drops_candidate_matching_current_cover():
+    cands = [
+        {"igdb_id": 10, "name": "Bugsnax", "cover_url": "https://x/co_same.jpg",
+         "source": "search", "score": 30},
+        {"igdb_id": 11, "name": "Bugsnax", "cover_url": "https://x/co_full.jpg",
+         "source": "search", "score": 160},
+    ]
+    out = igdb_match.modal_candidates(cands, "Bugsnax", current_cover="https://x/co_same.jpg")
+    assert [c["igdb_id"] for c in out] == [11]   # the candidate equal to current is dropped

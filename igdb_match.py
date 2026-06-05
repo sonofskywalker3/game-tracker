@@ -30,6 +30,19 @@ IGDB_PLATFORM_IDS: dict[str, frozenset[int]] = {
     "PC": frozenset({6}),
 }
 
+# Ordered, human-readable platform labels for the Fix-match modal. Derived from the
+# same IGDB ids as IGDB_PLATFORM_IDS / mobile so identical-looking covers can be told
+# apart by which platforms each entry covers. Unknown ids contribute no label.
+_PLATFORM_LABELS: tuple[tuple[str, frozenset[int]], ...] = (
+    ("PS5", frozenset({167})),
+    ("PS4", frozenset({48})),
+    ("Switch", frozenset({130})),
+    ("Xbox", frozenset({49, 169})),
+    ("PC", frozenset({6})),
+    ("iOS", frozenset({IOS_ID})),
+    ("Android", frozenset({ANDROID_ID})),
+)
+
 _TITLE_EXACT = 100
 _TITLE_CONTAINS = 40
 _PLATFORM_OVERLAP = 50
@@ -46,6 +59,13 @@ def platform_ids_for(short_names: Iterable[str] | None) -> set[int]:
     for sn in short_names or ():
         out |= set(IGDB_PLATFORM_IDS.get(sn, ()))
     return out
+
+
+def platform_labels(platform_ids: Iterable[int] | None) -> list[str]:
+    """Readable platform names for a set of IGDB platform ids, in a stable order.
+    Unknown ids are omitted (e.g. retro/handheld ids the tracker does not model)."""
+    ids = set(platform_ids or ())
+    return [name for name, pset in _PLATFORM_LABELS if pset & ids]
 
 
 def _title_score(cand_name: str, search: str) -> int | None:
@@ -216,15 +236,18 @@ def candidates_for(title: str, game_platform_ids: set[int],
     return out
 
 
-def modal_candidates(cands: list[dict], game_title: str) -> list[dict]:
+def modal_candidates(cands: list[dict], game_title: str,
+                     current_cover: str | None = None) -> list[dict]:
     """Shape `candidates_for` output for the Fix-match modal.
 
     Keeps candidates that have a cover AND either come from the bundle or whose name
-    normalises equal to the game's title (drops mod/hack junk like "... Alter"). If
-    no candidate matches the title, falls back to all cover-bearing candidates so the
-    modal is never empty when art exists. De-duplicates by cover stem, keeping the
-    first of each identical-art group (input is already best-first)."""
+    normalises equal to the game's title (drops mod/hack junk like "… Alter"). If no
+    candidate matches the title, falls back to all cover-bearing candidates so the
+    modal is never empty when art exists. Drops any candidate whose cover matches the
+    game's current cover (already shown as the Current tile) and de-duplicates by cover
+    stem, keeping the first of each identical-art group (input is already best-first)."""
     target = normalize_title(game_title)
+    current_stem = _cover_stem(current_cover)
     with_cover = [c for c in cands if c.get("cover_url")]
     matched = [c for c in with_cover
                if c.get("source") == "bundle"
@@ -234,6 +257,8 @@ def modal_candidates(cands: list[dict], game_title: str) -> list[dict]:
     seen: set[str | None] = set()
     for c in pool:
         stem = _cover_stem(c.get("cover_url"))
+        if current_stem is not None and stem == current_stem:
+            continue
         if stem in seen:
             continue
         seen.add(stem)
