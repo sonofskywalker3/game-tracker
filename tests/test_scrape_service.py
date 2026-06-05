@@ -47,7 +47,7 @@ def test_backup_db_none_when_absent(tmp_path, monkeypatch):
     assert scrape_service.backup_db() is None
 
 
-def _fake_enrich(conn, *, client_id, token):
+def _fake_enrich(conn, *, client_id, token, progress=None):
     for (gid,) in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL").fetchall():
         conn.execute("UPDATE games SET igdb_id = 1 WHERE id = ?", (gid,))
         conn.execute("INSERT OR IGNORE INTO dlc (game_id, name, source) "
@@ -181,7 +181,7 @@ def test_run_pipeline_reports_added_owned_review(temp_db, monkeypatch):
     conn.commit()
     conn.close()
 
-    def fake_enrich(conn, *, client_id, token):
+    def fake_enrich(conn, *, client_id, token, progress=None):
         for (g,) in conn.execute("SELECT id FROM games WHERE igdb_id IS NULL").fetchall():
             conn.execute("UPDATE games SET igdb_id = 1 WHERE id = ?", (g,))
             conn.execute("INSERT OR IGNORE INTO dlc (game_id, name, source) "
@@ -267,7 +267,7 @@ def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
         return [ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                             source="playstation", external_id=base_pid)]
 
-    def fake_collect_addons(page, product_ids, captured):
+    def fake_collect_addons(page, product_ids, captured, progress=None):
         assert product_ids == [base_pid]   # backfill: nothing synced yet
         return ([ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone",
                              platform="PS5", source="playstation",

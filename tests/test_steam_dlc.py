@@ -154,3 +154,36 @@ def test_enrich_and_mark_skips_game_on_fetch_error(temp_db):
     assert rep.errors == 1 and rep.games == 0 and rep.catalogue_added == 0
     assert conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0] == 0
     conn.close()
+
+
+def _rec():
+    calls = []
+    def cb(done, total=None, found=None):
+        calls.append((done, total, found))
+    cb.calls = calls
+    return cb
+
+
+def test_enrich_and_mark_progress_called_per_game(temp_db):
+    """progress fires once per steam game with climbing done/total/catalogue_added."""
+    conn = models.get_db()
+    _seed_steam_game(conn, appid="620", title="Portal 2")
+    _seed_steam_game(conn, appid="730", title="CS:GO")
+    conn.commit()
+    fetch = _fake_fetch({
+        620: {"type": "game", "name": "Portal 2", "dlc": [10]},
+        10:  {"type": "dlc", "name": "DLC A"},
+        730: {"type": "game", "name": "CS:GO", "dlc": []},
+    })
+    rec = _rec()
+    steam_dlc.enrich_and_mark(conn, {10}, fetch=fetch, progress=rec)
+    conn.commit()
+    assert len(rec.calls) == 2
+    dones = [c[0] for c in rec.calls]
+    assert dones == [1, 2]
+    totals_col = [c[1] for c in rec.calls]
+    assert totals_col[0] == totals_col[1] == 2
+    # catalogue_added accumulates: after Portal 2 it is 1, after CS:GO still 1
+    founds = [c[2] for c in rec.calls]
+    assert founds[0] == 1 and founds[1] == 1
+    conn.close()

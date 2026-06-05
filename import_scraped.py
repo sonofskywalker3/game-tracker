@@ -283,19 +283,27 @@ def _safe_auto_confirm(scraped: str, existing: str, score: float) -> bool:
 
 def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
                  dry_run: bool = False, skip_non_games: bool = True,
-                 confirm_fn: Callable[[str, str, float], bool] = _interactive_confirm) -> ImportStats:
+                 confirm_fn: Callable[[str, str, float], bool] = _interactive_confirm,
+                 progress: Callable[[int, int | None, int | None], None] | None = None) -> ImportStats:
     """Reconcile a list of scraped game dicts into the DB. Returns stats."""
     stats = ImportStats()
     # Normalized keys of games created earlier in THIS call. In a dry run the new
     # rows aren't inserted, so without this a same-batch duplicate title would be
     # miscounted as another "new" game; a real run unifies them via the DB.
     batch_new_keys: set[str] = set()
+    done = 0
     for game in games:
         if skip_non_games and is_non_game(game["title"]):
             stats.skipped_non_games += 1
+            done += 1
+            if progress:
+                progress(done, len(games), stats.new_games)
             continue
         if is_excluded(source, game.get("external_id"), game["title"]):
             stats.skipped_excluded += 1
+            done += 1
+            if progress:
+                progress(done, len(games), stats.new_games)
             continue
         constituents = bundles.expand_bundle(source, game.get("external_id"))
         if constituents is not None:
@@ -304,9 +312,15 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
             for title in constituents:
                 _import_one(conn, _constituent_game(game, title, source), source, stats,
                             batch_new_keys, dry_run=dry_run, confirm_fn=confirm_fn)
+            done += 1
+            if progress:
+                progress(done, len(games), stats.new_games)
             continue
         _import_one(conn, game, source, stats, batch_new_keys,
                     dry_run=dry_run, confirm_fn=confirm_fn)
+        done += 1
+        if progress:
+            progress(done, len(games), stats.new_games)
     return stats
 
 
@@ -580,7 +594,8 @@ def apply_bundle_catalog(conn: sqlite3.Connection, *, dry_run: bool = False) -> 
     return results
 
 
-def run_dlc_enrichment(conn: sqlite3.Connection) -> Optional[dict]:
+def run_dlc_enrichment(conn: sqlite3.Connection,
+                       progress: Callable[[int, int | None, int | None], None] | None = None) -> Optional[dict]:
     """Enrich never-enriched games with IGDB DLC. Returns totals, or None if no
     Twitch credentials are configured (enrichment skipped)."""
     import config
@@ -590,7 +605,8 @@ def run_dlc_enrichment(conn: sqlite3.Connection) -> Optional[dict]:
         logger.info("DLC enrich skipped (no Twitch credentials in config.json)")
         return None
     token = igdb_dlc.get_access_token(client_id, secret)
-    totals = igdb_dlc.enrich_missing(conn, client_id=client_id, token=token)
+    totals = igdb_dlc.enrich_missing(conn, client_id=client_id, token=token,
+                                     progress=progress)
     logger.info("DLC enrich: %d games, %d matched, +%d dlc, %d errors",
                 totals["games"], totals["matched"], totals["added"], totals["errors"])
     return totals

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 
 from scrapers.base import (
     ScrapedGame,
@@ -180,7 +181,9 @@ def parse_addons(bodies: list[dict]) -> list[ScrapedGame]:
 
 
 def collect_addons(page, product_ids: list[str],
-                   captured: list | None = None) -> tuple[list[ScrapedGame], list[str]]:
+                   captured: list | None = None,
+                   progress: Callable[[int, int | None, int | None], None] | None = None,
+                   ) -> tuple[list[ScrapedGame], list[str]]:
     """Visit each game's Store product page and return (owned add-ons, completed ids).
 
     One page load per game: goto the product URL, scroll so the add-ons section
@@ -194,8 +197,12 @@ def collect_addons(page, product_ids: list[str],
     out: list[ScrapedGame] = []
     completed: list[str] = []
     seen: set[str] = set()
+    done = 0
     for pid in product_ids:
         if not (pid and ADDON_PID_RE.fullmatch(pid)):
+            done += 1
+            if progress:
+                progress(done, len(product_ids), len(out))
             continue
         start = len(captured)
         try:
@@ -203,6 +210,9 @@ def collect_addons(page, product_ids: list[str],
             scroll_until_idle(page, captured)
         except Exception as exc:  # one bad page must not sink the run
             logger.warning("playstation: add-on page failed for %s: %s", pid, exc)
+            done += 1
+            if progress:
+                progress(done, len(product_ids), len(out))
             continue
         completed.append(pid)
         bodies = []
@@ -216,6 +226,9 @@ def collect_addons(page, product_ids: list[str],
                 seen.add(addon.external_id)
                 out.append(addon)
         page.wait_for_timeout(REQUEST_DELAY_MS)
+        done += 1
+        if progress:
+            progress(done, len(product_ids), len(out))
     logger.info("playstation: %d owned add-ons across %d/%d games",
                 len(out), len(completed), len(product_ids))
     return out, completed

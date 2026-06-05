@@ -11,6 +11,7 @@ import logging
 import re
 import sqlite3
 import time
+from collections.abc import Callable
 
 import requests
 
@@ -157,7 +158,8 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
     return {"matched": True, "cover_set": cover_set, **counts}
 
 
-def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> dict:
+def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str,
+                   progress: Callable[[int, int | None, int | None], None] | None = None) -> dict:
     """Enrich every never-enriched game (games.igdb_id IS NULL). Commits per game;
     a per-game network error is logged and skipped (never aborts the run)."""
     placeholders = ",".join("?" * len(VENDOR_CATALOGUE_SOURCES))
@@ -167,6 +169,7 @@ def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> d
         f"(SELECT game_id FROM game_external_ids WHERE source IN ({placeholders}))",
         VENDOR_CATALOGUE_SOURCES)]
     totals = {"games": 0, "matched": 0, "added": 0, "errors": 0}
+    done = 0
     for gid in ids:
         try:
             rep = enrich_game(conn, gid, client_id, token)
@@ -175,8 +178,14 @@ def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str) -> d
             conn.rollback()
             totals["errors"] += 1
             logger.warning("DLC enrich failed for game %s: %s", gid, exc)
+            done += 1
+            if progress:
+                progress(done, len(ids), totals["added"])
             continue
         totals["games"] += 1
         totals["matched"] += int(rep["matched"])
         totals["added"] += rep["added"]
+        done += 1
+        if progress:
+            progress(done, len(ids), totals["added"])
     return totals
