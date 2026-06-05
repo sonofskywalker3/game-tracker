@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import asdict
@@ -78,6 +79,96 @@ def _scrape_progress(vendor: str) -> Callable[[int], None]:
         _set(phase="scraping",
              message=f"scraping your {vendor} library — {done} {unit} so far…")
     return cb
+
+
+def _force_foreground_windows(title: str) -> None:
+    """Find the Chromium window matching `title` and flash + foreground it (Windows).
+
+    The taskbar flash is the reliable, OS-sanctioned attention signal; the
+    foreground-force (AttachThreadInput trick) works on many setups but Windows
+    intentionally makes it unreliable. Only acts on a window whose title contains
+    the page title, to avoid grabbing an unrelated Chrome window.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    needle = title[:12].lower()
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _cb(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if cls.value != "Chrome_WidgetWin_1":
+            return True
+        buf = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, buf, 512)
+        if needle and needle in (buf.value or "").lower():
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(_cb, 0)
+    if not found:
+        return
+    hwnd = found[0]
+
+    class FLASHWINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND),
+                    ("dwFlags", wintypes.DWORD), ("uCount", wintypes.UINT),
+                    ("dwTimeout", wintypes.DWORD)]
+
+    for fn, args in (
+        (user32.ShowWindow, [wintypes.HWND, ctypes.c_int]),
+        (user32.BringWindowToTop, [wintypes.HWND]),
+        (user32.SetForegroundWindow, [wintypes.HWND]),
+        (user32.FlashWindowEx, [ctypes.POINTER(FLASHWINFO)]),
+        (user32.GetWindowThreadProcessId, [wintypes.HWND, wintypes.LPVOID]),
+    ):
+        fn.argtypes = args
+
+    flashw_all, flashw_timernofg = 0x3, 0xC
+    fi = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd,
+                    flashw_all | flashw_timernofg, 5, 0)
+    user32.FlashWindowEx(ctypes.byref(fi))
+
+    sw_restore = 9
+    user32.ShowWindow(hwnd, sw_restore)
+    fg = user32.GetForegroundWindow()
+    fg_tid = user32.GetWindowThreadProcessId(fg, None)
+    our_tid = kernel32.GetCurrentThreadId()
+    user32.AttachThreadInput(our_tid, fg_tid, True)
+    user32.BringWindowToTop(hwnd)
+    user32.SetForegroundWindow(hwnd)
+    user32.AttachThreadInput(our_tid, fg_tid, False)
+
+
+def _surface_login_window(page) -> None:
+    """Best-effort: bring the login browser to the foreground so it's not missed.
+
+    bring_to_front() activates the tab; on Windows we additionally flash the
+    taskbar and attempt a foreground-force. Never raises; off Windows (or with no
+    real page, e.g. tests) it just activates the tab.
+    """
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+    if sys.platform != "win32":
+        return
+    try:
+        title = (page.title() or "").strip()
+    except Exception:
+        return  # no real page (e.g. test fake) -> skip OS-level surfacing
+    if not title:
+        return
+    try:
+        _force_foreground_windows(title)
+    except Exception:
+        pass
 
 
 def status() -> dict:
@@ -267,10 +358,7 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
         # page-pulling so that work runs headless and off-screen.
         with factory(headless=False) as (page, _captured):
             page.goto(mod.VENDOR_URL)
-            try:
-                page.bring_to_front()  # surface the login window above other apps
-            except Exception:
-                pass
+            _surface_login_window(page)  # flash taskbar + raise to foreground (Windows)
             _set(phase="awaiting_login",
                  message="log in and open your library, then click Continue")
             while not _continue.is_set():
