@@ -247,10 +247,14 @@ def cancel() -> bool:
 
 
 def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
-    """Daemon-thread body: own the browser, wait for login, scrape, run pipeline.
+    """Daemon-thread body: log in (visible), then scrape headless, run pipeline.
 
-    Cancellation is honored during the (potentially long) login wait. Any error
-    sets phase=error and is surfaced to the UI; the browser is always closed.
+    The browser is VISIBLE only for the login step (surfaced to the foreground);
+    once the user clicks Continue it is closed and a fresh HEADLESS context is
+    opened on the same persistent profile (.pw-profile carries the auth), so the
+    long page-pulling work (library + per-game store pages) runs off-screen.
+    Cancellation is honored during the login wait. Any error sets phase=error and
+    is surfaced to the UI; both browsers are always closed.
     """
     mod = SCRAPERS[vendor]
     factory = browser_factory or capturing_browser
@@ -259,8 +263,14 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
     _set(phase="launching", message=f"opening {vendor} in a browser...",
          started_at=datetime.now().isoformat())
     try:
-        with factory(headless=False) as (page, captured):
+        # Phase 1 — visible browser, for login only. Closed before the long
+        # page-pulling so that work runs headless and off-screen.
+        with factory(headless=False) as (page, _captured):
             page.goto(mod.VENDOR_URL)
+            try:
+                page.bring_to_front()  # surface the login window above other apps
+            except Exception:
+                pass
             _set(phase="awaiting_login",
                  message="log in and open your library, then click Continue")
             while not _continue.is_set():
@@ -273,7 +283,11 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                 _set(phase="cancelled", message="cancelled",
                      finished_at=datetime.now().isoformat())
                 return
-            _set(phase="scraping", message=f"scraping your {vendor} library...")
+        # Login window closed; the saved session carries the auth into a fresh
+        # headless context for the rest of the run.
+        _set(phase="scraping", message=f"scraping your {vendor} library...")
+        with factory(headless=True) as (page, captured):
+            page.goto(mod.VENDOR_URL)
             games = collect_fn(page, captured, progress=_scrape_progress(vendor))
             if vendor == "playstation":
                 addon_fn = collect_addons or mod.collect_addons
