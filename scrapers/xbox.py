@@ -10,6 +10,7 @@ Store product id.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from scrapers.base import (
     ScrapedGame,
@@ -77,7 +78,8 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
     return games
 
 
-def collect(page, captured: list | None = None) -> list[ScrapedGame]:
+def collect(page, captured: list | None = None,
+            progress: Callable[[int], None] | None = None) -> list[ScrapedGame]:
     """Replay the order-history API across all pages and return owned games.
 
     Follows the continuationToken until exhausted; reuses the page's auth headers
@@ -102,6 +104,8 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
             )
         body = resp.json()
         responses.append(body)
+        if progress:
+            progress(len(responses))
         token = body.get("continuationToken")
         if not token or token in seen_tokens:
             break

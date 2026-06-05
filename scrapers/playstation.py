@@ -99,7 +99,8 @@ def _request_page(page, start: int, headers: dict) -> dict:
     return resp.json()
 
 
-def collect(page, captured: list | None = None) -> list[ScrapedGame]:
+def collect(page, captured: list | None = None,
+            progress: Callable[[int], None] | None = None) -> list[ScrapedGame]:
     """Page through the authenticated library API and return all owned games.
 
     Assumes the page is on an authenticated PSN session (cookies carry the auth,
@@ -121,6 +122,8 @@ def collect(page, captured: list | None = None) -> list[ScrapedGame]:
             break
         seen.update(g.external_id for g in new)
         games.extend(new)
+        if progress:
+            progress(len(games))
         start += len(items)
         logger.info("playstation: %d games so far...", len(games))
         page.wait_for_timeout(REQUEST_DELAY_MS)

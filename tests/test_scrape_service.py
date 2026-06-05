@@ -124,7 +124,7 @@ def test_start_runs_full_flow(temp_db, monkeypatch):
     monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
     monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
 
-    def fake_collect(page, captured):
+    def fake_collect(page, captured, progress=None):
         return [
             ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                         source="playstation", external_id="G1"),
@@ -147,7 +147,7 @@ def test_start_runs_full_flow(temp_db, monkeypatch):
 def test_cancel_before_continue(temp_db, monkeypatch):
     monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
     ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
-                                 collect=lambda p, c: [])
+                                 collect=lambda p, c, progress=None: [])
     assert ok
     assert _wait_phase("awaiting_login")
     scrape_service.cancel()
@@ -263,7 +263,7 @@ def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
 
     base_pid = "UP0082-PPSA10664_00-FF16SIEA00000002"
 
-    def fake_collect(page, captured):
+    def fake_collect(page, captured, progress=None):
         return [ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                             source="playstation", external_id=base_pid)]
 
@@ -332,3 +332,15 @@ def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
     assert added == {"DLC A": True, "DLC B": False}
     assert summary["review"] == []
     conn.close()
+
+
+def test_scrape_progress_updates_status_message():
+    cb = scrape_service._scrape_progress("playstation")
+    cb(150)
+    st = scrape_service.status()
+    assert st["phase"] == "scraping"
+    assert "150 games" in st["message"]
+
+    cb2 = scrape_service._scrape_progress("xbox")
+    cb2(3)
+    assert "3 pages" in scrape_service.status()["message"]
