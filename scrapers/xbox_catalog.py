@@ -13,10 +13,12 @@ import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import requests
 
-from addon_parent import ParentRef
+if TYPE_CHECKING:
+    from addon_parent import ParentRef
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +103,8 @@ def resolve_addon_parents(product_ids: list[str], *,
     Two passes: fetch the add-ons, read each one's addOnParent id, then fetch those
     parents and keep only ProductType == "Game", returning their id + title.
     """
+    from addon_parent import ParentRef  # local import breaks addon_parent<->xbox_catalog cycle
+
     addons = fetch(list(dict.fromkeys(product_ids)))
     parent_ids: dict[str, str | None] = {pid: _parent_id_of(p) for pid, p in addons.items()}
     wanted = list({pid for pid in parent_ids.values() if pid})
