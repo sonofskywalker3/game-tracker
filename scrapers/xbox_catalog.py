@@ -77,7 +77,11 @@ def _fetch_products(ids: list[str], *, cache_dir: Path = CACHE_DIR,
             products = (resp.json() or {}).get("Products") or []
         except (requests.RequestException, json.JSONDecodeError) as exc:
             logger.warning("xbox displaycatalog batch failed (%s): %s", chunk, exc)
-            products = []
+            for pid in chunk:
+                out[pid] = None          # this run only; NOT cached, retried next scrape
+            if delay_s:
+                time.sleep(delay_s)
+            continue
         by_id = {p.get("ProductId"): p for p in products if p.get("ProductId")}
         cache_dir.mkdir(parents=True, exist_ok=True)
         for pid in chunk:
