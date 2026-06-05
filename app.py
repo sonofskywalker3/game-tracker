@@ -542,6 +542,27 @@ def api_dlc_review_dismiss(review_id):
     return jsonify({"ok": True, "count": count})
 
 
+@app.route('/api/dlc/review/rematch', methods=['POST'])
+def api_dlc_review_rematch():
+    """Re-run the matcher over open review rows; resolve+own newly-matched ones."""
+    import dlc_review
+    conn = get_db()
+    try:
+        report = dlc_review.rematch_unresolved(conn)
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "A DLC row with that name already exists for this game"}), 409
+    conn.commit()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM dlc_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
+    ).fetchone()[0]
+    conn.close()
+    return jsonify({"ok": True, "resolved": report.resolved,
+                    "marked": report.marked, "count": count})
+
+
 @app.route('/api/games/<int:game_id>/dlc/refresh', methods=['POST'])
 def api_refresh_dlc(game_id):
     """Re-fetch a game's DLC from IGDB (by stored id, or by title if unset)."""
