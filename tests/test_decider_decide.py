@@ -53,6 +53,35 @@ def test_decide_request_shape_and_parse(temp_db):
     conn.close()
 
 
+def test_decide_drops_finished_and_dropped_from_suggestions(temp_db):
+    conn = models.get_db()
+    done = _add(conn, "Final Fantasy X")
+    conn.execute("UPDATE user_ratings SET status='completed' WHERE game_id=?", (done,))
+    dropped = _add(conn, "Abandoned Game")
+    conn.execute("UPDATE user_ratings SET status='dropped' WHERE game_id=?", (dropped,))
+    live = _add(conn, "Hades")
+    conn.commit()
+    slot = _slot(conn)
+    fake = FakeClient(f"Some options.\n<suggestions>{done},{dropped},{live}</suggestions>")
+    out = decider.decide(conn, slot, [{"role": "user", "content": "what should I play?"}],
+                         client=fake, model="claude-sonnet-4-6")
+    assert out["suggestions"] == [live]   # finished + dropped removed
+    conn.close()
+
+
+def test_decide_keeps_finished_when_user_wants_to_100(temp_db):
+    conn = models.get_db()
+    done = _add(conn, "Final Fantasy X")
+    conn.execute("UPDATE user_ratings SET status='completed' WHERE game_id=?", (done,))
+    conn.commit()
+    slot = _slot(conn)
+    fake = FakeClient(f"Go for it.\n<suggestions>{done}</suggestions>")
+    out = decider.decide(conn, slot, [{"role": "user", "content": "I want to 100% something"}],
+                         client=fake, model="claude-sonnet-4-6")
+    assert out["suggestions"] == [done]   # explicit replay intent -> allowed
+    conn.close()
+
+
 def test_decide_no_key_returns_error(temp_db, monkeypatch):
     conn = models.get_db()
     slot = _slot(conn)
