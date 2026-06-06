@@ -57,8 +57,35 @@
     }
 
     function renderSlate(slots) {
+        // A full innerHTML rebuild destroys every slot's open decider chat DOM, so
+        // capture which chats are open, rebuild, then restore each from the
+        // in-memory _deciderMessages. Without this, an action on ONE slot (pin,
+        // modal close, edit) wiped a visible Q&A on ANOTHER slot -- forcing a
+        // re-typed, re-billed API call.
+        const openChats = _openChatSlotIds();
         document.getElementById('slate').innerHTML = slots.map(slotCardHtml).join('')
             + `<button onclick="addSlot()" class="game-card bg-surface-light/40 rounded-lg border-2 border-dashed border-gray-700 hover:border-accent flex items-center justify-center min-h-[120px] text-gray-400 hover:text-white text-sm">+ Add slot</button>`;
+        _restoreDeciderChats(openChats);
+    }
+
+    function _openChatSlotIds() {
+        const ids = new Set();
+        document.querySelectorAll('[id^="decider-chat-"]').forEach(panel => {
+            if (panel.style.display === 'flex') ids.add(panel.id.replace('decider-chat-', ''));
+        });
+        return ids;
+    }
+
+    function _restoreDeciderChats(openIds) {
+        Object.keys(_deciderMessages).forEach(slotId => {
+            const msgs = _deciderMessages[slotId] || [];
+            if (!msgs.length) return;
+            const box = document.getElementById('decider-msgs-' + slotId);
+            if (!box) return;                              // slot no longer rendered
+            box.innerHTML = '';
+            msgs.forEach(m => _deciderAppendMsg(slotId, m.role, m.content));
+            if (openIds.has(String(slotId))) toggleDeciderChat(slotId);  // re-open
+        });
     }
 
     function slotCardHtml(slot) {
