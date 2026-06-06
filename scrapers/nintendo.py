@@ -104,6 +104,7 @@ def parse_orders(responses: list[dict]) -> list[ScrapedGame]:
                     cover_url=None,
                     source_title=name,
                     kind=kind,
+                    url_key=product.get("urlKey"),
                 ))
     return games
 

@@ -37,6 +37,14 @@ def test_maps_fields_and_nsuid_id():
     assert g.source_title == "Sample Switch Game"
 
 
+def test_captures_url_key_for_addon():
+    # The add-on's eShop slug (urlKey) is kept so the parent pass can fetch its
+    # product page; games without one fall back to None.
+    by = {g.title: g for g in parse_orders([_body()])}
+    addon = by["Sample Game - Nintendo Switch 2 Edition Upgrade Pack"]
+    assert addon.url_key == "sample-game-switch-2-edition-upgrade-pack-70050000000003-switch-2"
+
+
 def test_switch_2_folds_into_switch():
     by = {g.title: g for g in parse_orders([_body()])}
     assert by["Sample Switch 2 Game"].platform == "Switch"
