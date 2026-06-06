@@ -378,11 +378,15 @@
     async function loadPlatforms() {
         const platforms = await api.get('/api/platforms');
         const container = document.getElementById('platform-options');
-        const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
+        const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox', 'Steam', 'PC'];
 
         const sorted = platforms
-            .filter(p => p.short_name !== 'PC' && p.game_count > 0)
-            .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
+            .filter(p => p.game_count > 0)
+            .sort((a, b) => {
+                const ia = platformOrder.indexOf(a.short_name);
+                const ib = platformOrder.indexOf(b.short_name);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+            });
 
         container.innerHTML = sorted.map(p => `
             <label class="flex items-center gap-2 px-3 py-2 hover:bg-surface cursor-pointer">
