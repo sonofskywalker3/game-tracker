@@ -1,0 +1,29 @@
+{
+ "pageProps": {
+  "initialApolloState": {
+   "Product:{\"sku\":\"7100059002\"}": {
+    "__typename": "Product",
+    "sku": "7100059002",
+    "nsuid": null,
+    "name": "Vampire Survivors"
+   },
+   "Product:{\"sku\":\"7500042414\"}": {
+    "__typename": "Product",
+    "sku": "7500042414",
+    "nsuid": "70050000042414",
+    "name": "Vampire Survivors: Tides of the Foscari",
+    "dlcType": {
+     "__typename": "DlcType",
+     "label": "Individual",
+     "code": "INDIVIDUAL"
+    },
+    "baseSoftware": [
+     {
+      "__ref": "Product:{\"sku\":\"7100059002\"}"
+     }
+    ],
+    "compatibility": null
+   }
+  }
+ }
+}

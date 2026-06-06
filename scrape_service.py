@@ -442,13 +442,20 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                               for aid, gid in addon_parents.items()}
             elif vendor == "nintendo":
                 from scrapers import nintendo_catalog
-                game_nsuids = [g.external_id for g in games
-                               if getattr(g, "kind", "game") == "game" and g.external_id]
+                # Each owned add-on's own eShop page names its required base game
+                # ("requires this game to play"); read that to link the add-on,
+                # preferring a base the user already owns for cross-series packs.
+                owned_game_nsuids = {g.external_id for g in games
+                                     if getattr(g, "kind", "game") == "game" and g.external_id}
+                addon_items = [(g.external_id, getattr(g, "url_key", None))
+                               for g in games
+                               if getattr(g, "kind", "game") == "addon" and g.external_id]
                 _set(phase="scraping",
-                     message=f"reading DLC for {len(game_nsuids)} games...")
+                     message=f"reading DLC parents for {len(addon_items)} add-ons...")
                 try:
-                    parent_map = nintendo_catalog.collect_parent_map(
-                        page, captured, game_nsuids,
+                    parent_map = nintendo_catalog.collect_addon_parents(
+                        page, captured, addon_items,
+                        owned_game_nsuids=owned_game_nsuids,
                         progress=_progress("scraping", "reading DLC", "linked"),
                         should_cancel=_cancel.is_set)
                 except Exception as exc:  # never sink the scrape; fall back to name match
