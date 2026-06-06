@@ -108,11 +108,18 @@ def test_collect_parent_map_end_to_end_offline():
     assert pm["70050000061841"].name == "Vampire Survivors"
 
 
-def test_bootstrap_raises_without_algolia_key():
+def test_bootstrap_falls_back_to_embedded_key():
+    # no live key in the capture -> use the embedded public key, buildId from page
     page = _Page({}, build_id="b1")
+    key, build_id = nc.bootstrap(page, captured=[])
+    assert key == nc.ALGOLIA_KEY and build_id == "b1"
+
+
+def test_bootstrap_raises_without_build_id():
+    page = _Page({}, build_id=None)
     try:
         nc.bootstrap(page, captured=[])
     except RuntimeError as exc:
-        assert "MISSING" in str(exc)
+        assert "buildId" in str(exc)
     else:
-        raise AssertionError("expected bootstrap to raise without a key")
+        raise AssertionError("expected bootstrap to raise without a buildId")
