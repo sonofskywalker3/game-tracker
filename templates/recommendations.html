@@ -63,6 +63,8 @@
         // modal close, edit) wiped a visible Q&A on ANOTHER slot -- forcing a
         // re-typed, re-billed API call.
         const openChats = _openChatSlotIds();
+        _persistedOpen.forEach(id => openChats.add(id));   // restore panels open before navigation
+        _persistedOpen = new Set();
         document.getElementById('slate').innerHTML = slots.map(slotCardHtml).join('')
             + `<button onclick="addSlot()" class="game-card bg-surface-light/40 rounded-lg border-2 border-dashed border-gray-700 hover:border-accent flex items-center justify-center min-h-[120px] text-gray-400 hover:text-white text-sm">+ Add slot</button>`;
         _restoreDeciderChats(openChats);
@@ -316,6 +318,30 @@
     // ---- Decider chat ----
     const _deciderMessages = {};  // slotId -> [{role, content}, ...]
 
+    // Persist in-progress chats to localStorage so navigating to Library/Series
+    // and back to Picks doesn't lose them (full page loads otherwise wipe the
+    // in-memory state).
+    const _DECIDER_LS_KEY = 'deciderChatState';
+    let _persistedOpen = new Set();
+
+    function _persistDeciderState() {
+        try {
+            const open = [...document.querySelectorAll('[id^="decider-chat-"]')]
+                .filter(p => p.style.display === 'flex')
+                .map(p => p.id.replace('decider-chat-', ''));
+            localStorage.setItem(_DECIDER_LS_KEY,
+                JSON.stringify({ messages: _deciderMessages, open }));
+        } catch (e) { /* storage unavailable: degrade silently */ }
+    }
+
+    function _loadDeciderState() {
+        try {
+            const s = JSON.parse(localStorage.getItem(_DECIDER_LS_KEY) || '{}');
+            if (s.messages) Object.assign(_deciderMessages, s.messages);
+            _persistedOpen = new Set((s.open || []).map(String));
+        } catch (e) { /* ignore malformed state */ }
+    }
+
     function toggleDeciderChat(slotId) {
         const panel = document.getElementById('decider-chat-' + slotId);
         const btn = document.getElementById('decider-btn-' + slotId);
@@ -334,6 +360,7 @@
             const input = document.getElementById('decider-input-' + slotId);
             if (input) input.focus();
         }
+        _persistDeciderState();
     }
 
     function _deciderAppendMsg(slotId, role, html) {
@@ -365,6 +392,7 @@
         if (!_deciderMessages[slotId]) _deciderMessages[slotId] = [];
         _deciderMessages[slotId].push({ role: 'user', content: text });
         _deciderAppendMsg(slotId, 'user', text);
+        _persistDeciderState();
 
         // Show thinking placeholder
         const box = document.getElementById('decider-msgs-' + slotId);
@@ -388,6 +416,7 @@
             _deciderAppendMsg(slotId, 'notice', noticeHtml);
             // Remove the last user message from history so they can retry cleanly
             _deciderMessages[slotId].pop();
+            _persistDeciderState();
             return;
         }
 
@@ -398,6 +427,7 @@
             _deciderMessages[slotId].push({ role: 'assistant', content: reply });
             _deciderAppendMsg(slotId, 'assistant', reply);
         }
+        _persistDeciderState();
 
         if (suggestions.length) {
             const sugBox = document.createElement('div');
@@ -433,9 +463,10 @@
         await api.post(`/api/slots/${slotId}/pin`, { game_id: gameId });
         // Reset chat state for this slot before refreshing
         delete _deciderMessages[slotId];
+        _persistDeciderState();
         loadSlate();
     }
 
-    document.addEventListener('DOMContentLoaded', loadSlate);
+    document.addEventListener('DOMContentLoaded', () => { _loadDeciderState(); loadSlate(); });
 </script>
 {% endblock %}
