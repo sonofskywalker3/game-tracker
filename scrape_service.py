@@ -393,7 +393,7 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
     factory = browser_factory or capturing_browser
     collect_fn = collect or mod.collect
     visited_pids: list[str] = []
-    nintendo_parent_map: dict | None = None
+    parent_map: dict | None = None
     _set(phase="launching", message=f"opening {vendor} in a browser...",
          started_at=datetime.now().isoformat())
     try:
@@ -430,11 +430,16 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                 targets = _psn_addon_targets(games)
                 _set(phase="scraping",
                      message=f"checking add-ons for {len(targets)} games...")
-                owned_addons, visited_pids = addon_fn(
+                owned_addons, visited_pids, addon_parents = addon_fn(
                     page, targets, captured,
                     progress=_progress("scraping", "checking add-ons", "owned"),
                     should_cancel=_cancel.is_set)
                 games = list(games) + owned_addons
+                # Parent-down: link each add-on to the GAME whose page surfaced it
+                # (holds across PS4/PS5), via the same resolver path Nintendo uses.
+                from addon_parent import ParentRef
+                parent_map = {aid: ParentRef(product_id=gid)
+                              for aid, gid in addon_parents.items()}
             elif vendor == "nintendo":
                 from scrapers import nintendo_catalog
                 game_nsuids = [g.external_id for g in games
@@ -442,18 +447,18 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                 _set(phase="scraping",
                      message=f"reading DLC for {len(game_nsuids)} games...")
                 try:
-                    nintendo_parent_map = nintendo_catalog.collect_parent_map(
+                    parent_map = nintendo_catalog.collect_parent_map(
                         page, captured, game_nsuids,
                         progress=_progress("scraping", "reading DLC", "linked"),
                         should_cancel=_cancel.is_set)
                 except Exception as exc:  # never sink the scrape; fall back to name match
                     logger.warning("nintendo: DLC pass failed (%s); using name fallback", exc)
-                    nintendo_parent_map = None
+                    parent_map = None
         write_scrape(vendor, games)
         conn = models.get_db()
         try:
             summary = _run_pipeline(conn, vendor, games, visited_pids=visited_pids,
-                                    parent_map=nintendo_parent_map)
+                                    parent_map=parent_map)
         finally:
             conn.close()
         _set(phase="complete", message="done", summary=summary,
