@@ -41,6 +41,101 @@ def test_remainder_strips_parent_prefix():
 
 # --- match_equal (equality only; no containment) ---
 
+def test_remainder_strips_shared_game_prefix():
+    # PS4 store titles use a SHORT game prefix that isn't the full parent title;
+    # the remainder must still reduce to the same DLC name as the full-title form.
+    assert own.remainder("Ys VIII - Bottled Potion Set",
+                         "ys viii lacrimosa of dana") == "bottled potion set"
+    assert own.remainder("Ys VIII: Lacrimosa of DANA - Bottled Potion Set",
+                         "ys viii lacrimosa of dana") == "bottled potion set"
+
+
+def _ext(conn, gid, source, external_id):
+    conn.execute("INSERT INTO game_external_ids (game_id, source, external_id) VALUES (?,?,?)",
+                 (gid, source, external_id))
+
+
+def test_ps4_ps5_dlc_prefix_variants_reconcile_to_one_row(temp_db):
+    """Same DLC owned on PS4 and PS5 has different store-title prefixes
+    ('Ys VIII: Lacrimosa of DANA - X' vs 'Ys VIII - X'). Both must collapse to a
+    single DLC row carrying both vendor ids, regardless of import order."""
+    for first_ps4 in (False, True):
+        conn = models.get_db()
+        conn.execute("DELETE FROM dlc")
+        conn.execute("DELETE FROM dlc_external_ids")
+        conn.execute("DELETE FROM games")
+        conn.execute("DELETE FROM game_external_ids")
+        gid = _seed(conn, title="Ys VIII: Lacrimosa of Dana", dlc_names=())
+        _ext(conn, gid, "playstation", "UP1063-PPSA06812_00-0000000000000000")  # PS5 base
+        _ext(conn, gid, "playstation", "UP1063-CUSA08565_00-0000000000000000")  # PS4 base
+        conn.commit()
+        ps5 = _addon("Ys VIII: Lacrimosa of DANA - Bottled Potion Set",
+                     source="playstation", external_id="UP1063-PPSA06812_00-YS08JPDLC00N0062")
+        ps4 = _addon("Ys VIII - Bottled Potion Set",
+                     source="playstation", external_id="UP1063-CUSA08565_00-YSVIIIDLC00N0062")
+        own.mark_ownership(conn, [ps4, ps5] if first_ps4 else [ps5, ps4])
+        conn.commit()
+        n_dlc = conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id=?", (gid,)).fetchone()[0]
+        n_ext = conn.execute("SELECT COUNT(*) FROM dlc_external_ids").fetchone()[0]
+        conn.close()
+        assert n_dlc == 1, f"first_ps4={first_ps4}: expected 1 DLC row, got {n_dlc}"
+        assert n_ext == 2, f"first_ps4={first_ps4}: expected 2 vendor ids, got {n_ext}"
+
+
+def test_dedup_dlc_merges_prefix_variant_duplicates(temp_db):
+    conn = models.get_db()
+    gid = _seed(conn, title="Ys VIII: Lacrimosa of Dana", dlc_names=())
+    conn.execute("INSERT INTO dlc (game_id,name,source,owned) VALUES (?,?, 'igdb',0)",
+                 (gid, "Bottled Potion Set"))
+    clean_id = conn.execute("SELECT id FROM dlc WHERE name='Bottled Potion Set'").fetchone()[0]
+    conn.execute("INSERT INTO dlc (game_id,name,source,owned) VALUES (?,?, 'playstation',1)",
+                 (gid, "Ys VIII - Bottled Potion Set"))
+    pref_id = conn.execute("SELECT id FROM dlc WHERE name LIKE 'Ys VIII%'").fetchone()[0]
+    conn.execute("INSERT INTO dlc_external_ids (dlc_id,source,external_id) VALUES (?,?,?)",
+                 (clean_id, "playstation", "UP1063-PPSA06812_00-YS08JPDLC00N0062"))
+    conn.execute("INSERT INTO dlc_external_ids (dlc_id,source,external_id) VALUES (?,?,?)",
+                 (pref_id, "playstation", "UP1063-CUSA08565_00-YSVIIIDLC00N0062"))
+    conn.commit()
+    report = own.dedup_dlc(conn, dry_run=False)
+    conn.commit()
+    rows = conn.execute("SELECT id,name,owned FROM dlc WHERE game_id=?", (gid,)).fetchall()
+    assert len(rows) == 1                          # collapsed to one row
+    assert rows[0]["name"] == "Bottled Potion Set"  # IGDB-named clean survivor kept
+    assert rows[0]["owned"] == 1                    # ownership OR'd in
+    assert conn.execute("SELECT COUNT(*) FROM dlc_external_ids WHERE dlc_id=?",
+                        (rows[0]["id"],)).fetchone()[0] == 2   # both vendor ids moved over
+    assert len(report) == 1
+    conn.close()
+
+
+def test_dedup_dlc_dry_run_writes_nothing(temp_db):
+    conn = models.get_db()
+    gid = _seed(conn, title="Ys VIII: Lacrimosa of Dana", dlc_names=())
+    conn.execute("INSERT INTO dlc (game_id,name,source,owned) VALUES (?,?, 'igdb',0)",
+                 (gid, "Bottled Potion Set"))
+    conn.execute("INSERT INTO dlc (game_id,name,source,owned) VALUES (?,?, 'playstation',1)",
+                 (gid, "Ys VIII - Bottled Potion Set"))
+    conn.commit()
+    report = own.dedup_dlc(conn, dry_run=True)
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id=?", (gid,)).fetchone()[0] == 2
+    assert len(report) == 1 and report[0]["dropped"] == ["Ys VIII - Bottled Potion Set"]
+    conn.close()
+
+
+def test_dedup_dlc_leaves_distinct_dlc_alone(temp_db):
+    conn = models.get_db()
+    gid = _seed(conn, title="Dying Light", dlc_names=())
+    for name in ("The Following", "Hellraid", "Cuisine & Cargo"):
+        conn.execute("INSERT INTO dlc (game_id,name,source,owned) VALUES (?,?, 'igdb',0)", (gid, name))
+    conn.commit()
+    report = own.dedup_dlc(conn, dry_run=False)
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id=?", (gid,)).fetchone()[0] == 3
+    assert report == []
+    conn.close()
+
+
 def test_match_equal_single():
     rows = [(10, "Hearts of Stone"), (11, "Blood and Wine")]
     assert own.match_equal("hearts of stone", rows) == 10

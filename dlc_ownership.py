@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import models
@@ -123,14 +124,26 @@ def psn_prefix_map(conn: sqlite3.Connection) -> dict[str, set[int]]:
 
 
 def remainder(addon_title: str, parent_norm: str) -> str:
-    """The normalized add-on title with the parent's normalized prefix removed."""
+    """The normalized add-on title with the leading game-name words removed.
+
+    Strips the longest whole-word prefix the add-on shares with the parent's
+    normalized title -- not just the full parent title. PS4 and PS5 sell the same
+    DLC under different store-title prefixes (the full "Ys VIII: Lacrimosa of Dana
+    - X" vs the short "Ys VIII - X"); reducing both to the shared-prefix remainder
+    ("X") lets them reconcile to one row instead of creating duplicates.
+    """
     addon = norm(addon_title)
     if addon == parent_norm:
         return ""
-    prefix = parent_norm + " "
-    if addon.startswith(prefix):
-        return addon[len(prefix):]
-    return addon
+    addon_words = addon.split()
+    parent_words = parent_norm.split()
+    i = 0
+    while (i < len(addon_words) and i < len(parent_words)
+           and addon_words[i] == parent_words[i]):
+        i += 1
+    if i == 0:
+        return addon
+    return " ".join(addon_words[i:])
 
 
 def match_equal(remainder: str, dlc_rows: list[tuple[int, str]]) -> int | str | None:
@@ -288,8 +301,10 @@ def apply_addon_to_parent(
             _flip(conn, report, dlc_id, title, parent, dry_run)
             return
 
-        # (b) reconcile by normalized-name equality
-        rows = [(r["id"], r["name"])
+        # (b) reconcile by normalized-name equality, reducing BOTH the add-on and
+        # the existing rows by the shared game-name prefix so PS4/PS5 title-prefix
+        # variants of the same DLC match regardless of which imported first.
+        rows = [(r["id"], remainder(r["name"], parent_norm))
                 for r in conn.execute("SELECT id, name FROM dlc WHERE game_id = ?", (parent,))]
         match = match_equal(remainder(title, parent_norm), rows)
         if match is AMBIGUOUS:
@@ -374,4 +389,58 @@ def mark_ownership(conn: sqlite3.Connection, addons, *, dry_run: bool = False) -
             continue
         parent_norm = next(gnorm for gid, gnorm in library if gid == parent)
         apply_addon_to_parent(conn, report, parent, parent_norm, titles, addon, dry_run=dry_run)
+    return report
+
+
+def _dedup_survivor_key(row) -> tuple:
+    """Sort key picking the cleanest DLC row to keep in a duplicate group:
+    an IGDB-named row first, then a non-artifact (alphanumeric-leading) name, then
+    the shortest normalized name, then the lowest id."""
+    name = row["name"] or ""
+    return (row["igdb_id"] is None, not name[:1].isalnum(), len(norm(name)), row["id"])
+
+
+def dedup_dlc(conn: sqlite3.Connection, *, dry_run: bool = True) -> list[dict]:
+    """Collapse duplicate DLC rows within each game into one.
+
+    Two DLC rows duplicate each other when they reduce to the same name after the
+    shared game-name prefix is stripped (see `remainder`) -- e.g. PS4's "Ys VIII -
+    Bottled Potion Set" and PS5's clean "Bottled Potion Set". Keeps one survivor
+    (see `_dedup_survivor_key`), moves every vendor id onto it, ORs ownership, and
+    deletes the rest. Returns a per-group report; `dry_run` writes nothing. The
+    caller owns commit. Idempotent: a second pass finds no groups.
+    """
+    games = {r["id"]: (r["normalized_title"] or "")
+             for r in conn.execute("SELECT id, normalized_title FROM games")}
+    rows_by_game: dict[int, list] = defaultdict(list)
+    for r in conn.execute("SELECT id, game_id, name, igdb_id, owned FROM dlc"):
+        rows_by_game[r["game_id"]].append(r)
+
+    report: list[dict] = []
+    for gid, rows in rows_by_game.items():
+        parent_norm = games.get(gid, "")
+        groups: dict[str, list] = defaultdict(list)
+        for r in rows:
+            groups[remainder(r["name"], parent_norm)].append(r)
+        for grp in groups.values():
+            if len(grp) < 2:
+                continue
+            survivor = min(grp, key=_dedup_survivor_key)
+            dropped = [r for r in grp if r["id"] != survivor["id"]]
+            owned = any(r["owned"] for r in grp)
+            report.append({"game_id": gid, "survivor": survivor["name"],
+                           "dropped": [r["name"] for r in dropped], "owned": owned})
+            if dry_run:
+                continue
+            survivor_has_igdb = survivor["igdb_id"] is not None
+            for d in dropped:
+                conn.execute("UPDATE OR IGNORE dlc_external_ids SET dlc_id = ? WHERE dlc_id = ?",
+                             (survivor["id"], d["id"]))
+                if d["igdb_id"] is not None and not survivor_has_igdb:
+                    conn.execute("UPDATE dlc SET igdb_id = ? WHERE id = ?",
+                                 (d["igdb_id"], survivor["id"]))
+                    survivor_has_igdb = True
+                conn.execute("DELETE FROM dlc WHERE id = ?", (d["id"],))
+            if owned:
+                conn.execute("UPDATE dlc SET owned = 1 WHERE id = ?", (survivor["id"],))
     return report
