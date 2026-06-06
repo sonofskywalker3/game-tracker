@@ -244,6 +244,18 @@ def init_db():
             FOREIGN KEY (dlc_id) REFERENCES dlc(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_dlc_ext_dlc ON dlc_external_ids(dlc_id);
+
+        -- Saved per-game decider conversations (picks-tab chat history)
+        CREATE TABLE IF NOT EXISTS decider_chats (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id     INTEGER NOT NULL,
+            slot_id     INTEGER,
+            slot_label  TEXT,
+            messages    TEXT    NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_decider_chats_game ON decider_chats(game_id);
     """)
 
     # Insert default platforms
@@ -817,6 +829,23 @@ def apply_traits_catalog(conn: sqlite3.Connection, game_id: int | None = None) -
     conn.commit()
 
 
+def migrate_decider_chats(conn: sqlite3.Connection) -> None:
+    """Saved per-game decider conversations (picks-tab chat history)."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS decider_chats (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id     INTEGER NOT NULL,
+            slot_id     INTEGER,
+            slot_label  TEXT,
+            messages    TEXT    NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_decider_chats_game ON decider_chats(game_id);
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -880,6 +909,7 @@ def migrate_db():
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
+    migrate_decider_chats(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)

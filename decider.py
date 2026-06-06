@@ -138,6 +138,37 @@ def parse_suggestions(text: str, valid_ids: set[int]) -> tuple[str, list[int]]:
     return text.strip(), ids
 
 
+def save_chat(conn: sqlite3.Connection, game_id: int, slot_id: int | None,
+              slot_label: str | None, messages: list[dict]) -> int | None:
+    """Persist a decider conversation tied to a game (picks-tab history). Keeps only
+    real user/assistant dialogue; returns the new row id, or None if nothing to save."""
+    clean = [{"role": m.get("role"), "content": m.get("content")}
+             for m in (messages or [])
+             if m.get("role") in ("user", "assistant") and m.get("content")]
+    if not clean:
+        return None
+    cur = conn.execute(
+        "INSERT INTO decider_chats (game_id, slot_id, slot_label, messages) VALUES (?, ?, ?, ?)",
+        (game_id, slot_id, slot_label, json.dumps(clean)))
+    return cur.lastrowid
+
+
+def list_chats(conn: sqlite3.Connection, game_id: int) -> list[dict]:
+    """Saved decider conversations for a game, newest first."""
+    rows = conn.execute(
+        "SELECT id, slot_label, messages, created_at FROM decider_chats "
+        "WHERE game_id = ? ORDER BY created_at DESC, id DESC", (game_id,)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            msgs = json.loads(r["messages"])
+        except (json.JSONDecodeError, TypeError):
+            msgs = []
+        out.append({"id": r["id"], "slot_label": r["slot_label"],
+                    "messages": msgs, "created_at": r["created_at"]})
+    return out
+
+
 def _make_client(api_key: str):
     return anthropic.Anthropic(api_key=api_key)
 
