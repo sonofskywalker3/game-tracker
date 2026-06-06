@@ -606,6 +606,22 @@ def api_refresh_dlc(game_id):
                     'report': report})
 
 
+@app.route('/api/games/<int:game_id>/decider-chat', methods=['GET', 'POST'])
+def api_game_decider_chat(game_id: int):
+    """Save (POST) or list (GET) decider conversations tied to a game."""
+    conn = get_db()
+    try:
+        if request.method == 'POST':
+            data = request.json or {}
+            cid = decider.save_chat(conn, game_id, data.get('slot_id'),
+                                    data.get('slot_label'), data.get('messages') or [])
+            conn.commit()
+            return jsonify({'success': True, 'id': cid}), 201
+        return jsonify({'chats': decider.list_chats(conn, game_id)})
+    finally:
+        conn.close()
+
+
 @app.route('/api/games/<int:game_id>/dlc/refresh-psn', methods=['POST'])
 def api_refresh_psn_dlc(game_id: int):
     """Clear the PSN add-on marker for one game and kick a scrape to re-check it."""

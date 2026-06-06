@@ -1130,6 +1130,9 @@
                                       onblur="saveNotes(${game.id}, this.value)">${game.notes || ''}</textarea>
                         </div>
 
+                        <!-- Decider history (lazy-filled from saved chats) -->
+                        <div id="decider-history-${game.id}"></div>
+
                         <!-- Delete / Not a game -->
                         <div class="pt-3 border-t border-gray-700 flex gap-2">
                             <button id="delete-btn-${game.id}"
@@ -1150,6 +1153,37 @@
                     </div>
                 </div>
             `;
+            loadDeciderHistory(gameId);
+        }
+
+        async function loadDeciderHistory(gameId) {
+            const el = document.getElementById('decider-history-' + gameId);
+            if (!el) return;
+            let data;
+            try { data = await api.get(`/api/games/${gameId}/decider-chat`); }
+            catch (e) { return; }
+            const chats = (data && data.chats) || [];
+            if (!chats.length) { el.innerHTML = ''; return; }
+            el.innerHTML = `
+                <div class="pt-3 border-t border-gray-700">
+                    <button onclick="this.nextElementSibling.classList.toggle('hidden')"
+                            class="text-sm font-medium text-gray-400 hover:text-white">
+                        Decider history (${chats.length}) ▾
+                    </button>
+                    <div class="hidden mt-2 space-y-3">
+                        ${chats.map(c => `
+                            <div class="bg-surface rounded-lg p-2 text-xs">
+                                <div class="text-gray-500 mb-1">${escapeHtml(c.slot_label || 'Decider')} · ${escapeHtml((c.created_at || '').slice(0, 16))}</div>
+                                <div class="space-y-1">
+                                    ${(c.messages || []).map(m => `
+                                        <div class="${m.role === 'user' ? 'text-gray-200' : 'text-gray-400'}">
+                                            <span class="text-gray-500">${m.role === 'user' ? 'You' : 'Decider'}:</span>
+                                            ${escapeHtml(m.content)}
+                                        </div>`).join('')}
+                                </div>
+                            </div>`).join('')}
+                    </div>
+                </div>`;
         }
 
         function switchGameTab(gameId, tab) {

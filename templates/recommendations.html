@@ -422,6 +422,14 @@
     }
 
     async function pinFromDecider(slotId, gameId) {
+        // Save the conversation that led to this pick, tied to the pinned game, so
+        // it's viewable later from the game's modal.
+        const msgs = _deciderMessages[slotId] || [];
+        if (msgs.length) {
+            const slot = (_slateData || []).find(s => s.id === slotId);
+            await api.post(`/api/games/${gameId}/decider-chat`,
+                { slot_id: slotId, slot_label: slot ? slot.label : null, messages: msgs });
+        }
         await api.post(`/api/slots/${slotId}/pin`, { game_id: gameId });
         // Reset chat state for this slot before refreshing
         delete _deciderMessages[slotId];
