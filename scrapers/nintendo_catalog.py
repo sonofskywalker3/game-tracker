@@ -29,12 +29,21 @@ logger = logging.getLogger(__name__)
 # NSUID prefixes (first 4 digits): 7001/7007 = game/bundle, 7005 = add-on (DLC).
 DLC_NSUID_PREFIX = "7005"
 
-# eShop endpoints. The Algolia search key + Next.js buildId rotate per deploy and
-# are harvested live (see bootstrap); the app id and index are stable.
+# eShop endpoints. The app id + index are stable; the Next.js buildId rotates per
+# deploy and is read live from __NEXT_DATA__ (see bootstrap).
 ALGOLIA_APP_ID = "U3B6GR4UA3"
 ALGOLIA_HOST = "https://u3b6gr4ua3-dsn.algolia.net"
 GAME_INDEX = "store_game_en_us"
-STORE_HOME_URL = "https://www.nintendo.com/us/store/"
+# Public (search-only) Algolia key, embedded in the eShop site. bootstrap prefers
+# a live-harvested key but falls back to this. Like the persisted-query SHA256 in
+# scrapers/nintendo.py, refresh it from a recon capture (.recon/nintendo_store_*)
+# if Algolia getObject starts returning 403.
+ALGOLIA_KEY = "a29c6927638bfd8cee23993e51e721c9"
+# The store games grid queries Algolia on load, so navigating here lets bootstrap
+# harvest a fresh key from the captured request headers.
+STORE_GAMES_URL = "https://www.nintendo.com/us/store/games/"
+BOOTSTRAP_POLLS = 12          # poll the capture log this many times for the key
+BOOTSTRAP_POLL_MS = 750
 DLC_JSON_URL = ("https://www.nintendo.com/_next/data/{build_id}"
                 "/us/store/products/{slug}/dlc.json?slug={slug}")
 
@@ -133,23 +142,27 @@ def _algolia_key(captured: list | None) -> str | None:
 
 
 def bootstrap(page, captured: list | None) -> tuple[str, str]:
-    """Harvest the rotating (algolia_key, build_id) from a live eShop page.
+    """Get the (algolia_key, build_id) needed for the eShop calls.
 
-    Loads the store home (which fires an Algolia search) so the key appears in the
-    captured request headers, and reads buildId from window.__NEXT_DATA__. Raises
-    if either can't be found (the scrape leaves DLC to the name fallback).
+    Loads the store games grid (which queries Algolia) and reads buildId from
+    window.__NEXT_DATA__. Prefers a live-harvested Algolia key from the captured
+    request headers, polling for the grid's query to land; falls back to the
+    embedded ALGOLIA_KEY. Raises only if buildId is missing (DLC then falls back to
+    name matching).
     """
-    page.goto(STORE_HOME_URL)
+    page.goto(STORE_GAMES_URL)
     build_id = page.evaluate("() => (window.__NEXT_DATA__ || {}).buildId || null")
     key = _algolia_key(captured)
-    if not key:                       # the home page should have queried Algolia; retry once
-        page.wait_for_timeout(1500)
+    for _ in range(BOOTSTRAP_POLLS):      # let the grid's Algolia query fire + be captured
+        if key:
+            break
+        page.wait_for_timeout(BOOTSTRAP_POLL_MS)
         key = _algolia_key(captured)
-    if not key or not build_id:
-        raise RuntimeError(f"nintendo bootstrap failed (key={'set' if key else 'MISSING'}, "
-                           f"buildId={'set' if build_id else 'MISSING'})")
-    logger.info("nintendo bootstrap: buildId=%s, algolia key captured", build_id)
-    return key, build_id
+    if not build_id:
+        raise RuntimeError("nintendo bootstrap failed: buildId MISSING")
+    logger.info("nintendo bootstrap: buildId=%s, key=%s", build_id,
+                "live" if key else "embedded default")
+    return key or ALGOLIA_KEY, build_id
 
 
 class LiveFetch:
