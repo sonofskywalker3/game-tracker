@@ -1,0 +1,28 @@
+{
+  "pageProps": {
+    "initialApolloState": {
+      "Product:{\"sku\":\"7100059002\"}": {
+        "__typename": "Product",
+        "sku": "7100059002",
+        "nsuid": "70010000059002",
+        "name": "Vampire Survivors",
+        "urlKey": "vampire-survivors-switch"
+      },
+      "Product:{\"sku\":\"7500042414\"}": {
+        "__typename": "Product",
+        "sku": "7500042414",
+        "nsuid": "70050000042414",
+        "name": "Vampire Survivors: Tides of the Foscari",
+        "urlKey": "vampire-survivors-tides-of-the-foscari-70050000042414-switch"
+      },
+      "Product:{\"sku\":\"7500061841\"}": {
+        "__typename": "Product",
+        "sku": "7500061841",
+        "nsuid": "70050000061841",
+        "name": "Vampire Survivors: Ante Chamber",
+        "urlKey": "vampire-survivors-ante-chamber-70050000061841-switch"
+      },
+      "ROOT_QUERY": { "__typename": "Query" }
+    }
+  }
+}
