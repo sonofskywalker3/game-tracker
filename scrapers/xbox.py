@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 VENDOR_URL = "https://account.microsoft.com/billing/orders"
 SOURCE = "xbox"
+# account.microsoft.com stonewalls a headless browser (navigation hangs), so the
+# post-login data pull must run in a real headful window. The launcher reads this
+# flag; vendors without it default to the off-screen headless pull.
+COLLECT_HEADLESS = False
 GAME_ITEM_TYPE = "Game"
 # Purchasable add-on content types we attach to a game's DLC ownership. Other
 # types (e.g. "Subscription" for Game Pass) are skipped entirely.

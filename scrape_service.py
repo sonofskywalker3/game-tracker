@@ -373,12 +373,14 @@ def cancel() -> bool:
 def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
     """Daemon-thread body: log in (visible), then scrape headless, run pipeline.
 
-    The browser is VISIBLE only for the login step (surfaced to the foreground);
-    once the user clicks Continue it is closed and a fresh HEADLESS context is
-    opened on the same persistent profile (.pw-profile carries the auth), so the
-    long page-pulling work (library + per-game store pages) runs off-screen.
-    Cancellation is honored during the login wait. Any error sets phase=error and
-    is surfaced to the UI; both browsers are always closed.
+    The browser is VISIBLE for the login step (surfaced to the foreground); once
+    the user clicks Continue it is closed and a fresh context is opened on the same
+    persistent profile (.pw-profile carries the auth) for the long page-pulling work
+    (library + per-game store pages). That context is HEADLESS/off-screen by default,
+    but a vendor whose account site blocks headless (COLLECT_HEADLESS=False, e.g.
+    xbox) reopens a real headful window instead. Cancellation is honored during the
+    login wait. Any error sets phase=error and is surfaced to the UI; browsers are
+    always closed.
     """
     mod = SCRAPERS[vendor]
     factory = browser_factory or capturing_browser
@@ -406,9 +408,12 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                      finished_at=datetime.now().isoformat())
                 return
         # Login window closed; the saved session carries the auth into a fresh
-        # headless context for the rest of the run.
+        # context for the rest of the run. Headless (off-screen) by default, but a
+        # vendor whose account site blocks headless (e.g. xbox) collects in a real
+        # headful window instead -- COLLECT_HEADLESS=False opts out.
+        collect_headless = getattr(mod, "COLLECT_HEADLESS", True)
         _set(phase="scraping", message=f"scraping your {vendor} library...")
-        with factory(headless=True) as (page, captured):
+        with factory(headless=collect_headless) as (page, captured):
             page.set_default_navigation_timeout(GOTO_TIMEOUT_MS)
             page.goto(mod.VENDOR_URL, wait_until=GOTO_WAIT_UNTIL, timeout=GOTO_TIMEOUT_MS)
             games = collect_fn(page, captured, progress=_scrape_progress(vendor))
