@@ -783,7 +783,8 @@ def api_update_game(game_id):
     try:
         # Update game table fields (title, cover_url, time_to_beat_override_minutes, traits)
         if ('title' in data or 'cover_url' in data or 'time_to_beat_override_minutes' in data
-                or 'session_length' in data or 'series_role' in data):
+                or 'session_length' in data or 'series_role' in data
+                or 'input_lag_override' in data):
             game_updates = []
             game_params = []
             if 'title' in data:
@@ -798,6 +799,15 @@ def api_update_game(game_id):
                 game_updates.append("time_to_beat_override_minutes = ?")
                 v = data['time_to_beat_override_minutes']
                 game_params.append(int(v) if v not in (None, "") else None)
+            if 'input_lag_override' in data:
+                # streamable override: NULL = auto (derive from genres), 1 = plays
+                # fine streamed, 0 = lag-sensitive (exclude from streamed slots).
+                v = data['input_lag_override']
+                if v in (None, ""):
+                    game_updates.append("input_lag_override = NULL")
+                else:
+                    game_updates.append("input_lag_override = ?")
+                    game_params.append(1 if int(v) else 0)
             for trait in ('session_length', 'series_role'):
                 if trait in data:
                     v = data[trait]
