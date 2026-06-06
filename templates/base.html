@@ -1066,6 +1066,20 @@
                             </div>
                         </div>
 
+                        <!-- Streamed-play (latency) override -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">
+                                Streamed play
+                                <span class="text-xs text-gray-500">(stream-safe slots)</span>
+                            </label>
+                            <select onchange="saveTrait(${game.id}, 'input_lag_override', this.value)"
+                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <option value="" ${game.input_lag_override == null ? 'selected' : ''}>Auto (from genres)</option>
+                                <option value="1" ${game.input_lag_override === 1 ? 'selected' : ''}>Plays fine streamed</option>
+                                <option value="0" ${game.input_lag_override === 0 ? 'selected' : ''}>Lag-sensitive — not streamable</option>
+                            </select>
+                        </div>
+
                         <!-- Platforms & Rating row -->
                         <div class="grid grid-cols-2 gap-4">
                             <div>
