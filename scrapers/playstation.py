@@ -187,13 +187,19 @@ def collect_addons(page, product_ids: list[str],
                    captured: list | None = None,
                    progress: Callable[[int, int | None, int | None], None] | None = None,
                    should_cancel: Callable[[], bool] | None = None,
-                   ) -> tuple[list[ScrapedGame], list[str]]:
-    """Visit each game's Store product page and return (owned add-ons, resolved ids).
+                   ) -> tuple[list[ScrapedGame], list[str], dict[str, str]]:
+    """Visit each game's Store page; return (owned add-ons, resolved ids, parents).
 
     One page load per game: goto the product URL, scroll so the add-ons section
     lazy-loads, then parse the newly-captured GraphQL bodies. Per-game isolation
     so one bad page doesn't abort the batch. `captured` is the shared response log
     from capturing_browser; we parse only the slice each page adds.
+
+    `parents` maps each owned add-on id to the GAME product id whose page surfaced
+    it (parent-down). This is the reliable parent link -- it holds across PS4/PS5
+    generations (a PS5 game page lists the PS4 add-ons you own, whose title-id
+    prefix differs from the PS5 base), where prefix matching alone would orphan the
+    add-on. First page to surface an add-on wins as its parent.
 
     A page that returns NO product data (PSN's "not found" page for a delisted or
     otherwise unresolvable product id) is logged with its HTTP status + final URL
@@ -205,6 +211,7 @@ def collect_addons(page, product_ids: list[str],
     captured = captured if captured is not None else []
     out: list[ScrapedGame] = []
     completed: list[str] = []
+    parents: dict[str, str] = {}
     not_found = 0
     seen: set[str] = set()
     done = 0
@@ -249,6 +256,7 @@ def collect_addons(page, product_ids: list[str],
             continue
         completed.append(pid)
         for addon in parse_addons(bodies):
+            parents.setdefault(addon.external_id, pid)   # parent = this game's page
             if addon.external_id not in seen:
                 seen.add(addon.external_id)
                 out.append(addon)
@@ -259,4 +267,4 @@ def collect_addons(page, product_ids: list[str],
     logger.info(
         "playstation: %d owned add-ons; %d/%d store pages resolved, %d not found",
         len(out), len(completed), len(product_ids), not_found)
-    return out, completed
+    return out, completed, parents

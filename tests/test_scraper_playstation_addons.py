@@ -35,13 +35,15 @@ def test_collect_addons_visits_targets_and_returns_owned(monkeypatch):
         base1: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
         base2: [_owned_body("UP4497-PPSA03974_00-EXPANSION1000000", "PL", price="$29.99")],
     })
-    addons, completed = playstation.collect_addons(page, [base1, base2], captured)
+    addons, completed, parents = playstation.collect_addons(page, [base1, base2], captured)
     assert page.visited == [
         "https://store.playstation.com/en-us/product/" + base1,
         "https://store.playstation.com/en-us/product/" + base2,
     ]
     assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
     assert completed == [base1, base2]
+    # parent-down: the add-on is mapped to the game page that surfaced it
+    assert parents["UP0082-PPSA10664_00-ADDCONT000000300"] == base1
 
 
 def test_collect_addons_skips_non_product_ids_and_survives_errors(monkeypatch):
@@ -53,7 +55,7 @@ def test_collect_addons_skips_non_product_ids_and_survives_errors(monkeypatch):
 
     captured = []
     page = Boom(captured, {})
-    addons, completed = playstation.collect_addons(page, ["TITLEID_ONLY",
+    addons, completed, parents = playstation.collect_addons(page, ["TITLEID_ONLY",
                                                           "UP0082-PPSA10664_00-FF16SIEA00000002"],
                                                    captured)
     assert addons == []
@@ -79,7 +81,7 @@ def test_collect_addons_progress_called_per_pid(monkeypatch):
         base2: [],
     })
     rec = _rec()
-    addons, completed = playstation.collect_addons(page, [base1, base2], captured, progress=rec)
+    addons, completed, parents = playstation.collect_addons(page, [base1, base2], captured, progress=rec)
     assert len(rec.calls) == 2
     dones = [c[0] for c in rec.calls]
     assert dones == [1, 2]
@@ -105,7 +107,7 @@ def test_collect_addons_only_marks_successfully_loaded_games(monkeypatch):
     page = PartialPage(captured, {
         good: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
     })
-    addons, completed = playstation.collect_addons(page, [good, bad], captured)
+    addons, completed, parents = playstation.collect_addons(page, [good, bad], captured)
     assert completed == [good]                       # bad page not marked synced
     assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
 
@@ -120,7 +122,7 @@ def test_collect_addons_skips_pages_with_no_product_data(monkeypatch):
         good: [_owned_body("UP0082-PPSA10664_00-ADDCONT000000300", "FF16 DLC")],
         dead: [{"data": {"productRetrieve": None}}],   # no product objects on the page
     })
-    addons, completed = playstation.collect_addons(page, [good, dead], captured)
+    addons, completed, parents = playstation.collect_addons(page, [good, dead], captured)
     assert page.visited[-1].endswith(dead)            # it did attempt the dead page
     assert completed == [good]                        # but dead page is NOT marked synced
     assert [a.external_id for a in addons] == ["UP0082-PPSA10664_00-ADDCONT000000300"]
@@ -142,7 +144,7 @@ def test_collect_addons_respects_should_cancel(monkeypatch):
         seen["n"] += 1
         return seen["n"] > 1   # allow the first game, cancel before the second
 
-    addons, completed = playstation.collect_addons(page, [first, second], captured,
+    addons, completed, parents = playstation.collect_addons(page, [first, second], captured,
                                                    should_cancel=cancel)
     assert page.visited == ["https://store.playstation.com/en-us/product/" + first]
     assert completed == [first]

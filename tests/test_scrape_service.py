@@ -273,12 +273,14 @@ def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
         return [ScrapedGame(title="The Witcher 3: Wild Hunt", platform="PS5",
                             source="playstation", external_id=base_pid)]
 
+    addon_pid = "UP0082-PPSA10664_00-ADDCONT000000300"
+
     def fake_collect_addons(page, product_ids, captured, progress=None, should_cancel=None):
         assert product_ids == [base_pid]   # backfill: nothing synced yet
         return ([ScrapedGame(title="The Witcher 3: Wild Hunt - Hearts of Stone",
                              platform="PS5", source="playstation",
-                             external_id="UP0082-PPSA10664_00-ADDCONT000000300",
-                             kind="addon")], [base_pid])
+                             external_id=addon_pid, kind="addon")],
+                [base_pid], {addon_pid: base_pid})
 
     ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
                                  collect=fake_collect, collect_addons=fake_collect_addons)
@@ -296,6 +298,44 @@ def test_psn_flow_marks_addons_and_stamps_marker(temp_db, monkeypatch):
         "WHERE ge.source='playstation' AND ge.external_id = ?", (base_pid,)).fetchone()[0]
     conn.close()
     assert synced is not None   # marker stamped so future scrapes skip it
+
+
+def test_psn_crossgen_addon_links_via_parent_map(temp_db, monkeypatch):
+    """A PS4 add-on (different title-id) surfaced on the owned PS5 game's page must
+    link to that game via parent-down, not orphan to review on a prefix miss."""
+    import igdb_dlc
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+    monkeypatch.setattr(scrape_service, "write_scrape", lambda *a, **k: None)
+
+    ps5_base = "UP1063-PPSA07527_00-YSIXMONSTRNOXPS5"     # owned PS5 Ys IX
+    ps4_addon = "UP1063-CUSA20414_00-YS09USDLC00N0152"    # PS4 DLC, different title-id
+
+    def fake_collect(page, captured, progress=None):
+        return [ScrapedGame(title="Ys IX: Monstrum Nox", platform="PS5",
+                            source="playstation", external_id=ps5_base)]
+
+    def fake_collect_addons(page, product_ids, captured, progress=None, should_cancel=None):
+        return ([ScrapedGame(title="Bottled Potion Set", platform="PS4",
+                             source="playstation", external_id=ps4_addon, kind="addon")],
+                [ps5_base], {ps4_addon: ps5_base})
+
+    ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
+                                 collect=fake_collect, collect_addons=fake_collect_addons)
+    assert ok
+    assert _wait_phase("awaiting_login")
+    scrape_service.signal_continue()
+    assert _wait_phase("complete")
+    assert scrape_service.status()["summary"]["owned_marked"] == 1
+
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT g.title FROM dlc d JOIN games g ON g.id = d.game_id "
+        "JOIN dlc_external_ids e ON e.dlc_id = d.id "
+        "WHERE e.source = 'playstation' AND e.external_id = ?", (ps4_addon,)).fetchone()
+    conn.close()
+    assert row is not None and row["title"] == "Ys IX: Monstrum Nox"
 
 
 def test_run_pipeline_steam_routes_to_steam_dlc(temp_db, monkeypatch):
