@@ -612,8 +612,12 @@ def run_dlc_enrichment(conn: sqlite3.Connection,
     token = igdb_dlc.get_access_token(client_id, secret)
     totals = igdb_dlc.enrich_missing(conn, client_id=client_id, token=token,
                                      progress=progress)
-    logger.info("DLC enrich: %d games, %d matched, +%d dlc, %d errors",
-                totals["games"], totals["matched"], totals["added"], totals["errors"])
+    # Backfill genres for games enriched before genre fetching existed (and any
+    # left without genre tags), so every scrape fills in what's missing.
+    tagged = igdb_dlc.backfill_genres(conn, client_id=client_id, token=token, progress=progress)
+    totals["genres_tagged"] = tagged
+    logger.info("DLC enrich: %d games, %d matched, +%d dlc, %d errors; +%d genre-tagged",
+                totals["games"], totals["matched"], totals["added"], totals["errors"], tagged)
     return totals
 
 

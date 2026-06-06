@@ -89,9 +89,71 @@ def merge_dlc(conn: sqlite3.Connection, game_id: int, parsed: list[dict]) -> dic
 
 
 # Nested ids are requested explicitly — IGDB omits them unless named, otherwise
-# every stored DLC row's igdb_id would be NULL.
-_DLC_FIELDS = ("name, slug, cover.url, dlcs.id, dlcs.name, expansions.id, "
+# every stored DLC row's igdb_id would be NULL. genres.name feeds the genre tags
+# used for slot/session classification (slot_signals).
+_DLC_FIELDS = ("name, slug, cover.url, genres.name, dlcs.id, dlcs.name, expansions.id, "
                "expansions.name, standalone_expansions.id, standalone_expansions.name")
+
+# IGDB genre name -> our canonical tag vocabulary (slot_signals matches these names
+# exactly). Unmapped IGDB genres are stored under their own name. Extensible table.
+IGDB_GENRE_TO_TAG: dict[str, str] = {
+    "Point-and-click": "Adventure",
+    "Fighting": "Fighting",
+    "Shooter": "Shooter",
+    "Music": "Rhythm",
+    "Platform": "Platformer",
+    "Puzzle": "Puzzle",
+    "Racing": "Racing",
+    "Real Time Strategy (RTS)": "Strategy",
+    "Role-playing (RPG)": "RPG",
+    "Simulator": "Simulation",
+    "Sport": "Sports",
+    "Strategy": "Strategy",
+    "Turn-based strategy (TBS)": "Strategy",
+    "Tactical": "Strategy",
+    "Hack and slash/Beat 'em up": "Action",
+    "Adventure": "Adventure",
+    "Indie": "Indie",
+    "Arcade": "Action",
+    "Visual Novel": "Visual Novel",
+    "Card & Board Game": "Strategy",
+    "MOBA": "Strategy",
+}
+GENRE_BACKFILL_BATCH = 400
+
+
+def parse_genres(game: dict) -> list[str]:
+    """Canonical genre tag names from an IGDB payload (mapped, deduped, order kept)."""
+    out: list[str] = []
+    for g in (game or {}).get("genres") or []:
+        name = g.get("name")
+        if not name:
+            continue
+        tag = IGDB_GENRE_TO_TAG.get(name, name)
+        if tag not in out:
+            out.append(tag)
+    return out
+
+
+def store_genres(conn: sqlite3.Connection, game_id: int, names: list[str]) -> int:
+    """Upsert each genre tag (category='genre') and link it to the game. Idempotent;
+    returns the number of NEW game<->genre links created."""
+    linked = 0
+    for name in names:
+        conn.execute("INSERT OR IGNORE INTO tags (name, category) VALUES (?, 'genre')", (name,))
+        tag_id = conn.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()[0]
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)", (game_id, tag_id))
+        linked += cur.rowcount
+    return linked
+
+
+def fetch_games_by_ids(igdb_ids: list[int], client_id: str, token: str) -> list[dict]:
+    """Batch-fetch IGDB game payloads by id (one query for many ids)."""
+    if not igdb_ids:
+        return []
+    ids = ",".join(str(int(i)) for i in igdb_ids)
+    return _igdb_query(f"fields {_DLC_FIELDS}; where id = ({ids}); limit 500;", client_id, token)
 
 
 def _igdb_query(query: str, client_id: str, access_token: str,
@@ -155,7 +217,48 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
         conn.execute("UPDATE games SET cover_url = ? WHERE id = ?", (cover, game_id))
         cover_set = True
     counts = merge_dlc(conn, game_id, parse_dlc_payload(game))
+    store_genres(conn, game_id, parse_genres(game))
     return {"matched": True, "cover_set": cover_set, **counts}
+
+
+def backfill_genres(conn: sqlite3.Connection, *, client_id: str, token: str,
+                    progress: Callable[[int, int | None, int | None], None] | None = None) -> int:
+    """Fetch + store genres for already-enriched games (igdb_id set) that carry no
+    genre tag yet. Batched IGDB lookups. Returns the count of games newly tagged.
+
+    Lets a re-scrape backfill genres for games that were enriched before genre
+    fetching existed, without re-resolving identity. Genre-less games (IGDB returns
+    no genres) simply gain nothing this pass.
+    """
+    rows = conn.execute(
+        "SELECT id, igdb_id FROM games WHERE igdb_id IS NOT NULL AND id NOT IN "
+        "(SELECT gt.game_id FROM game_tags gt JOIN tags t ON t.id = gt.tag_id "
+        " WHERE t.category = 'genre')").fetchall()
+    by_igdb: dict[int, list[int]] = {}
+    for r in rows:
+        by_igdb.setdefault(r["igdb_id"], []).append(r["id"])
+    igdb_ids = list(by_igdb)
+    tagged = 0
+    done = 0
+    for i in range(0, len(igdb_ids), GENRE_BACKFILL_BATCH):
+        chunk = igdb_ids[i:i + GENRE_BACKFILL_BATCH]
+        try:
+            payloads = fetch_games_by_ids(chunk, client_id, token)
+        except requests.RequestException as exc:
+            logger.warning("genre backfill batch failed: %s", exc)
+            continue
+        for payload in payloads:
+            names = parse_genres(payload)
+            if not names:
+                continue
+            for gid in by_igdb.get(payload.get("id"), []):
+                if store_genres(conn, gid, names):
+                    tagged += 1
+        conn.commit()
+        done += len(chunk)
+        if progress:
+            progress(done, len(igdb_ids), tagged)
+    return tagged
 
 
 def enrich_missing(conn: sqlite3.Connection, *, client_id: str, token: str,
