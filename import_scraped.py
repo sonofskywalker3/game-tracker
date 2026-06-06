@@ -293,18 +293,17 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
     batch_new_keys: set[str] = set()
     done = 0
     for game in games:
-        if skip_non_games and is_non_game(game["title"]):
-            stats.skipped_non_games += 1
-            done += 1
-            if progress:
-                progress(done, len(games), stats.new_games)
-            continue
         if is_excluded(source, game.get("external_id"), game["title"]):
             stats.skipped_excluded += 1
             done += 1
             if progress:
                 progress(done, len(games), stats.new_games)
             continue
+        # Curated bundles are authoritative, so expand them BEFORE the name-based
+        # is_non_game heuristic. A Nintendo 7007 game-bundle's title legitimately
+        # contains a DLC keyword (e.g. "... Expansion Pass Bundle"); checking the
+        # heuristic first wrongly dropped such owned games before they could be
+        # expanded into their base game(s).
         constituents = bundles.expand_bundle(source, game.get("external_id"))
         if constituents is not None:
             # Owning the bundle = owning its games; import each, never the phantom.
@@ -312,6 +311,12 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
             for title in constituents:
                 _import_one(conn, _constituent_game(game, title, source), source, stats,
                             batch_new_keys, dry_run=dry_run, confirm_fn=confirm_fn)
+            done += 1
+            if progress:
+                progress(done, len(games), stats.new_games)
+            continue
+        if skip_non_games and is_non_game(game["title"]):
+            stats.skipped_non_games += 1
             done += 1
             if progress:
                 progress(done, len(games), stats.new_games)

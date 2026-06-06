@@ -86,6 +86,31 @@ def test_import_expands_bundle_creating_missing_constituents(temp_db):
     conn.close()
 
 
+def test_import_expands_bundle_whose_title_matches_non_game_heuristic(temp_db):
+    """A curated bundle whose title contains a NON_GAME_PATTERN keyword (e.g.
+    'Expansion Pass Bundle') must still be expanded into its base game.
+
+    Regression: import_games ran the name-based is_non_game heuristic BEFORE
+    bundle expansion, so a Nintendo 7007 game-bundle whose title legitimately
+    contains a DLC keyword was silently dropped as a 'non-game' and the owned base
+    game vanished from the library.
+    """
+    conn = models.get_db()
+    title = ("Xenoblade Chronicles 2 and Xenoblade Chronicles 2 "
+             "Expansion Pass Bundle")
+    assert imp.is_non_game(title)  # precondition: the heuristic DOES flag this title
+    stats = imp.import_games(
+        conn, [_bundle(title, "70070000000661")], "nintendo",
+        confirm_fn=imp._safe_auto_confirm)
+    conn.commit()
+    assert stats.skipped_non_games == 0       # not dropped by the name heuristic
+    assert stats.bundles_expanded == 1        # expanded via the curated table
+    titles = {r[0] for r in conn.execute("SELECT title FROM games")}
+    assert "Xenoblade Chronicles 2" in titles  # base game created
+    assert not any("Bundle" in t for t in titles)  # phantom bundle never created
+    conn.close()
+
+
 def test_import_bundle_matches_existing_constituents(temp_db):
     conn = models.get_db()
     _insert(conn, "Pikmin 1")

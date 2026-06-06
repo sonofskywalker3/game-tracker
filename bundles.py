@@ -46,6 +46,12 @@ BUNDLE_CONTENTS: dict[tuple[str, str], tuple[str, ...]] = {
         "Final Fantasy", "Final Fantasy II", "Final Fantasy III",
         "Final Fantasy IV", "Final Fantasy V", "Final Fantasy VI",
     ),
+    # Game + (Expansion/Season) Pass bundles: keep only the base game; the pass is
+    # DLC, resolved separately by the DLC ownership pipeline (cf. "Frozen Hearth").
+    ("nintendo", "70070000000661"): ("Xenoblade Chronicles 2",),
+    ("nintendo", "70070000014933"): ("Xenoblade Chronicles 3",),
+    ("nintendo", "70070000025331"): ("Brotato",),
+    ("nintendo", "70070000013956"): ("Gotta Protectors: Cart of Darkness",),
 }
 
 
