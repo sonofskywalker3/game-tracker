@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 VENDORS = ("playstation", "xbox", "nintendo", "steam")
 # Vendor -> platform label for parent games created from a vendor catalogue.
 _PLATFORM_BY_VENDOR = {"xbox": "Xbox", "nintendo": "Switch", "playstation": "PS4"}
+# Navigation budget. Vendor account pages are heavy SPAs that can take well over
+# the Playwright 30s default to fire "load"; we wait only for "domcontentloaded"
+# (the auth cookies/DOM are present by then -- the scrapers replay the data APIs
+# themselves) and allow a generous timeout so a slow login page never aborts.
+GOTO_TIMEOUT_MS = 60_000
+GOTO_WAIT_UNTIL = "domcontentloaded"
 # Phases during which a scrape is considered "running" (start() is rejected).
 _ACTIVE = frozenset({"launching", "awaiting_login", "scraping",
                      "importing", "enriching", "matching"})
@@ -129,6 +135,8 @@ def _force_foreground_windows(title: str) -> None:
         (user32.SetForegroundWindow, [wintypes.HWND]),
         (user32.FlashWindowEx, [ctypes.POINTER(FLASHWINFO)]),
         (user32.GetWindowThreadProcessId, [wintypes.HWND, wintypes.LPVOID]),
+        (user32.SetWindowPos, [wintypes.HWND, wintypes.HWND, ctypes.c_int,
+                               ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]),
     ):
         fn.argtypes = args
 
@@ -139,6 +147,15 @@ def _force_foreground_windows(title: str) -> None:
 
     sw_restore = 9
     user32.ShowWindow(hwnd, sw_restore)
+    # Z-order raise that survives Windows' focus-steal block: briefly mark the
+    # window TOPMOST (jumps above all normal windows) then drop the flag, so it
+    # ends up on top without permanently staying always-on-top. This fixes the
+    # "login window opened behind my other windows" case even when the
+    # foreground-force below is denied.
+    hwnd_topmost, hwnd_notopmost = -1, -2
+    swp_raise = 0x2 | 0x1 | 0x40  # SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+    user32.SetWindowPos(hwnd, hwnd_topmost, 0, 0, 0, 0, swp_raise)
+    user32.SetWindowPos(hwnd, hwnd_notopmost, 0, 0, 0, 0, swp_raise)
     fg = user32.GetForegroundWindow()
     fg_tid = user32.GetWindowThreadProcessId(fg, None)
     our_tid = kernel32.GetCurrentThreadId()
@@ -373,7 +390,8 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
         # Phase 1 — visible browser, for login only. Closed before the long
         # page-pulling so that work runs headless and off-screen.
         with factory(headless=False) as (page, _captured):
-            page.goto(mod.VENDOR_URL)
+            page.set_default_navigation_timeout(GOTO_TIMEOUT_MS)
+            page.goto(mod.VENDOR_URL, wait_until=GOTO_WAIT_UNTIL, timeout=GOTO_TIMEOUT_MS)
             _surface_login_window(page)  # flash taskbar + raise to foreground (Windows)
             _set(phase="awaiting_login",
                  message="log in and open your library, then click Continue")
@@ -391,7 +409,8 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
         # headless context for the rest of the run.
         _set(phase="scraping", message=f"scraping your {vendor} library...")
         with factory(headless=True) as (page, captured):
-            page.goto(mod.VENDOR_URL)
+            page.set_default_navigation_timeout(GOTO_TIMEOUT_MS)
+            page.goto(mod.VENDOR_URL, wait_until=GOTO_WAIT_UNTIL, timeout=GOTO_TIMEOUT_MS)
             games = collect_fn(page, captured, progress=_scrape_progress(vendor))
             if vendor == "playstation":
                 addon_fn = collect_addons or mod.collect_addons
