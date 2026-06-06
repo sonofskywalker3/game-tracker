@@ -94,7 +94,10 @@ def test_run_pipeline_skips_enrich_without_creds(temp_db, monkeypatch):
 
 
 class _FakePage:
-    def goto(self, url):
+    def goto(self, url, **kwargs):
+        pass
+
+    def set_default_navigation_timeout(self, ms):
         pass
 
     def wait_for_timeout(self, ms):
