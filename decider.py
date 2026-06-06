@@ -54,10 +54,39 @@ INSTRUCTIONS = (
     "about mood/energy/time when it would change your pick. Recommend from anywhere in the "
     "library, but respect the slot's hard constraints (platform, streamable, session) in your "
     "reasoning.\n\n"
+    "Only recommend games the user can start now. NEVER recommend a finished game (status "
+    "'completed' or '100') or a 'dropped' game unless the user explicitly asks to replay or "
+    "100% something — those are listed only for context (what they've played).\n\n"
+    "Write in plain conversational prose. Do NOT use Markdown: no **bold**, no ## headings, "
+    "no bullet or numbered lists, no backticks.\n\n"
     "Each library line begins with #<id>. End EVERY reply with a single line listing the ids "
     "you recommend, exactly: <suggestions>12,88</suggestions> (use an empty list "
     "<suggestions></suggestions> if you are only asking a question). Recommend at most 3."
 )
+
+# Statuses that exclude a game from being auto-recommended.
+FINISHED_STATUSES: frozenset[str] = frozenset({"completed", "100"})
+ABANDONED_STATUSES: frozenset[str] = frozenset({"dropped"})
+# Phrases that signal the user WANTS a finished game (replay / completion run), which
+# lifts the finished-game suppression.
+REPLAY_INTENT: tuple[str, ...] = (
+    "100%", "100 percent", "replay", "play again", "platinum", "finish it", "complete it",
+)
+
+
+def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict]) -> set[int]:
+    """Game ids that must not be auto-suggested: dropped/abandoned always, and finished
+    (completed/100%) unless a user message signals replay/completion intent."""
+    user_text = " ".join(
+        m.get("content", "") for m in messages if m.get("role") == "user").lower()
+    statuses = set(ABANDONED_STATUSES)
+    if not any(kw in user_text for kw in REPLAY_INTENT):
+        statuses |= FINISHED_STATUSES
+    placeholders = ",".join("?" for _ in statuses)
+    rows = conn.execute(
+        f"SELECT game_id FROM user_ratings WHERE status IN ({placeholders})",
+        tuple(statuses)).fetchall()
+    return {r["game_id"] for r in rows}
 
 
 def build_system_prompt(snapshot: str) -> list[dict]:
@@ -142,4 +171,6 @@ def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
     reply, ids = parse_suggestions(text, valid_ids)
+    suppressed = _suppressed_suggestion_ids(conn, messages)
+    ids = [i for i in ids if i not in suppressed]   # backstop: never pin finished/dropped
     return {"reply": reply, "suggestions": ids}
