@@ -9,6 +9,62 @@ def test_dlc_fields_requests_nested_ids():
         assert field in igdb_dlc._DLC_FIELDS
 
 
+def test_dlc_fields_requests_genres():
+    assert "genres.name" in igdb_dlc._DLC_FIELDS
+
+
+def test_parse_genres_maps_to_canonical_names_and_dedupes():
+    payload = {"id": 1, "name": "X", "genres": [
+        {"name": "Shooter"}, {"name": "Role-playing (RPG)"},
+        {"name": "Hack and slash/Beat 'em up"}, {"name": "Shooter"}]}
+    # mapped to our tag vocabulary, order preserved, deduped
+    assert igdb_dlc.parse_genres(payload) == ["Shooter", "RPG", "Action"]
+
+
+def test_parse_genres_keeps_unmapped_name_and_handles_empty():
+    assert igdb_dlc.parse_genres({"genres": [{"name": "Brawler"}]}) == ["Brawler"]
+    assert igdb_dlc.parse_genres({"id": 1, "name": "x"}) == []
+
+
+def _add_game_with_igdb(conn, title, igdb_id):
+    conn.execute("INSERT INTO games (title, normalized_title, igdb_id) VALUES (?, ?, ?)",
+                 (title, models.normalize_title(title), igdb_id))
+    gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    return gid
+
+
+def _genre_tags(conn, gid):
+    return {r["name"] for r in conn.execute(
+        "SELECT t.name FROM game_tags gt JOIN tags t ON t.id = gt.tag_id "
+        "WHERE gt.game_id = ? AND t.category = 'genre'", (gid,))}
+
+
+def test_enrich_game_stores_genres(temp_db, monkeypatch):
+    conn = models.get_db()
+    gid = _add_game_with_igdb(conn, "Borderlands 4", 99)
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [
+        {"id": 99, "name": "Borderlands 4",
+         "genres": [{"name": "Shooter"}, {"name": "Role-playing (RPG)"}], "dlcs": []}])
+    igdb_dlc.enrich_game(conn, gid, "c", "t")
+    conn.commit()
+    assert _genre_tags(conn, gid) == {"Shooter", "RPG"}
+    conn.close()
+
+
+def test_backfill_genres_covers_already_enriched_games(temp_db, monkeypatch):
+    conn = models.get_db()
+    gid = _add_game_with_igdb(conn, "Tekken 8", 42)   # has igdb_id, no genre tags yet
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [
+        {"id": 42, "name": "Tekken 8", "genres": [{"name": "Fighting"}]}])
+    n = igdb_dlc.backfill_genres(conn, client_id="c", token="t")
+    conn.commit()
+    assert n >= 1 and _genre_tags(conn, gid) == {"Fighting"}
+    # idempotent: a second pass finds nothing to do (already tagged)
+    assert igdb_dlc.backfill_genres(conn, client_id="c", token="t") == 0
+    conn.close()
+
+
 def test_parse_flattens_dlcs_and_expansions_with_kind():
     payload = {
         "id": 1, "name": "Base Game",

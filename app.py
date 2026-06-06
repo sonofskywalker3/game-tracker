@@ -243,8 +243,22 @@ def api_create_game():
     conn.commit()
     apply_traits_catalog(conn, game_id)
     apply_series_catalog(conn, game_id)
-    conn.close()
 
+    # Best-effort IGDB enrichment so a manually-added game gets the same metadata a
+    # scraped one does: igdb_id (needed to sync DLC), cover, and genre tags. Never
+    # fails the create — a missing key / network error just leaves it bare.
+    try:
+        import igdb_dlc
+        client_id, secret = get_twitch_credentials()
+        if client_id:
+            token = igdb_dlc.get_access_token(client_id, secret)
+            igdb_dlc.enrich_game(conn, game_id, client_id, token)
+            conn.commit()
+    except Exception as exc:   # best-effort: enrichment must never block creation
+        app.logger.warning("manual-add IGDB enrich failed for game %s: %s", game_id, exc)
+        conn.rollback()
+
+    conn.close()
     return jsonify({'success': True, 'game_id': game_id}), 201
 
 
