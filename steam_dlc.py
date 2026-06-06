@@ -22,12 +22,41 @@ from pathlib import Path
 import requests
 
 import models
+from igdb_dlc import store_genres
 
 logger = logging.getLogger(__name__)
 
 APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 CACHE_DIR = Path(__file__).parent / ".steam_cache"
 REQUEST_DELAY_S = 1.5  # keep under ~200 appdetails / 5 min per IP
+
+# Steam store-genre description -> our canonical genre tag (slot_signals vocabulary).
+# Only gameplay genres are kept; Steam's content/meta categories (Free to Play,
+# Early Access, Violent, Gore, etc.) are intentionally skipped.
+STEAM_GENRE_TO_TAG = {
+    "Action": "Action",
+    "Adventure": "Adventure",
+    "RPG": "RPG",
+    "Role-Playing": "RPG",
+    "Strategy": "Strategy",
+    "Simulation": "Simulation",
+    "Racing": "Racing",
+    "Sports": "Sports",
+    "Indie": "Indie",
+    "Casual": "Casual",
+    "Massively Multiplayer": "Multiplayer",
+}
+
+
+def parse_genres(data: dict) -> list[str]:
+    """Canonical gameplay genre tags from a Steam appdetails `data` object
+    (mapped via STEAM_GENRE_TO_TAG, deduped, order kept; meta categories skipped)."""
+    out: list[str] = []
+    for g in (data or {}).get("genres") or []:
+        tag = STEAM_GENRE_TO_TAG.get(g.get("description"))
+        if tag and tag not in out:
+            out.append(tag)
+    return out
 
 _STEAM_APP_URL = re.compile(
     r"https?://store\.steampowered\.com/app/(\d+)",
@@ -181,6 +210,7 @@ def enrich_and_mark(conn: sqlite3.Connection, owned_app_ids: set[int], *,
                 progress(done, total, report.catalogue_added)
             continue
         report.games += 1
+        store_genres(conn, game_id, parse_genres(data))   # tag genres from Steam's own data
         for dlc_appid in parse_catalogue(data):
             try:
                 dlc_data = fetch(dlc_appid)

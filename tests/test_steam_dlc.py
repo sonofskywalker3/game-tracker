@@ -65,6 +65,29 @@ def _fake_fetch(catalogue_map):
     return lambda appid: catalogue_map.get(appid)
 
 
+def test_parse_genres_maps_known_and_skips_meta():
+    data = {"genres": [{"description": "Action"}, {"description": "RPG"},
+                       {"description": "Free to Play"}, {"description": "Action"}]}
+    # gameplay genres mapped + deduped; non-gameplay store categories skipped
+    assert steam_dlc.parse_genres(data) == ["Action", "RPG"]
+    assert steam_dlc.parse_genres({}) == []
+
+
+def test_enrich_and_mark_stores_game_genres(temp_db):
+    conn = models.get_db()
+    gid = _seed_steam_game(conn)
+    conn.commit()
+    fetch = _fake_fetch({620: {"type": "game", "name": "Portal 2", "dlc": [],
+                               "genres": [{"description": "Action"}, {"description": "Adventure"}]}})
+    steam_dlc.enrich_and_mark(conn, set(), fetch=fetch)
+    conn.commit()
+    tags = {r["name"] for r in conn.execute(
+        "SELECT t.name FROM game_tags gt JOIN tags t ON t.id = gt.tag_id "
+        "WHERE gt.game_id = ? AND t.category = 'genre'", (gid,))}
+    assert tags == {"Action", "Adventure"}
+    conn.close()
+
+
 def test_enrich_and_mark_creates_catalogue_and_marks_owned(temp_db):
     conn = models.get_db()
     gid = _seed_steam_game(conn)
