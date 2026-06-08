@@ -56,9 +56,15 @@ def settings_page():
 
 
 @app.route('/series')
+def series_overview_page():
+    """Visual overview of all series (fanned-stack tiles)."""
+    return render_template('series_overview.html')
+
+
+@app.route('/series/manage')
 @app.route('/series/<int:series_id>')
 def series_page(series_id=None):
-    """Series management page."""
+    """Series management/editor page."""
     return render_template('series.html', series_id=series_id)
 
 
