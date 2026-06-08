@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Series - Game Tracker{% endblock %}
+{% block nav_series %}text-white bg-surface-lighter{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Series</h1>
+    <a href="/series/manage"
+       class="px-4 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm transition-colors">
+        Manage / + New Series
+    </a>
+</div>
+
+<div id="series-grid" class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4"></div>
+
+<div id="series-empty" class="hidden text-center py-16">
+    <div class="text-6xl mb-4">📚</div>
+    <h3 class="text-xl font-medium text-gray-400">No series yet</h3>
+    <p class="text-gray-500 mt-2">
+        <a href="/series/manage" class="text-accent hover:underline">Create one</a>
+        or group games from the Library.
+    </p>
+</div>
+
+<script>
+    let _seriesData = [];
+    const _expanded = new Set();
+
+    async function loadSeriesOverview() {
+        _seriesData = await api.get('/api/series');     // [{id, name, game_count, games:[{id,title,cover_url,...}]}]
+        renderOverview();
+    }
+    // base.html's closeModal() calls refreshGameList() after a modal edit.
+    function refreshGameList() { loadSeriesOverview(); }
+
+    function coverImg(g) {
+        return (g && g.cover_url)
+            ? `<img src="${g.cover_url}" alt="" draggable="false" class="w-full h-full object-cover rounded">`
+            : `<div class="cover-placeholder w-full h-full flex items-center justify-center rounded"><span class="text-2xl">🎮</span></div>`;
+    }
+
+    // Fanned stack: up to 3 covers, back ones rotated/offset, first game on top.
+    function stackHtml(series) {
+        const covers = (series.games || []).slice(0, 3);
+        let layers = '';
+        if (covers[2]) layers += `<div class="absolute inset-0 rotate-6 translate-x-2 z-0 shadow-lg">${coverImg(covers[2])}</div>`;
+        if (covers[1]) layers += `<div class="absolute inset-0 -rotate-6 -translate-x-2 z-10 shadow-lg">${coverImg(covers[1])}</div>`;
+        layers += `<div class="absolute inset-0 z-20 shadow-xl">${coverImg(covers[0] || null)}</div>`;
+        return `<div class="relative aspect-[3/4] mb-2">${layers}</div>`;
+    }
+
+    function collapsedTile(series) {
+        const n = series.game_count;
+        return `<div class="cursor-pointer group" onclick="toggleSeries(${series.id})">
+            ${stackHtml(series)}
+            <p class="text-sm font-medium text-white truncate group-hover:text-accent" title="${escapeHtml(series.name)}">${escapeHtml(series.name)}</p>
+            <p class="text-xs text-gray-500">${n} game${n == 1 ? '' : 's'}</p>
+        </div>`;
+    }
+
+    function expandedTile(series) {
+        const n = series.game_count;
+        const cards = (series.games || []).map(g => `
+            <div class="w-28 flex-shrink-0 cursor-pointer" onclick="openModal(${g.id})">
+                <div class="aspect-[3/4]">${coverImg(g)}</div>
+                <p class="text-xs text-gray-300 truncate mt-1" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</p>
+            </div>`).join('');
+        return `<div class="col-span-full bg-surface-light rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3 min-w-0 cursor-pointer" onclick="toggleSeries(${series.id})">
+                    <span class="text-gray-400">▾</span>
+                    <h3 class="font-medium text-white truncate" title="${escapeHtml(series.name)}">${escapeHtml(series.name)}</h3>
+                    <span class="text-xs text-gray-500 flex-shrink-0">${n} game${n == 1 ? '' : 's'}</span>
+                </div>
+                <div class="flex items-center gap-3 flex-shrink-0">
+                    <a href="/series/${series.id}" class="text-accent hover:underline text-sm">Manage</a>
+                    <button onclick="toggleSeries(${series.id})" class="text-gray-400 hover:text-white" title="Collapse">✕</button>
+                </div>
+            </div>
+            <div class="flex gap-3 overflow-x-auto pb-1">${cards || '<p class="text-gray-500 text-sm">No games in this series.</p>'}</div>
+        </div>`;
+    }
+
+    function renderOverview() {
+        const grid = document.getElementById('series-grid');
+        const empty = document.getElementById('series-empty');
+        if (!_seriesData.length) { grid.innerHTML = ''; empty.classList.remove('hidden'); return; }
+        empty.classList.add('hidden');
+        grid.innerHTML = _seriesData
+            .map(s => _expanded.has(s.id) ? expandedTile(s) : collapsedTile(s))
+            .join('');
+    }
+
+    function toggleSeries(id) {
+        if (_expanded.has(id)) _expanded.delete(id); else _expanded.add(id);
+        renderOverview();
+    }
+
+    document.addEventListener('DOMContentLoaded', loadSeriesOverview);
+</script>
+{% endblock %}
