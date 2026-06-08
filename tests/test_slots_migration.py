@@ -28,7 +28,7 @@ def test_slots_creates_table_and_columns(conn):
     assert set(cols) == {
         "id", "label", "sort_order", "platforms", "max_session_minutes",
         "min_session_minutes", "streamable_only", "prioritize_started",
-        "context_notes", "current_game_id", "goal", "focus_series_id",
+        "completionist", "context_notes", "current_game_id", "goal", "focus_series_id",
     }
 
 
@@ -84,3 +84,13 @@ def test_game_signals_adds_columns(conn):
 def test_game_signals_is_idempotent(conn):
     migrate_game_signals(conn)
     migrate_game_signals(conn)  # must not raise (column-exists guard)
+
+
+def test_slots_have_completionist_column(temp_db):
+    import models
+    conn = models.get_db()
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
+    assert "completionist" in cols
+    row = conn.execute("SELECT completionist FROM slots LIMIT 1").fetchone()
+    assert row["completionist"] == 0
+    conn.close()
