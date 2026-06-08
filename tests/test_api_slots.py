@@ -66,6 +66,28 @@ def test_pin_and_outcome_flow(client):
     assert pinned["current_game"] is None
 
 
+def test_setting_finished_status_frees_slot(client):
+    # Setting a game's status to a finished state from the game modal (PUT
+    # /api/games/<id>) should drop it from any Pick slot it occupies, matching
+    # the slate's own Complete/100%/Dropped buttons.
+    gid = _add_backlog_game("Hades")
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    client.post(f"/api/slots/{sid}/pin", json={"game_id": gid, "goal": "beat it"})
+    assert client.put(f"/api/games/{gid}", json={"status": "100"}).status_code == 200
+    pinned = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert pinned["current_game"] is None
+
+
+def test_setting_unfinished_status_keeps_slot(client):
+    # A non-finishing status change (e.g. -> playing) must NOT free the slot.
+    gid = _add_backlog_game("Celeste")
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    client.post(f"/api/slots/{sid}/pin", json={"game_id": gid, "goal": "beat it"})
+    assert client.put(f"/api/games/{gid}", json={"status": "playing"}).status_code == 200
+    pinned = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert pinned["current_game"]["id"] == gid
+
+
 def test_edit_goal(client):
     gid = _add_backlog_game("Celeste")
     sid = client.get("/api/slots").get_json()["slots"][0]["id"]
@@ -88,6 +110,13 @@ def test_patch_slot_prioritize_started(client):
     assert client.patch(f"/api/slots/{sid}", json={"prioritize_started": 0}).status_code == 200
     slot = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
     assert slot["prioritize_started"] == 0
+
+
+def test_patch_slot_completionist(client):
+    sid = client.get("/api/slots").get_json()["slots"][0]["id"]
+    assert client.patch(f"/api/slots/{sid}", json={"completionist": 1}).status_code == 200
+    slot = next(s for s in client.get("/api/slots").get_json()["slots"] if s["id"] == sid)
+    assert slot["completionist"] == 1
 
 
 def _add_switch_backlog_game(title):
