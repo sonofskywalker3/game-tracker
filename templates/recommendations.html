@@ -69,6 +69,7 @@
         document.getElementById('slate').innerHTML = slots.map(slotCardHtml).join('')
             + `<button onclick="addSlot()" class="game-card bg-surface-light/40 rounded-lg border-2 border-dashed border-gray-700 hover:border-accent flex items-center justify-center min-h-[120px] text-gray-400 hover:text-white text-sm">+ Add slot</button>`;
         _restoreDeciderChats(openChats);
+        initSlateReorder();
     }
 
     function _openChatSlotIds() {
@@ -97,7 +98,7 @@
             <div class="flex gap-3">
                 <div class="w-16 flex-shrink-0 cursor-pointer" onclick="openModal(${g.id})">
                     <div class="aspect-[3/4] rounded overflow-hidden">
-                        ${g.cover_url ? `<img src="${g.cover_url}" alt="" class="w-full h-full object-cover">`
+                        ${g.cover_url ? `<img src="${g.cover_url}" alt="" draggable="false" class="w-full h-full object-cover">`
                                       : `<div class="cover-placeholder w-full h-full flex items-center justify-center">🎮</div>`}
                     </div>
                 </div>
@@ -148,13 +149,11 @@
                 <button onclick="dismissSuggestion(${slot.id}, ${c.game.id})" title="Dismiss" class="text-gray-500 hover:text-red-400 px-1">✕</button>
             </div>`).join('') || `<p class="text-xs text-gray-600">No suggestions.</p>`;
 
-        return `<div draggable="true" data-slot-id="${slot.id}"
-            ondragstart="slotDragStart(event, ${slot.id})" ondragover="slotDragOver(event)"
-            ondrop="slotDrop(event, ${slot.id})" ondragend="slotDragEnd()"
+        return `<div data-slot-id="${slot.id}"
             class="bg-surface-light rounded-lg p-4 flex flex-col">
             <div class="flex items-center justify-between mb-1">
                 <div class="flex items-center min-w-0">
-                    <span class="cursor-move text-gray-600 hover:text-gray-300 mr-1 select-none" title="Drag to reorder">⠿</span>
+                    <span class="text-gray-600 mr-1 select-none" title="Drag to reorder">⠿</span>
                     <h3 class="font-medium text-white text-sm truncate">${escapeHtml(slot.label)}</h3>
                 </div>
                 <button onclick="toggleSlotSettings(${slot.id})" title="Slot settings" class="text-gray-500 hover:text-white">⚙</button>
@@ -202,29 +201,92 @@
         loadSlate();
     }
 
-    let _dragSlotId = null;
-    function slotDragStart(e, slotId) {
-        // Don't hijack drags that start inside an input/button so fields stay usable.
-        if (e.target.closest('input, textarea, select, button, a')) { e.preventDefault(); return; }
-        _dragSlotId = slotId;
-        e.dataTransfer.effectAllowed = 'move';
-    }
-    function slotDragOver(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    }
-    function slotDragEnd() { _dragSlotId = null; }
-    async function slotDrop(e, targetId) {
-        e.preventDefault();
-        if (_dragSlotId === null || _dragSlotId === targetId) { _dragSlotId = null; return; }
-        const ids = _slateData.map(s => s.id);
-        const from = ids.indexOf(_dragSlotId);
-        const to = ids.indexOf(targetId);
-        _dragSlotId = null;
-        if (from < 0 || to < 0) return;
-        ids.splice(to, 0, ids.splice(from, 1)[0]);
-        await api.post('/api/slots/reorder', { slot_ids: ids });
-        loadSlate();
+    // Drag-to-reorder slots. Pointer-event based (native HTML5 DnD refused drops on this
+    // grid). Grab a card anywhere except its inputs/buttons; a >5px move starts the drag
+    // (so plain clicks still open modals); target cards are resolved geometrically and
+    // highlighted; release writes the new order. Listeners attach once to #slate.
+    function initSlateReorder() {
+        const slate = document.getElementById('slate');
+        if (!slate || slate._reorderInit) return;
+        slate._reorderInit = true;
+
+        const THRESHOLD = 5;
+        let pending = null, startX = 0, startY = 0, dragging = false;
+        let dragId = null, ghost = null, lastTarget = null;
+
+        const cardAt = (x, y) => {
+            let best = null, bestD = Infinity;
+            for (const c of slate.querySelectorAll('[data-slot-id]')) {
+                const r = c.getBoundingClientRect();
+                if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return c;
+                const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                const d = (x - cx) ** 2 + (y - cy) ** 2;
+                if (d < bestD) { bestD = d; best = c; }
+            }
+            return best;
+        };
+        const clearTarget = () => {
+            if (lastTarget) lastTarget.classList.remove('ring-2', 'ring-accent');
+            lastTarget = null;
+        };
+        const beginDrag = () => {
+            dragging = true;
+            dragId = parseInt(pending.dataset.slotId, 10);
+            pending.classList.add('opacity-40');
+            document.body.style.userSelect = 'none';
+            ghost = document.createElement('div');
+            const h3 = pending.querySelector('h3');
+            ghost.textContent = h3 ? h3.textContent : 'Slot';
+            ghost.className = 'fixed z-50 pointer-events-none bg-surface-light border border-accent rounded '
+                            + 'px-3 py-2 text-white text-sm shadow-lg';
+            document.body.appendChild(ghost);
+        };
+        const onMove = (e) => {
+            if (!dragging) {
+                if (Math.abs(e.clientX - startX) < THRESHOLD && Math.abs(e.clientY - startY) < THRESHOLD) return;
+                beginDrag();
+            }
+            ghost.style.left = (e.clientX + 10) + 'px';
+            ghost.style.top = (e.clientY + 10) + 'px';
+            const card = cardAt(e.clientX, e.clientY);
+            if (card && card !== pending) {
+                if (card !== lastTarget) { clearTarget(); lastTarget = card; card.classList.add('ring-2', 'ring-accent'); }
+            } else {
+                clearTarget();
+            }
+        };
+        const onUp = async (e) => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            const wasDragging = dragging;
+            dragging = false;
+            document.body.style.userSelect = '';
+            if (pending) pending.classList.remove('opacity-40');
+            if (ghost) { ghost.remove(); ghost = null; }
+            clearTarget();
+            const src = pending; pending = null;
+            if (!wasDragging) return;                         // it was a click, not a drag
+            const target = cardAt(e.clientX, e.clientY);
+            const myId = dragId; dragId = null;
+            if (!target || target === src) return;
+            const targetId = parseInt(target.dataset.slotId, 10);
+            const ids = _slateData.map(s => s.id);
+            const from = ids.indexOf(myId);
+            const to = ids.indexOf(targetId);
+            if (from < 0 || to < 0) return;
+            ids.splice(to, 0, ids.splice(from, 1)[0]);
+            await api.post('/api/slots/reorder', { slot_ids: ids });
+            loadSlate();
+        };
+        slate.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest('input, textarea, select, button, a')) return;
+            const card = e.target.closest('[data-slot-id]');
+            if (!card) return;
+            pending = card; startX = e.clientX; startY = e.clientY; dragging = false;
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
     }
 
     function slotSearch(slotId, q) {
