@@ -91,6 +91,27 @@ def test_swap_frees_slot_no_history_no_status_change(temp_db):
     conn.close()
 
 
+def test_free_slots_for_game_clears_occupied_slot(temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Hades")
+    sid = _slot_id(conn, "Switch · Quick")
+    slots.pin_game(conn, sid, gid, "beat it")
+    freed = slots.free_slots_for_game(conn, gid)
+    assert freed == 1
+    row = conn.execute("SELECT current_game_id, goal FROM slots WHERE id=?", (sid,)).fetchone()
+    assert row["current_game_id"] is None
+    assert row["goal"] is None
+    conn.close()
+
+
+def test_free_slots_for_game_noop_when_not_slotted(temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Hades")
+    freed = slots.free_slots_for_game(conn, gid)
+    assert freed == 0
+    conn.close()
+
+
 def test_get_slots_state_includes_current_game_and_candidates(temp_db):
     conn = models.get_db()
     state = slots.get_slots_state(conn)
@@ -109,4 +130,15 @@ def test_recently_finished_lists_outcomes(temp_db):
     rf = slots.recently_finished(conn)
     assert rf[0]["title"] == "Hades"
     assert rf[0]["outcome"] == "completed"
+    conn.close()
+
+
+def test_reorder_sets_sort_order(temp_db):
+    conn = models.get_db()
+    ids = [r["id"] for r in conn.execute("SELECT id FROM slots ORDER BY sort_order, id").fetchall()]
+    reversed_ids = list(reversed(ids))
+    slots.reorder(conn, reversed_ids)
+    conn.commit()
+    new_order = [r["id"] for r in conn.execute("SELECT id FROM slots ORDER BY sort_order, id").fetchall()]
+    assert new_order == reversed_ids
     conn.close()

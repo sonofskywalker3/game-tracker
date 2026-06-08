@@ -1802,6 +1802,20 @@ def api_update_slot(slot_id: int):
     return jsonify({'ok': True})
 
 
+@app.route('/api/slots/reorder', methods=['POST'])
+def api_reorder_slots():
+    """Persist slot grid order from drag-and-drop. Body: {slot_ids: [...]}."""
+    data = request.get_json() or {}
+    slot_ids = data.get('slot_ids') or []
+    if not slot_ids:
+        return jsonify({'error': 'slot_ids required'}), 400
+    conn = get_db()
+    slots.reorder(conn, slot_ids)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
 @app.route('/api/slots/<int:slot_id>', methods=['DELETE'])
 def api_delete_slot(slot_id: int):
     """Delete a slot definition."""

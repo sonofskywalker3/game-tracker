@@ -132,6 +132,19 @@ def _add_switch_backlog_game(title):
     return gid
 
 
+def test_reorder_slots_endpoint(client):
+    ids = [s["id"] for s in client.get("/api/slots").get_json()["slots"]]
+    reversed_ids = list(reversed(ids))
+    resp = client.post("/api/slots/reorder", json={"slot_ids": reversed_ids})
+    assert resp.status_code == 200
+    new_ids = [s["id"] for s in client.get("/api/slots").get_json()["slots"]]
+    assert new_ids == reversed_ids
+
+
+def test_reorder_slots_empty_is_400(client):
+    assert client.post("/api/slots/reorder", json={"slot_ids": []}).status_code == 400
+
+
 def test_dismiss_removes_from_candidates(client):
     gid = _add_switch_backlog_game("Dismissable")
     slots_data = client.get("/api/slots").get_json()["slots"]
