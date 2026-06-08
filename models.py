@@ -630,6 +630,7 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
             min_session_minutes  INTEGER,       -- lower bound
             streamable_only      INTEGER NOT NULL DEFAULT 0,
             prioritize_started   INTEGER NOT NULL DEFAULT 1,
+            completionist        INTEGER NOT NULL DEFAULT 0,
             context_notes        TEXT,          -- owner's own words; feeds SP2 prompt
             current_game_id      INTEGER,
             goal                 TEXT,
@@ -647,6 +648,9 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE slots ADD COLUMN focus_series_id INTEGER "
             "REFERENCES series(id) ON DELETE SET NULL")
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
+    if "completionist" not in cols:
+        conn.execute("ALTER TABLE slots ADD COLUMN completionist INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 
