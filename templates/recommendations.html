@@ -53,6 +53,7 @@
         if (slot.max_session_minutes) parts.push('<' + slot.max_session_minutes + 'm');
         else if (slot.min_session_minutes) parts.push(slot.min_session_minutes + 'm+');
         if (slot.streamable_only) parts.push('stream-safe');
+        if (slot.completionist) parts.push('completionist');
         return parts.join(' · ');
     }
 
@@ -106,8 +107,8 @@
                            class="mt-1 w-full bg-surface rounded border border-gray-700 px-2 py-1 text-xs text-accent focus:border-accent focus:outline-none"
                            onchange="editGoal(${slot.id}, this.value)">
                     <div id="slot-actions-${slot.id}" class="mt-2 flex flex-wrap gap-1 text-xs">
-                        <button onclick="beatPrompt(${slot.id})" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Beat</button>
-                        <button onclick="slotOutcome(${slot.id},'complete')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Complete</button>
+                        <button onclick="beatPrompt(${slot.id})" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Complete</button>
+                        <button onclick="slotOutcome(${slot.id},'complete')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">100%</button>
                         <button onclick="slotOutcome(${slot.id},'dropped')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Dropped</button>
                         <button onclick="slotOutcome(${slot.id},'swap')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Swap</button>
                     </div>
@@ -169,7 +170,7 @@
         const el = document.getElementById('slot-actions-' + slotId);
         if (!el) return;
         el.innerHTML = `
-            <span class="text-gray-400 self-center">Beaten —</span>
+            <span class="text-gray-400 self-center">Completed —</span>
             <input type="text" id="chase-goal-${slotId}" value="get the plat" class="bg-surface rounded border border-gray-700 px-2 py-1 text-xs text-white w-28">
             <button onclick="chaseBeat(${slotId})" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Chase</button>
             <button onclick="slotOutcome(${slotId},'beat')" class="px-2 py-1 bg-surface rounded hover:bg-surface-lighter">Shelve</button>`;
@@ -266,6 +267,7 @@
                 <div class="flex flex-col gap-1 text-xs text-gray-300">
                     <label><input type="checkbox" data-f="streamable_only" ${slot.streamable_only ? 'checked' : ''} class="accent-accent"> Streamable games only</label>
                     <label><input type="checkbox" data-f="prioritize_started" ${slot.prioritize_started ? 'checked' : ''} class="accent-accent"> Prioritize started games</label>
+                    <label><input type="checkbox" data-f="completionist" ${slot.completionist ? 'checked' : ''} class="accent-accent"> Completionist (beaten games, chase 100%)</label>
                 </div>
                 <label class="block text-xs text-gray-400">Focus series
                     <select data-f="focus_series_id" class="mt-1 w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white text-xs">
@@ -296,6 +298,7 @@
             min_session_minutes: minv === '' ? null : parseInt(minv, 10),
             streamable_only: val('streamable_only').checked ? 1 : 0,
             prioritize_started: val('prioritize_started').checked ? 1 : 0,
+            completionist: val('completionist').checked ? 1 : 0,
             context_notes: val('context_notes').value,
             focus_series_id: (() => { const v = val('focus_series_id').value; return v === '' ? null : parseInt(v, 10); })(),
         };
