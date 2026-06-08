@@ -858,6 +858,12 @@ def api_update_game(game_id):
                 ON CONFLICT(game_id) DO UPDATE SET {', '.join(updates)}
             """, [game_id] + params + params)
 
+            # A game moved to a finished status (completed/100/dropped) is no
+            # longer a candidate, so drop it from any Pick slot it occupies —
+            # matching the slate's own Complete/100%/Dropped buttons.
+            if data.get('status') in slots.FINISHED_STATUSES:
+                slots.free_slots_for_game(conn, game_id)
+
         # Update tags if provided
         if 'tags' in data:
             # Remove existing tags
@@ -1783,6 +1789,9 @@ def api_update_slot(slot_id: int):
     if 'prioritize_started' in data:
         fields.append("prioritize_started = ?")
         params.append(1 if data['prioritize_started'] else 0)
+    if 'completionist' in data:
+        fields.append("completionist = ?")
+        params.append(1 if data['completionist'] else 0)
     if not fields:
         return jsonify({'error': 'no fields'}), 400
     params.append(slot_id)
