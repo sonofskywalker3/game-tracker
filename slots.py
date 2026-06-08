@@ -24,6 +24,10 @@ SERIES_BOOST = 30.0           # recent-series auto-boost (slot's last play)
 SESSION_FIT_BOOST = 25.0      # session_length matches the slot's session window
 FOCUS_SERIES_BOOST = 30.0     # candidate is in the slot's focus_series_id
 ROLE_BOOST = 20.0             # mainline->long slot / spinoff->short slot routing
+COMPLETION_BOOST = 30.0       # completed game surfaced in a completionist slot
+# Statuses excluded from a completionist slot's pool (beaten games ARE allowed in;
+# only fully-100%'d and dropped games are nothing left to grind).
+COMPLETIONIST_EXCLUDED = frozenset({"100", "dropped"})
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -81,19 +85,21 @@ def _dismissed_game_ids(conn: sqlite3.Connection, slot_id: int) -> set[int]:
 def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> list[dict]:
     """Return ranked eligible games for a slot: [{"game", "score", "reasons"}]."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
-    streamable_only = bool(slot["streamable_only"])
+    streamable_only = bool(slot.get("streamable_only"))
     affinity = calculate_tag_affinity(conn)
     fatigue_tags = _recent_fatigue_tags(conn)
     pinned = _pinned_game_ids(conn)
     dismissed = _dismissed_game_ids(conn, slot["id"]) if slot.get("id") else set()
 
-    placeholders = ",".join("?" * len(FINISHED_STATUSES))
+    completionist = bool(slot.get("completionist"))
+    excluded = COMPLETIONIST_EXCLUDED if completionist else FINISHED_STATUSES
+    placeholders = ",".join("?" * len(excluded))
     rows = conn.execute(f"""
         SELECT g.*, ur.status, ur.priority, ur.hours_played, ur.series_id
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status NOT IN ({placeholders})
-    """, tuple(FINISHED_STATUSES)).fetchall()
+    """, tuple(excluded)).fetchall()
 
     recent_series_id = _slot_recent_series_id(conn, slot["id"]) if slot.get("id") else None
 
@@ -123,6 +129,9 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         score += (priority - 5) * 5
         if priority >= 7:
             reasons.append(f"High priority ({priority}/10)")
+        if completionist and game["status"] == "completed":
+            score += COMPLETION_BOOST
+            reasons.append("Beaten — chase 100%")
         # Taste signal from tag affinity
         tag_boost = 0.0
         for t in tag_names:
@@ -210,6 +219,19 @@ def _log_history(conn: sqlite3.Connection, slot_id: int, game_id: int,
 
 def _clear_slot(conn: sqlite3.Connection, slot_id: int) -> None:
     conn.execute("UPDATE slots SET current_game_id = NULL, goal = NULL WHERE id = ?", (slot_id,))
+
+
+def free_slots_for_game(conn: sqlite3.Connection, game_id: int) -> int:
+    """Drop a game from every slot it currently occupies; return rows freed.
+
+    Used when a game becomes finished outside the slate's own outcome buttons
+    (e.g. status set to completed/100/dropped from the game modal) so it stops
+    occupying a Pick. Caller owns the commit.
+    """
+    cur = conn.execute(
+        "UPDATE slots SET current_game_id = NULL, goal = NULL WHERE current_game_id = ?",
+        (game_id,))
+    return cur.rowcount
 
 
 def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
