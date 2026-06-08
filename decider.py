@@ -74,14 +74,19 @@ REPLAY_INTENT: tuple[str, ...] = (
 )
 
 
-def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict]) -> set[int]:
-    """Game ids that must not be auto-suggested: dropped/abandoned always, and finished
-    (completed/100%) unless a user message signals replay/completion intent."""
+def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict],
+                               completionist: bool = False) -> set[int]:
+    """Game ids that must not be auto-suggested: dropped always; finished
+    (completed/100%) unless a user message signals replay/completion intent. A
+    completionist slot additionally allows beaten ('completed') games."""
     user_text = " ".join(
         m.get("content", "") for m in messages if m.get("role") == "user").lower()
     statuses = set(ABANDONED_STATUSES)
+    finished = set(FINISHED_STATUSES)
+    if completionist:
+        finished.discard("completed")
     if not any(kw in user_text for kw in REPLAY_INTENT):
-        statuses |= FINISHED_STATUSES
+        statuses |= finished
     placeholders = ",".join("?" for _ in statuses)
     rows = conn.execute(
         f"SELECT game_id FROM user_ratings WHERE status IN ({placeholders})",
@@ -109,6 +114,11 @@ def build_slot_context(conn: sqlite3.Connection, slot: dict) -> str:
         parts.append(f"Long session (>= {slot['min_session_minutes']} min) — long games welcome.")
     if slot.get("streamable_only"):
         parts.append("Streamed/lag-tolerant games only.")
+    if slot.get("completionist"):
+        parts.append(
+            "Completionist slot — the user has BEATEN these games and wants to 100% "
+            "them (achievements, collectibles, postgame). Beaten games (status "
+            "'complete') ARE welcome here; still avoid already-100% and dropped games.")
     if slot.get("focus_series_id"):
         row = conn.execute("SELECT name FROM series WHERE id = ?",
                            (slot["focus_series_id"],)).fetchone()
@@ -202,6 +212,7 @@ def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
     reply, ids = parse_suggestions(text, valid_ids)
-    suppressed = _suppressed_suggestion_ids(conn, messages)
+    suppressed = _suppressed_suggestion_ids(
+        conn, messages, completionist=bool(slot.get("completionist")))
     ids = [i for i in ids if i not in suppressed]   # backstop: never pin finished/dropped
     return {"reply": reply, "suggestions": ids}
