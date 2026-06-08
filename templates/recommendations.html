@@ -148,8 +148,12 @@
                 <button onclick="dismissSuggestion(${slot.id}, ${c.game.id})" title="Dismiss" class="text-gray-500 hover:text-red-400 px-1">✕</button>
             </div>`).join('') || `<p class="text-xs text-gray-600">No suggestions.</p>`;
 
-        return `<div class="bg-surface-light rounded-lg p-4 flex flex-col">
+        return `<div draggable="true" data-slot-id="${slot.id}"
+            ondragstart="slotDragStart(event, ${slot.id})" ondragover="slotDragOver(event)"
+            ondrop="slotDrop(event, ${slot.id})" ondragend="slotDragEnd()"
+            class="bg-surface-light rounded-lg p-4 flex flex-col">
             <div class="flex items-center justify-between mb-1">
+                <span class="cursor-move text-gray-600 hover:text-gray-300 mr-1 select-none" title="Drag to reorder">⠿</span>
                 <h3 class="font-medium text-white text-sm">${escapeHtml(slot.label)}</h3>
                 <button onclick="toggleSlotSettings(${slot.id})" title="Slot settings" class="text-gray-500 hover:text-white">⚙</button>
             </div>
@@ -193,6 +197,31 @@
     }
     async function dismissSuggestion(slotId, gameId) {
         await api.post(`/api/slots/${slotId}/dismiss`, { game_id: gameId });
+        loadSlate();
+    }
+
+    let _dragSlotId = null;
+    function slotDragStart(e, slotId) {
+        // Don't hijack drags that start inside an input/button so fields stay usable.
+        if (e.target.closest('input, textarea, select, button, a')) { e.preventDefault(); return; }
+        _dragSlotId = slotId;
+        e.dataTransfer.effectAllowed = 'move';
+    }
+    function slotDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    }
+    function slotDragEnd() { _dragSlotId = null; }
+    async function slotDrop(e, targetId) {
+        e.preventDefault();
+        if (_dragSlotId === null || _dragSlotId === targetId) { _dragSlotId = null; return; }
+        const ids = _slateData.map(s => s.id);
+        const from = ids.indexOf(_dragSlotId);
+        const to = ids.indexOf(targetId);
+        _dragSlotId = null;
+        if (from < 0 || to < 0) return;
+        ids.splice(to, 0, ids.splice(from, 1)[0]);
+        await api.post('/api/slots/reorder', { slot_ids: ids });
         loadSlate();
     }
 
