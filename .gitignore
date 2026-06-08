@@ -58,3 +58,7 @@ Thumbs.db
 popular_seed_input.json
 popular_seed_verdicts.json
 popular_seed_pilot.json
+
+# local dev server logs (from assistant-launched runs)
+_flask.out.log
+_flask.err.log
