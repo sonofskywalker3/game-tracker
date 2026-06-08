@@ -217,6 +217,12 @@ def _log_history(conn: sqlite3.Connection, slot_id: int, game_id: int,
         (slot_id, game_id, goal, outcome))
 
 
+def reorder(conn: sqlite3.Connection, slot_ids: list[int]) -> None:
+    """Set each slot's sort_order to its position in slot_ids. Caller owns the commit."""
+    for index, slot_id in enumerate(slot_ids):
+        conn.execute("UPDATE slots SET sort_order = ? WHERE id = ?", (index, slot_id))
+
+
 def _clear_slot(conn: sqlite3.Connection, slot_id: int) -> None:
     conn.execute("UPDATE slots SET current_game_id = NULL, goal = NULL WHERE id = ?", (slot_id,))
 
