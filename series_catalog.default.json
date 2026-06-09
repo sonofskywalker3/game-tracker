@@ -72,17 +72,17 @@
   "assassins creed chronicles china": {
     "order": 1,
     "role": "spinoff",
-    "series": "Assassin's Creed Chronicles"
+    "series": "Assassin's Creed"
   },
   "assassins creed chronicles india": {
     "order": 2,
     "role": "spinoff",
-    "series": "Assassin's Creed Chronicles"
+    "series": "Assassin's Creed"
   },
   "assassins creed chronicles russia": {
     "order": 3,
     "role": "spinoff",
-    "series": "Assassin's Creed Chronicles"
+    "series": "Assassin's Creed"
   },
   "assassins creed ii": {
     "order": 2,
@@ -1137,52 +1137,52 @@
   "lego batman 3 beyond gotham": {
     "order": 3,
     "role": "mainline",
-    "series": "LEGO Batman"
+    "series": "LEGO"
   },
   "lego dc supervillains": {
     "order": 4,
     "role": "mainline",
-    "series": "LEGO Batman"
+    "series": "LEGO"
   },
   "lego harry potter years 14": {
     "order": 1,
     "role": "mainline",
-    "series": "LEGO Harry Potter"
+    "series": "LEGO"
   },
   "lego harry potter years 57": {
     "order": 2,
     "role": "mainline",
-    "series": "LEGO Harry Potter"
+    "series": "LEGO"
   },
   "lego marvel super heroes": {
     "order": 1,
     "role": "mainline",
-    "series": "LEGO Marvel"
+    "series": "LEGO"
   },
   "lego marvel super heroes 2": {
     "order": 3,
     "role": "mainline",
-    "series": "LEGO Marvel"
+    "series": "LEGO"
   },
   "lego marvels avengers": {
     "order": 2,
     "role": "mainline",
-    "series": "LEGO Marvel"
+    "series": "LEGO"
   },
   "lego star wars the skywalker saga": {
     "order": 5,
     "role": "mainline",
-    "series": "LEGO Star Wars"
+    "series": "LEGO"
   },
   "lego star wars the skywalker saga character collection 1": {
     "order": 6,
     "role": "spinoff",
-    "series": "LEGO Star Wars"
+    "series": "LEGO"
   },
   "lego star wars the skywalker saga character collection 2": {
     "order": 7,
     "role": "spinoff",
-    "series": "LEGO Star Wars"
+    "series": "LEGO"
   },
   "life is strange": {
     "order": 1,
