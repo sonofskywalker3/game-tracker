@@ -24,3 +24,16 @@ def test_ff_spinoffs_stay_separate():
     assert "Final Fantasy Crystal Chronicles" in vals
     assert "SaGa" in vals
     assert "Dissidia" in vals
+
+
+def test_assassins_creed_chronicles_consolidated():
+    vals = _series_values()
+    assert "Assassin's Creed Chronicles" not in vals
+    assert "Assassin's Creed" in vals
+
+
+def test_lego_consolidated_into_one():
+    vals = _series_values()
+    for sub in ("LEGO Batman", "LEGO Harry Potter", "LEGO Marvel", "LEGO Star Wars"):
+        assert sub not in vals, f"{sub!r} should be folded into 'LEGO'"
+    assert "LEGO" in vals
