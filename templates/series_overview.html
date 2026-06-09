@@ -12,7 +12,7 @@
     </a>
 </div>
 
-<div id="series-grid" class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4"></div>
+<div id="series-grid" class="flex flex-wrap items-start gap-x-8 gap-y-6"></div>
 
 <div id="series-empty" class="hidden text-center py-16">
     <div class="text-6xl mb-4">📚</div>
@@ -28,7 +28,10 @@
     const _expanded = new Set();
 
     async function loadSeriesOverview() {
-        _seriesData = await api.get('/api/series');     // [{id, name, game_count, games:[{id,title,cover_url,...}]}]
+        const all = await api.get('/api/series');        // [{id, name, game_count, games:[...]}]
+        // A series needs 2+ games to be a stack; hide singletons (a lone base game like
+        // Cyberpunk, or a series you only own one of). Keeps tile sizes uniform too.
+        _seriesData = all.filter(s => (s.game_count || (s.games || []).length) >= 2);
         renderOverview();
     }
     // base.html's closeModal() calls refreshGameList() after a modal edit.
@@ -40,19 +43,30 @@
             : `<div class="cover-placeholder w-full h-full flex items-center justify-center rounded"><span class="text-2xl">🎮</span></div>`;
     }
 
-    // Fanned stack: up to 3 covers, back ones rotated/offset, first game on top.
+    // Deck look: the front cover shown IN FULL (a true 3:4, uncropped, library-size),
+    // with up to 3 same-size covers behind it offset to the RIGHT only so each shows its
+    // real right edge; the last one lands flush with the tile's right edge. Top & bottom
+    // flush, no rotation, fully contained in the tile. Decorative — not one per game.
+    const CARD_BORDER = 'rounded overflow-hidden border border-gray-400';
     function stackHtml(series) {
-        const covers = (series.games || []).slice(0, 3);
+        const covers = (series.games || []).slice(0, 4);
+        const backs = covers.length - 1;                  // 0..3 peeking cards
+        const frontW = backs > 0 ? 82 : 100;              // front card width % of the tile
+        const step = backs > 0 ? (100 - frontW) / backs : 0;   // back cards land flush right
         let layers = '';
-        if (covers[2]) layers += `<div class="absolute inset-0 rotate-6 translate-x-2 z-0 shadow-lg">${coverImg(covers[2])}</div>`;
-        if (covers[1]) layers += `<div class="absolute inset-0 -rotate-6 -translate-x-2 z-10 shadow-lg">${coverImg(covers[1])}</div>`;
-        layers += `<div class="absolute inset-0 z-20 shadow-xl">${coverImg(covers[0] || null)}</div>`;
-        return `<div class="relative aspect-[3/4] mb-2">${layers}</div>`;
+        for (let i = covers.length - 1; i >= 1; i--) {    // back cards (full-size, offset right)
+            layers += `<div class="absolute top-0 bottom-0 aspect-[3/4] ${CARD_BORDER} shadow-md" `
+                    + `style="left:${(i * step).toFixed(2)}%;z-index:${30 - i * 10};">${coverImg(covers[i])}</div>`;
+        }
+        // front card is in-flow so it sizes the box; the back cards match its height.
+        layers += `<div class="relative z-30 aspect-[3/4] ${CARD_BORDER} shadow-lg" `
+                + `style="width:${frontW}%;">${coverImg(covers[0] || null)}</div>`;
+        return `<div class="relative mb-2">${layers}</div>`;
     }
 
     function collapsedTile(series) {
         const n = series.game_count;
-        return `<div class="cursor-pointer group" onclick="toggleSeries(${series.id})">
+        return `<div class="flex-none w-[230px] cursor-pointer group" onclick="toggleSeries(${series.id})">
             ${stackHtml(series)}
             <p class="text-sm font-medium text-white truncate group-hover:text-accent" title="${escapeHtml(series.name)}">${escapeHtml(series.name)}</p>
             <p class="text-xs text-gray-500">${n} game${n == 1 ? '' : 's'}</p>
@@ -66,8 +80,8 @@
                 <div class="aspect-[3/4]">${coverImg(g)}</div>
                 <p class="text-xs text-gray-300 truncate mt-1" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</p>
             </div>`).join('');
-        return `<div class="col-span-full bg-surface-light rounded-lg p-4">
-            <div class="flex items-center justify-between mb-3">
+        return `<div class="flex-none max-w-full bg-surface-light rounded-lg p-4 ring-1 ring-accent/40">
+            <div class="flex items-center justify-between mb-3 gap-6">
                 <div class="flex items-center gap-3 min-w-0 cursor-pointer" onclick="toggleSeries(${series.id})">
                     <span class="text-gray-400">▾</span>
                     <h3 class="font-medium text-white truncate" title="${escapeHtml(series.name)}">${escapeHtml(series.name)}</h3>
@@ -78,7 +92,7 @@
                     <button onclick="toggleSeries(${series.id})" class="text-gray-400 hover:text-white" title="Collapse">✕</button>
                 </div>
             </div>
-            <div class="flex gap-3 overflow-x-auto pb-1">${cards || '<p class="text-gray-500 text-sm">No games in this series.</p>'}</div>
+            <div class="flex flex-wrap gap-3">${cards || '<p class="text-gray-500 text-sm">No games in this series.</p>'}</div>
         </div>`;
     }
 
