@@ -143,9 +143,15 @@
             });
         }
         if (Array.isArray(state.platforms)) {
-            document.querySelectorAll('.platform-check').forEach(cb => {
-                cb.checked = state.platforms.includes(cb.value);
-            });
+            // Saved selections are global, but the filter is now scoped per tab.
+            // Only restore when the saved set overlaps the platforms on screen,
+            // otherwise a modern-era selection would uncheck (and effectively
+            // hide-then-show-all) the legacy tab's platforms. Default: all checked.
+            const checks = document.querySelectorAll('.platform-check');
+            const rendered = Array.from(checks).map(cb => cb.value);
+            if (state.platforms.some(v => rendered.includes(v))) {
+                checks.forEach(cb => { cb.checked = state.platforms.includes(cb.value); });
+            }
         }
         if (Array.isArray(state.ratings)) {
             document.querySelectorAll('.rating-check').forEach(cb => {
@@ -188,6 +194,7 @@
     function setMode(modeId) {
         currentMode = modeId;
         renderModeBar();
+        renderPlatformOptions();  // re-scope the platform filter to this tab's era
         filterAndRenderGames();
         saveViewState();
     }
@@ -375,13 +382,25 @@
         }).join('') : '';
     }
 
+    // Tabs map to a single platform era; the platform filter is scoped to it so
+    // e.g. the Legacy tab only offers legacy systems. All/Physical/Needs-review
+    // have no era restriction (undefined => show every platform).
+    const MODE_CATEGORY = { modern: 'modern_console', legacy: 'legacy_console', pc: 'pc' };
+    let platformRows = [];
+
     async function loadPlatforms() {
-        const platforms = await api.get('/api/platforms');
+        platformRows = await api.get('/api/platforms');
+        renderPlatformOptions();
+    }
+
+    function renderPlatformOptions() {
         const container = document.getElementById('platform-options');
         const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox', 'Steam', 'PC'];
+        const cat = MODE_CATEGORY[currentMode];
 
-        const sorted = platforms
+        const sorted = platformRows
             .filter(p => p.game_count > 0)
+            .filter(p => !cat || p.category === cat)
             .sort((a, b) => {
                 const ia = platformOrder.indexOf(a.short_name);
                 const ib = platformOrder.indexOf(b.short_name);

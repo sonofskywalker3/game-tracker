@@ -86,6 +86,35 @@ LEGACY_PLATFORMS = frozenset({
     "Genesis", "Saturn", "Dreamcast",
 })
 
+# Legacy consoles seeded as selectable platforms so manually-added physical/retro
+# games have something to attach to. (name, short_name) — short_names MUST be in
+# LEGACY_PLATFORMS so classify_platform tags them legacy_console. Aliases (PSX, DS,
+# GCN, XBOX, PSV) are intentionally omitted in favour of one canonical short_name
+# each. Ordered newest→oldest, grouped by brand; the Add Game dropdown preserves it.
+LEGACY_PLATFORM_SEED = (
+    ("Nintendo 3DS", "3DS"),
+    ("Nintendo DS", "NDS"),
+    ("Game Boy Advance", "GBA"),
+    ("Game Boy Color", "GBC"),
+    ("Game Boy", "GB"),
+    ("Nintendo Wii U", "WiiU"),
+    ("Nintendo Wii", "Wii"),
+    ("Nintendo GameCube", "GC"),
+    ("Nintendo 64", "N64"),
+    ("Super Nintendo", "SNES"),
+    ("Nintendo Entertainment System", "NES"),
+    ("PlayStation 3", "PS3"),
+    ("PlayStation 2", "PS2"),
+    ("PlayStation 1", "PS1"),
+    ("PlayStation Portable", "PSP"),
+    ("PlayStation Vita", "Vita"),
+    ("Xbox 360", "X360"),
+    ("Xbox (Original)", "OGXbox"),
+    ("Sega Genesis", "Genesis"),
+    ("Sega Saturn", "Saturn"),
+    ("Sega Dreamcast", "Dreamcast"),
+)
+
 MODERN_CONSOLE = "modern_console"
 LEGACY_CONSOLE = "legacy_console"
 PC_CATEGORY = "pc"
@@ -270,6 +299,9 @@ def init_db():
         "INSERT OR IGNORE INTO platforms (name, short_name, category) VALUES (?, ?, ?)",
         platforms
     )
+
+    # Seed legacy consoles so manually-added retro/physical games have a platform.
+    migrate_seed_legacy_platforms(conn)
 
     # Insert some common genre tags
     genres = [
@@ -484,6 +516,20 @@ def migrate_platform_category(conn):
             "UPDATE platforms SET category = ? WHERE id = ?",
             (classify_platform(row[1]), row[0]),
         )
+    conn.commit()
+
+
+def migrate_seed_legacy_platforms(conn):
+    """Seed the known legacy consoles as selectable platforms. Idempotent.
+
+    INSERT OR IGNORE keys on the unique short_name, so existing rows (incl. ones
+    a user renamed) are never clobbered and re-running is a no-op. Category is
+    derived from classify_platform, so it can't drift from LEGACY_PLATFORMS.
+    """
+    conn.executemany(
+        "INSERT OR IGNORE INTO platforms (name, short_name, category) VALUES (?, ?, ?)",
+        [(name, short, classify_platform(short)) for name, short in LEGACY_PLATFORM_SEED],
+    )
     conn.commit()
 
 
@@ -886,6 +932,9 @@ def migrate_db():
 
     # Add/backfill platform era category
     migrate_platform_category(conn)
+
+    # Seed legacy consoles as selectable platforms
+    migrate_seed_legacy_platforms(conn)
 
     # Add the external-ids identity table
     migrate_external_ids(conn)

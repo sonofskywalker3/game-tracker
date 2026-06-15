@@ -164,8 +164,20 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-400 mb-2">Platforms</label>
                         <div id="new-game-platforms" class="flex flex-wrap gap-3">
-                            <!-- Filled by JS -->
+                            <!-- Modern console checkboxes filled by JS -->
                         </div>
+                        <div class="mt-3">
+                            <label class="block text-xs text-gray-400 mb-1">Legacy system</label>
+                            <select id="new-game-legacy" onchange="if(this.value)document.getElementById('new-game-physical').checked=true"
+                                    class="w-full min-w-0 bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <option value="">— none —</option>
+                                <!-- Legacy options filled by JS -->
+                            </select>
+                        </div>
+                        <label class="mt-3 flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" id="new-game-physical" class="accent-accent w-4 h-4">
+                            Physical
+                        </label>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -829,13 +841,15 @@
         }
 
         function renderPlatformCheckboxes(game) {
+            // Mirror the Add Game modal: modern consoles as checkboxes, legacy
+            // consoles in a single dropdown so they don't flood this editor. The
+            // two controls are mutually exclusive — each platform lives in one.
             const gamePlatforms = (game.platforms || []).map(p => p.short_name);
-            // Sort platforms: PS4, PS5, Switch, Xbox (no PC)
             const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
-            const sortedPlatforms = [...allPlatforms]
-                .filter(p => p.short_name !== 'PC')
+            const modern = [...allPlatforms]
+                .filter(p => p.category !== 'legacy_console' && p.short_name !== 'PC')
                 .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
-            return sortedPlatforms.map(p => {
+            const checkboxes = modern.map(p => {
                 const checked = gamePlatforms.includes(p.short_name) ? 'checked' : '';
                 return '<label class="flex items-center gap-2 cursor-pointer">' +
                     '<input type="checkbox" ' + checked + ' ' +
@@ -844,6 +858,22 @@
                     '<span class="platform-badge platform-' + p.short_name + '">' + p.short_name + '</span>' +
                     '</label>';
             }).join('');
+
+            const legacy = allPlatforms
+                .filter(p => p.category === 'legacy_console')
+                .sort((a, b) => a.name.localeCompare(b.name));
+            const legacyShorts = new Set(legacy.map(p => p.short_name));
+            const current = gamePlatforms.find(s => legacyShorts.has(s)) || '';
+            const options = '<option value="">— no legacy system —</option>' +
+                legacy.map(p => '<option value="' + p.short_name + '"' +
+                    (p.short_name === current ? ' selected' : '') + '>' +
+                    escapeHtml(p.name) + ' (' + p.short_name + ')</option>').join('');
+            const dropdown =
+                '<select onchange="setLegacyPlatform(' + game.id + ', this.value)" ' +
+                'class="w-full min-w-0 mt-1 bg-surface rounded-lg border border-gray-600 px-2 py-1.5 text-white text-sm focus:border-accent focus:outline-none">' +
+                options + '</select>';
+
+            return checkboxes + dropdown;
         }
 
         // Load stats into nav
@@ -1465,6 +1495,21 @@
             if (typeof refreshGameList === 'function') refreshGameList();
         }
 
+        // Swap the game's legacy platform: drop whatever legacy platform it had
+        // (at most one via this control) and set the newly chosen one, if any.
+        async function setLegacyPlatform(gameId, shortName) {
+            const game = await api.get(`/api/games/${gameId}`);
+            const legacyShorts = new Set(
+                allPlatforms.filter(p => p.category === 'legacy_console').map(p => p.short_name)
+            );
+            let platforms = (game.platforms || [])
+                .map(p => p.short_name)
+                .filter(s => !legacyShorts.has(s));
+            if (shortName) platforms.push(shortName);
+            await api.put(`/api/games/${gameId}`, { platforms: platforms });
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
         // Add Game Modal
         let igdbSearchTimeout = null;
 
@@ -1477,6 +1522,8 @@
             document.getElementById('new-game-cover-url').value = '';
             document.getElementById('new-game-session-length').value = '';
             document.getElementById('new-game-series-role').value = '';
+            document.getElementById('new-game-legacy').value = '';
+            document.getElementById('new-game-physical').checked = false;
             document.getElementById('new-game-source-link-err').classList.add('hidden');
             document.getElementById('igdb-results').classList.add('hidden');
             document.getElementById('add-game-error').classList.add('hidden');
@@ -1858,17 +1905,28 @@
         }
 
         function renderNewGamePlatforms() {
+            // Modern consoles render as checkboxes (a game can be multi-platform);
+            // legacy consoles go in a single dropdown to avoid a wall of checkboxes.
             const container = document.getElementById('new-game-platforms');
             const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
-            const sorted = [...allPlatforms]
-                .filter(p => p.short_name !== 'PC')
+            const modern = [...allPlatforms]
+                .filter(p => p.category !== 'legacy_console' && p.short_name !== 'PC')
                 .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
-            container.innerHTML = sorted.map(p => `
+            container.innerHTML = modern.map(p => `
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" value="${p.short_name}" class="accent-accent w-4 h-4">
                     <span class="platform-badge platform-${p.short_name}">${p.short_name}</span>
                 </label>
             `).join('');
+
+            const legacySelect = document.getElementById('new-game-legacy');
+            if (legacySelect) {
+                const legacy = allPlatforms
+                    .filter(p => p.category === 'legacy_console')
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                legacySelect.innerHTML = '<option value="">— none —</option>' +
+                    legacy.map(p => `<option value="${p.short_name}">${escapeHtml(p.name)} (${p.short_name})</option>`).join('');
+            }
         }
 
         async function addNewGame() {
@@ -1898,9 +1956,12 @@
 
             const platforms = Array.from(document.querySelectorAll('#new-game-platforms input:checked'))
                 .map(cb => cb.value);
+            const legacy = document.getElementById('new-game-legacy').value;
+            if (legacy) platforms.push(legacy);
 
             const gameData = { title, platforms };
             if (coverUrl) gameData.cover_url = coverUrl;
+            if (document.getElementById('new-game-physical').checked) gameData.physical = true;
 
             const result = await api.post('/api/games', gameData);
 
