@@ -246,6 +246,19 @@ def api_create_game():
                 (game_id, platform['id'])
             )
 
+    # Optional physical-copy flag, surfaced via the 'Physical' tag (see api_games).
+    if data.get('physical'):
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name, category) VALUES ('Physical', 'custom')"
+        )
+        tag_id = conn.execute(
+            "SELECT id FROM tags WHERE name = 'Physical'"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO game_tags (game_id, tag_id) VALUES (?, ?)",
+            (game_id, tag_id)
+        )
+
     conn.commit()
     apply_traits_catalog(conn, game_id)
     apply_series_catalog(conn, game_id)
