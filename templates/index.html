@@ -387,6 +387,7 @@
     // have no era restriction (undefined => show every platform).
     const MODE_CATEGORY = { modern: 'modern_console', legacy: 'legacy_console', pc: 'pc' };
     let platformRows = [];
+    let renderedPlatformShorts = [];
 
     async function loadPlatforms() {
         platformRows = await api.get('/api/platforms');
@@ -398,6 +399,13 @@
         const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox', 'Steam', 'PC'];
         const cat = MODE_CATEGORY[currentMode];
 
+        // Preserve the current selection across re-renders; a platform that wasn't
+        // on screen last time (e.g. the first game of a new system just added) is
+        // auto-checked so its games show without manually ticking the filter.
+        const prevChecked = new Set(getSelectedPlatforms());
+        const prevRendered = new Set(renderedPlatformShorts);
+        const firstRender = prevRendered.size === 0;
+
         const sorted = platformRows
             .filter(p => p.game_count > 0)
             .filter(p => !cat || p.category === cat)
@@ -407,12 +415,18 @@
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
             });
 
-        container.innerHTML = sorted.map(p => `
+        const hasNew = !firstRender && sorted.some(p => !prevRendered.has(p.short_name));
+
+        container.innerHTML = sorted.map(p => {
+            const isNew = !prevRendered.has(p.short_name);
+            const checked = (isNew || prevChecked.has(p.short_name)) ? 'checked' : '';
+            return `
             <label class="flex items-center gap-2 px-3 py-2 hover:bg-surface cursor-pointer">
-                <input type="checkbox" value="${p.short_name}" checked class="platform-check accent-accent w-4 h-4">
+                <input type="checkbox" value="${p.short_name}" ${checked} class="platform-check accent-accent w-4 h-4">
                 <span class="text-white text-sm">${p.short_name}</span>
-            </label>
-        `).join('');
+            </label>`;
+        }).join('');
+        renderedPlatformShorts = sorted.map(p => p.short_name);
 
         // Add event listeners to new checkboxes
         container.querySelectorAll('.platform-check').forEach(cb => {
@@ -420,10 +434,12 @@
         });
 
         applyPendingCheckboxState();
+        if (hasNew) saveViewState();  // persist the auto-selection so it survives reload
         filterAndRenderGames();
     }
 
     function refreshGameList() {
+        loadPlatforms();  // a just-added game may introduce a new platform (auto-selected)
         loadGames();
     }
 

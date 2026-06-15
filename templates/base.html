@@ -282,7 +282,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                return res.json();
+                // Same shape as post(): callers check .ok and read .data. Fire-and-forget
+                // callers ignore the return, so this is backward compatible.
+                return { ok: res.ok, status: res.status, data: await res.json() };
             },
             async patch(url, data) {
                 const res = await fetch(url, {
