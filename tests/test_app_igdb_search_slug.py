@@ -51,6 +51,23 @@ def test_search_includes_slug_and_igdb_url(igdb_client):
     assert body[0]["cover_url"].startswith("https://")
 
 
+def test_search_maps_platforms_to_short_names(igdb_client):
+    """IGDB platform ids are mapped to the short_names we model."""
+    mock_payload = [
+        {"name": "Mario Kart 7", "slug": "mario-kart-7", "platforms": [37]},  # 37 = 3DS
+    ]
+    with patch("requests.post", return_value=_MockResp(mock_payload)):
+        res = igdb_client.get("/api/igdb/search?q=mario")
+    assert res.get_json()[0]["platforms"] == ["3DS"]
+
+
+def test_search_platforms_empty_when_absent(igdb_client):
+    mock_payload = [{"name": "Xyz", "slug": "xyz"}]
+    with patch("requests.post", return_value=_MockResp(mock_payload)):
+        res = igdb_client.get("/api/igdb/search?q=xyz")
+    assert res.get_json()[0]["platforms"] == []
+
+
 def test_search_handles_missing_slug(igdb_client):
     """Some IGDB results may not have a slug; the route should still return
     `slug` (empty) and `igdb_url` (empty) keys, not omit them."""

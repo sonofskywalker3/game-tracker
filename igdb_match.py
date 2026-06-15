@@ -20,14 +20,38 @@ ANDROID_ID = 34
 MOBILE_PLATFORM_IDS = frozenset({IOS_ID, ANDROID_ID})
 
 # app short_name -> IGDB platform id(s). Extensible; unknown names contribute no
-# overlap (safe). Mobile is handled separately via MOBILE_PLATFORM_IDS.
+# overlap (safe). Mobile is handled separately via MOBILE_PLATFORM_IDS. Legacy ids
+# confirmed against IGDB's live /v4/platforms (2026-06-15).
 IGDB_PLATFORM_IDS: dict[str, frozenset[int]] = {
+    # Modern
     "Switch": frozenset({130}),
     "PS5": frozenset({167}),
     "PS4": frozenset({48}),
     "Xbox": frozenset({49, 169}),   # Xbox One + Series X|S
     "Steam": frozenset({6}),         # PC (Windows)
     "PC": frozenset({6}),
+    # Legacy (mirrors models.LEGACY_PLATFORM_SEED short_names)
+    "3DS": frozenset({37}),
+    "NDS": frozenset({20}),
+    "GBA": frozenset({24}),
+    "GBC": frozenset({22}),
+    "GB": frozenset({33}),
+    "WiiU": frozenset({41}),
+    "Wii": frozenset({5}),
+    "GC": frozenset({21}),
+    "N64": frozenset({4}),
+    "SNES": frozenset({19}),
+    "NES": frozenset({18}),
+    "PS3": frozenset({9}),
+    "PS2": frozenset({8}),
+    "PS1": frozenset({7}),
+    "PSP": frozenset({38}),
+    "Vita": frozenset({46}),
+    "X360": frozenset({12}),
+    "OGXbox": frozenset({11}),
+    "Genesis": frozenset({29}),
+    "Saturn": frozenset({32}),
+    "Dreamcast": frozenset({23}),
 }
 
 # Ordered, human-readable platform labels for the Fix-match modal. Derived from the
@@ -59,6 +83,13 @@ def platform_ids_for(short_names: Iterable[str] | None) -> set[int]:
     for sn in short_names or ():
         out |= set(IGDB_PLATFORM_IDS.get(sn, ()))
     return out
+
+
+def short_names_for(igdb_platform_ids: Iterable[int] | None) -> list[str]:
+    """Reverse of platform_ids_for: app short_names whose IGDB ids overlap the
+    given ids, in IGDB_PLATFORM_IDS insertion order. Unknown ids are omitted."""
+    ids = set(igdb_platform_ids or ())
+    return [sn for sn, pset in IGDB_PLATFORM_IDS.items() if pset & ids]
 
 
 def platform_labels(platform_ids: Iterable[int] | None) -> list[str]:
