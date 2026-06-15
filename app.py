@@ -11,6 +11,7 @@ import dedup
 import hltb
 import import_scraped
 import decider
+import igdb_match
 import slots
 from flask import Flask, render_template, request, jsonify
 from models import (
@@ -2096,7 +2097,7 @@ def api_igdb_search():
 
         igdb_query = f'''
             search "{query}";
-            fields name, slug, cover.url;
+            fields name, slug, cover.url, platforms;
             limit 8;
         '''
 
@@ -2123,6 +2124,9 @@ def api_igdb_search():
                 'slug': slug,
                 'cover_url': cover_url,
                 'igdb_url': f'https://www.igdb.com/games/{slug}' if slug else '',
+                # IGDB platform ids mapped to the short_names we model (for the
+                # Add Game modal's tab-scoped single-platform auto-select).
+                'platforms': igdb_match.short_names_for(game.get('platforms') or []),
             })
 
         return jsonify(games)
