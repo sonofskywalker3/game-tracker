@@ -5,6 +5,7 @@ Resolution chain (see resolve()): local barcode_cache -> UPCitemdb free API
 scan flow never 500s.
 """
 import logging
+import sqlite3
 
 import requests
 
@@ -36,7 +37,7 @@ def lookup_product_title(upc: str, *, url: str = UPCITEMDB_TRIAL_URL,
     return (items[0].get("title") or "").strip() or None
 
 
-def cache_get(conn, upc: str) -> dict | None:
+def cache_get(conn: sqlite3.Connection, upc: str) -> dict | None:
     """Return the cached mapping for a UPC, or None."""
     row = conn.execute(
         "SELECT upc, igdb_id, title, platform, game_id FROM barcode_cache WHERE upc = ?",
@@ -45,7 +46,7 @@ def cache_get(conn, upc: str) -> dict | None:
     return dict(row) if row else None
 
 
-def cache_put(conn, upc: str, *, igdb_id: int | None = None, title: str | None = None,
+def cache_put(conn: sqlite3.Connection, upc: str, *, igdb_id: int | None = None, title: str | None = None,
               platform: str | None = None, game_id: int | None = None) -> None:
     """Upsert a confirmed UPC -> game mapping (stamps confirmed_at)."""
     conn.execute(
@@ -57,7 +58,7 @@ def cache_put(conn, upc: str, *, igdb_id: int | None = None, title: str | None =
     )
 
 
-def _owned_game_id(conn, title: str) -> int | None:
+def _owned_game_id(conn: sqlite3.Connection, title: str) -> int | None:
     """id of an existing game whose normalized title matches, else None."""
     if not title:
         return None
@@ -68,7 +69,7 @@ def _owned_game_id(conn, title: str) -> int | None:
     return row["id"] if row else None
 
 
-def resolve(conn, upc: str, *, client_id: str | None = None,
+def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
             token: str | None = None) -> dict:
     """Resolve a UPC to candidate games: cache -> UPC API -> IGDB match.
 
