@@ -211,6 +211,9 @@ def api_create_game():
     title = clean_title(title)
     normalized = normalize_title(title)
 
+    # Read the optional UPC for barcode cache persistence
+    upc = (data.get('upc') or '').strip() or None
+
     # Check if game already exists
     existing = conn.execute(
         "SELECT id FROM games WHERE normalized_title = ?",
@@ -218,6 +221,9 @@ def api_create_game():
     ).fetchone()
 
     if existing:
+        if upc:
+            barcode.cache_put(conn, upc, title=title, game_id=existing['id'])
+            conn.commit()
         conn.close()
         return jsonify({'error': 'Game already exists', 'game_id': existing['id']}), 409
 
@@ -278,6 +284,11 @@ def api_create_game():
     except Exception as exc:   # best-effort: enrichment must never block creation
         app.logger.warning("manual-add IGDB enrich failed for game %s: %s", game_id, exc)
         conn.rollback()
+
+    if upc:
+        platform_short = platforms[0] if platforms else None
+        barcode.cache_put(conn, upc, title=title, platform=platform_short, game_id=game_id)
+        conn.commit()
 
     conn.close()
     return jsonify({'success': True, 'game_id': game_id}), 201
