@@ -13,6 +13,7 @@ import import_scraped
 import decider
 import igdb_match
 import slots
+import barcode
 from flask import Flask, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
@@ -2070,6 +2071,29 @@ def api_covers_status():
         'missing': missing,
         'has_credentials': bool(client_id and client_secret)
     })
+
+
+@app.route('/api/barcode/resolve')
+def api_barcode_resolve():
+    """Resolve a scanned UPC to candidate games (cache -> UPCitemdb -> IGDB)."""
+    upc = (request.args.get('upc') or '').strip()
+    if not upc:
+        return jsonify({'error': 'upc required'}), 400
+
+    client_id, client_secret = get_twitch_credentials()
+    token = None
+    if client_id:
+        try:
+            from fetch_covers import get_access_token
+            token = get_access_token(client_id, client_secret)
+        except Exception as exc:   # best-effort: a token failure just skips IGDB matching
+            app.logger.warning("IGDB token fetch failed during barcode resolve: %s", exc)
+            client_id = None
+
+    conn = get_db()
+    result = barcode.resolve(conn, upc, client_id=client_id, token=token)
+    conn.close()
+    return jsonify(result)
 
 
 @app.route('/api/igdb/search')
