@@ -844,7 +844,7 @@ def migrate_psn_addons_synced_at(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def migrate_barcode_cache(conn):
+def migrate_barcode_cache(conn: sqlite3.Connection) -> None:
     """Self-growing UPC -> game cache for mobile barcode scanning.
 
     Each confirmed scan writes a row, so repeat scans of the same barcode are
