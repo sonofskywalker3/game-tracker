@@ -844,6 +844,24 @@ def migrate_psn_addons_synced_at(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_barcode_cache(conn):
+    """Self-growing UPC -> game cache for mobile barcode scanning.
+
+    Each confirmed scan writes a row, so repeat scans of the same barcode are
+    instant, free, and human-accurate (no UPC-API rate limit, no fuzzy parsing)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS barcode_cache (
+            upc TEXT PRIMARY KEY,
+            igdb_id INTEGER,
+            title TEXT,
+            platform TEXT,
+            game_id INTEGER REFERENCES games(id) ON DELETE SET NULL,
+            confirmed_at TEXT
+        )
+    """)
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -962,6 +980,7 @@ def migrate_db():
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
+    migrate_barcode_cache(conn)
     migrate_decider_chats(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
