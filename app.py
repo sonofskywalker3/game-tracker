@@ -967,6 +967,23 @@ def api_update_game(game_id):
                 barcode.registry_put(conn, add['upc'], title=None,
                                      platform=add['short_name'], game_id=game_id)
 
+        # Per-platform format setter (web format editor): set physical/digital for
+        # already-owned platforms without touching membership. Unknown platforms and
+        # invalid format values are ignored.
+        fmts = data.get('platform_formats')
+        if isinstance(fmts, dict):
+            for short_name, fmt in fmts.items():
+                if fmt not in ('physical', 'digital'):
+                    continue
+                prow = conn.execute(
+                    "SELECT id FROM platforms WHERE short_name = ?", (short_name,)
+                ).fetchone()
+                if prow:
+                    conn.execute(
+                        "UPDATE game_platforms SET format = ? "
+                        "WHERE game_id = ? AND platform_id = ?",
+                        (fmt, game_id, prow['id']))
+
         conn.commit()
         return jsonify({'success': True})
     except sqlite3.IntegrityError:
