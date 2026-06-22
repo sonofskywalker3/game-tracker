@@ -155,15 +155,28 @@ def _owned_game_id(conn: sqlite3.Connection, title: str) -> int | None:
     return row["id"] if row else None
 
 
+def owned_platforms_for(conn: sqlite3.Connection, game_id: int) -> list[dict]:
+    """Platforms the user owns this game on, with per-platform format + whether the
+    platform has a digital market (drives the (Physical/Digital) display qualifier)."""
+    rows = conn.execute(
+        "SELECT p.short_name, gp.format, p.has_digital_market "
+        "FROM game_platforms gp JOIN platforms p ON p.id = gp.platform_id "
+        "WHERE gp.game_id = ? ORDER BY p.short_name",
+        (game_id,),
+    ).fetchall()
+    return [{"short_name": r["short_name"], "format": r["format"],
+             "has_digital_market": r["has_digital_market"]} for r in rows]
+
+
 def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
             token: str | None = None) -> dict:
     """Resolve a UPC to candidate games: cache -> UPC API -> IGDB match.
 
-    Returns {upc, source, candidates[, product_title]}. Each candidate:
-    {igdb_id, title, platform, cover_url, owned_game_id}."""
+    Returns {upc, source, scanned_platform, candidates[, product_title]}. Each candidate:
+    {igdb_id, title, platform, cover_url, game_type, owned_game_id, owned_platforms}."""
     cached = registry_get(conn, upc)
     if cached:
-        return {"upc": upc, "source": "cache", "candidates": [{
+        return {"upc": upc, "source": "cache", "scanned_platform": None, "candidates": [{
             "igdb_id": cached["igdb_id"],
             "title": cached["title"],
             "platform": cached["platform"],
@@ -173,26 +186,44 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
 
     product = lookup_product_title(upc)
     if not product:
-        return {"upc": upc, "source": "none", "candidates": []}
+        return {"upc": upc, "source": "none", "candidates": [], "scanned_platform": None}
 
+    scanned_platform = parse_retail_platform(product)
     # Retail titles carry platform/packaging noise that defeats IGDB's title search;
     # match on (and prefill) the cleaned name. Fall back to raw if cleaning empties it.
     search_title = clean_product_title(product) or product
+    platform_ids = igdb_match.platform_ids_for([scanned_platform]) if scanned_platform else set()
 
     candidates: list[dict] = []
     if client_id and token:
-        for c in igdb_match.candidates_for(search_title, set(), None, client_id, token)[:MAX_CANDIDATES]:
+        for c in igdb_match.candidates_for(
+                search_title, platform_ids, None, client_id, token,
+                drop_fan_types=True, restrict_to_platform=bool(platform_ids))[:MAX_CANDIDATES]:
+            owned_id = _owned_game_id(conn, c.get("name") or "")
             shorts = igdb_match.short_names_for(c.get("platforms") or [])
             candidates.append({
                 "igdb_id": c.get("igdb_id"),
                 "title": c.get("name"),
-                "platform": shorts[0] if shorts else None,
+                "platform": scanned_platform or (shorts[0] if shorts else None),
                 "cover_url": c.get("cover_url"),
-                "owned_game_id": _owned_game_id(conn, c.get("name") or ""),
+                "game_type": c.get("game_type"),
+                "owned_game_id": owned_id,
+                "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
             })
+
+    # Record EVERY scan (knowledge, not ownership): upc -> best-guess title/igdb,
+    # game_id stays NULL until a confirmed add links it.
+    top = candidates[0] if candidates else None
+    registry_put(conn, upc,
+                 igdb_id=top["igdb_id"] if top else None,
+                 title=top["title"] if top else search_title,
+                 platform=scanned_platform, game_id=None)
+    conn.commit()
 
     if not candidates:
         # Found a product name but no IGDB match: hand the cleaned title back so the
         # app can prefill manual search without the retail boilerplate.
-        return {"upc": upc, "source": "upc_api", "candidates": [], "product_title": search_title}
-    return {"upc": upc, "source": "upc_api", "candidates": candidates}
+        return {"upc": upc, "source": "upc_api", "candidates": [],
+                "product_title": search_title, "scanned_platform": scanned_platform}
+    return {"upc": upc, "source": "upc_api", "candidates": candidates,
+            "scanned_platform": scanned_platform}
