@@ -208,7 +208,7 @@ private fun SlotRow(
             } else {
                 Text("Empty — candidates:", style = MaterialTheme.typography.bodySmall)
                 slot.candidates.take(3).forEach { c ->
-                    TextButton(onClick = { vm.pin(slot.id, c.id, null) }) { Text(c.title) }
+                    TextButton(onClick = { vm.pin(slot.id, c.game.id, null) }) { Text(c.game.title) }
                 }
                 OutlinedButton(onClick = onAssign) { Text("Assign") }
             }
