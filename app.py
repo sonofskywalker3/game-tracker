@@ -216,13 +216,14 @@ def api_create_game():
 
     # Check if game already exists
     existing = conn.execute(
-        "SELECT id FROM games WHERE normalized_title = ?",
+        "SELECT id, igdb_id FROM games WHERE normalized_title = ?",
         (normalized,)
     ).fetchone()
 
     if existing:
         if upc:
-            barcode.cache_put(conn, upc, title=title, game_id=existing['id'])
+            barcode.cache_put(conn, upc, igdb_id=existing['igdb_id'], title=title,
+                              game_id=existing['id'])
             conn.commit()
         conn.close()
         return jsonify({'error': 'Game already exists', 'game_id': existing['id']}), 409
@@ -287,7 +288,11 @@ def api_create_game():
 
     if upc:
         platform_short = platforms[0] if platforms else None
-        barcode.cache_put(conn, upc, title=title, platform=platform_short, game_id=game_id)
+        igdb_row = conn.execute(
+            "SELECT igdb_id FROM games WHERE id = ?", (game_id,)
+        ).fetchone()
+        barcode.cache_put(conn, upc, igdb_id=igdb_row['igdb_id'] if igdb_row else None,
+                          title=title, platform=platform_short, game_id=game_id)
         conn.commit()
 
     conn.close()
