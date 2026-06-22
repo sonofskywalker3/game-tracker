@@ -62,3 +62,25 @@ def test_game_platform_format_column_and_backfill(temp_db):
     conn.close()
     assert fmts[1] == "physical"
     assert fmts[2] == "digital"
+
+
+def test_classify_platform_knows_mobile_and_subscription():
+    assert models.classify_platform("iOS") == "mobile"
+    assert models.classify_platform("Android") == "mobile"
+    assert models.classify_platform("GamePass") == "subscription"
+    assert models.classify_platform("PSPlus") == "subscription"
+    assert models.classify_platform("PS5") == "modern_console"
+    assert models.classify_platform("SNES") == "legacy_console"
+
+
+def test_platform_category_migration_idempotent_for_extra(temp_db):
+    conn = models.get_db()
+    models.migrate_seed_extra_platforms(conn)   # seed mobile + subscription
+    models.migrate_platform_category(conn)      # the re-derive that used to clobber
+    cats = {r[0]: r[1] for r in conn.execute(
+        "SELECT short_name, category FROM platforms").fetchall()}
+    conn.close()
+    assert cats["iOS"] == "mobile"
+    assert cats["Android"] == "mobile"
+    assert cats["GamePass"] == "subscription"
+    assert cats["PSPlus"] == "subscription"
