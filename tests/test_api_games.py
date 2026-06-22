@@ -725,3 +725,28 @@ def test_game_detail_platforms_include_format_and_market(client):
     assert p["format"] == "digital"
     assert p["has_digital_market"] == 1
     assert p["category"] == "modern_console"
+
+
+def test_platforms_replace_preserves_format(client):
+    import models
+    _ensure_platform("PlayStation 5", "PS5", "modern_console")
+    _ensure_platform("Nintendo Switch", "Switch", "modern_console")
+
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1, 'A', 'a')")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, ?, 'physical')", (pid,))
+    conn.commit(); conn.close()
+
+    # Add Switch via the full-replace path; PS5's existing format must survive.
+    resp = client.put("/api/games/1", json={"platforms": ["PS5", "Switch"]})
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    fmts = {r[0]: r[1] for r in conn.execute(
+        "SELECT p.short_name, gp.format FROM game_platforms gp "
+        "JOIN platforms p ON p.id = gp.platform_id WHERE gp.game_id = 1").fetchall()}
+    conn.close()
+    assert fmts["PS5"] == "physical"   # preserved, not wiped
+    assert fmts["Switch"] is None      # newly added, no format yet
