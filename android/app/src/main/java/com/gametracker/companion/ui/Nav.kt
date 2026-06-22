@@ -2,8 +2,8 @@ package com.gametracker.companion.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -22,7 +22,7 @@ private data class Tab(val route: String, val label: String, val icon: androidx.
 
 private val TABS = listOf(
     Tab("picks", "Picks", Icons.Filled.Home),
-    Tab("library", "Library", Icons.Filled.List),
+    Tab("library", "Library", Icons.AutoMirrored.Filled.List),
     Tab("settings", "Settings", Icons.Filled.Settings),
 )
 
@@ -47,7 +47,9 @@ fun AppNav() {
             composable("picks") {
                 com.gametracker.companion.ui.picks.PicksScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
             }
-            composable("library") { Text("Library") }  // replaced in Task 5
+            composable("library") {
+                com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
+            }
             composable("settings") { com.gametracker.companion.ui.settings.SettingsScreen() }
             composable("detail/{id}") { Text("Detail") } // replaced in Task 6
         }
