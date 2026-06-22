@@ -899,6 +899,28 @@
                 }).join('');
         }
 
+        function renderExtraPlatforms(game) {
+            // Mobile + subscription membership (stub categories from Plan 1). These
+            // are pickable like owning a console platform; selecting one records you
+            // "own" it for this game (no availability catalog — that's Spec 3). No
+            // format choice (inherently digital).
+            const gamePlatforms = (game.platforms || []).map(p => p.short_name);
+            const extra = allPlatforms
+                .filter(p => p.category === 'mobile' || p.category === 'subscription')
+                .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+            if (!extra.length) return '';
+            return '<div class="text-xs text-gray-400 mb-1 mt-3">Mobile &amp; Subscriptions</div>' +
+                '<div class="flex flex-wrap gap-x-3 gap-y-1">' +
+                extra.map(p => {
+                    const checked = gamePlatforms.includes(p.short_name) ? 'checked' : '';
+                    return '<label class="flex items-center gap-1 cursor-pointer text-sm">' +
+                        '<input type="checkbox" ' + checked + ' ' +
+                        'onchange="togglePlatform(' + game.id + ', \'' + p.short_name + '\', this.checked)" ' +
+                        'class="accent-accent w-4 h-4">' +
+                        '<span class="text-gray-200">' + escapeHtml(p.name) + '</span></label>';
+                }).join('') + '</div>';
+        }
+
         async function setPlatformFormat(gameId, shortName, fmt) {
             await api.put('/api/games/' + gameId, { platform_formats: { [shortName]: fmt } });
             if (typeof refreshGameList === 'function') refreshGameList();
@@ -1147,6 +1169,9 @@
                                 </div>
                                 <div id="platform-formats-${game.id}">
                                     ${renderPlatformFormats(game)}
+                                </div>
+                                <div id="platform-extra-${game.id}">
+                                    ${renderExtraPlatforms(game)}
                                 </div>
                             </div>
                             <div>
