@@ -61,7 +61,7 @@ def test_resolve_miss_is_source_none(client, monkeypatch):
     monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: None)
     resp = client.get("/api/barcode/resolve?upc=999")
     assert resp.status_code == 200
-    assert resp.get_json() == {"upc": "999", "source": "none", "candidates": []}
+    assert resp.get_json() == {"upc": "999", "source": "none", "candidates": [], "scanned_platform": None}
 
 
 def test_post_game_with_upc_writes_cache(client):
@@ -154,3 +154,32 @@ def test_parse_retail_platform():
         "God of War Ragnarok - PlayStation 5") == "PS5"
     assert barcode.parse_retail_platform("Some PC Game") == "PC"
     assert barcode.parse_retail_platform("No platform here") is None
+
+
+def test_owned_platforms_for_includes_format_and_market(temp_db):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (3, 'Q', 'q')")
+    conn.execute("INSERT INTO platforms (name, short_name, category, has_digital_market) "
+                 "VALUES ('PlayStation 5','PS5','modern_console',1)")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (3, ?, 'physical')", (pid,))
+    conn.commit()
+    got = barcode.owned_platforms_for(conn, 3)
+    conn.close()
+    assert got == [{"short_name": "PS5", "format": "physical", "has_digital_market": 1}]
+
+
+def test_resolve_records_unmatched_scan(client, monkeypatch):
+    import models
+    monkeypatch.setattr(barcode, "lookup_product_title",
+                        lambda upc: "Totally Unknown Game (Nintendo Switch)")
+    monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [])
+    resp = client.get("/api/barcode/resolve?upc=NEW123")
+    body = resp.get_json()
+    assert body["scanned_platform"] == "Switch"
+    conn = models.get_db()
+    row = barcode.registry_get(conn, "NEW123")
+    conn.close()
+    assert row is not None and row["game_id"] is None   # recorded, not owned

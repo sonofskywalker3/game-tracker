@@ -84,7 +84,7 @@ def test_resolve_miss_returns_source_none(temp_db, monkeypatch):
     conn = models.get_db()
     result = barcode.resolve(conn, "999")
     conn.close()
-    assert result == {"upc": "999", "source": "none", "candidates": []}
+    assert result == {"upc": "999", "source": "none", "candidates": [], "scanned_platform": None}
 
 
 def test_resolve_via_api_maps_candidates_and_flags_ownership(temp_db, monkeypatch):
@@ -102,7 +102,7 @@ def test_resolve_via_api_maps_candidates_and_flags_ownership(temp_db, monkeypatc
     assert result["source"] == "upc_api"
     cand = result["candidates"][0]
     assert cand["igdb_id"] == 119171
-    assert cand["platform"] == "ps5"
+    assert cand["platform"] == "PS5"
     assert cand["owned_game_id"] == owned_id
 
 
