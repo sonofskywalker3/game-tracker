@@ -23,7 +23,8 @@ class FakeRepo(
         override suspend fun updateGame(id: Int, body: StatusBody) { statusSets += id to body.status }
         override suspend fun igdbSearch(q: String) = igdb
         override suspend fun createGame(body: CreateGameBody) = CreateGameResponse(gameId = 1)
-        override suspend fun slots() = slotsResp
+        override suspend fun slots() =
+            if (reachable) slotsResp else throw RuntimeException("unreachable")
         override suspend fun pin(id: Int, body: PinBody) { pinned += Triple(id, body.game_id, body.goal) }
         override suspend fun outcome(id: Int, body: OutcomeBody) { outcomes += id to body.outcome }
         override suspend fun goal(id: Int, body: GoalBody) {}

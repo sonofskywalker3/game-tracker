@@ -15,6 +15,8 @@ class AppViewModelFactory(private val c: AppContainer) : ViewModelProvider.Facto
         when {
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
                 SettingsViewModel(c.settings, c.repository) as T
+            modelClass.isAssignableFrom(com.gametracker.companion.ui.picks.PicksViewModel::class.java) ->
+                com.gametracker.companion.ui.picks.PicksViewModel(c.repository) as T
             else -> throw IllegalArgumentException("Unknown VM ${modelClass.name}")
         }
 }
