@@ -974,6 +974,24 @@ def migrate_decider_chats(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
+    """Add game_platforms.format ('physical'|'digital') and backfill from the per-game
+    physical flag (a 'Physical' tag), defaulting to digital. Only fills NULLs, so
+    re-running never overrides a value set later per platform. Idempotent."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(game_platforms)").fetchall()]
+    if "format" not in cols:
+        conn.execute("ALTER TABLE game_platforms ADD COLUMN format TEXT")
+    conn.execute("""
+        UPDATE game_platforms SET format =
+            CASE WHEN EXISTS (
+                SELECT 1 FROM game_tags gt JOIN tags t ON t.id = gt.tag_id
+                WHERE gt.game_id = game_platforms.game_id AND t.name = 'Physical'
+            ) THEN 'physical' ELSE 'digital' END
+        WHERE format IS NULL
+    """)
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -1047,6 +1065,7 @@ def migrate_db():
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
     migrate_barcode_registry(conn)
+    migrate_game_platform_format(conn)
     migrate_decider_chats(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)

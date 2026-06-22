@@ -42,3 +42,23 @@ def test_seed_extra_platforms_idempotent(temp_db):
     n = conn.execute("SELECT COUNT(*) FROM platforms WHERE short_name='iOS'").fetchone()[0]
     conn.close()
     assert n == 1
+
+
+def test_game_platform_format_column_and_backfill(temp_db):
+    conn = models.get_db()
+    _add_platform(conn, "PlayStation 5", "PS5", "modern_console")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1,'A','a')")
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (2,'B','b')")
+    # Per-game 'physical' is a tag named 'Physical', not a column.
+    conn.execute("INSERT OR IGNORE INTO tags (name, category) VALUES ('Physical','custom')")
+    tid = conn.execute("SELECT id FROM tags WHERE name='Physical'").fetchone()[0]
+    conn.execute("INSERT INTO game_tags (game_id, tag_id) VALUES (1, ?)", (tid,))
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id) VALUES (1, ?)", (pid,))
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id) VALUES (2, ?)", (pid,))
+    conn.commit()
+    models.migrate_game_platform_format(conn)
+    fmts = dict(conn.execute("SELECT game_id, format FROM game_platforms").fetchall())
+    conn.close()
+    assert fmts[1] == "physical"
+    assert fmts[2] == "digital"
