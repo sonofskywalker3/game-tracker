@@ -4,6 +4,7 @@ Game Tracker - Flask Application
 import difflib
 import json
 import logging
+import os
 import sqlite3
 from collections import Counter
 import requests
@@ -2245,4 +2246,7 @@ if __name__ == '__main__':
     # thread (browser -> import -> IGDB enrich -> ownership). The dev auto-reloader
     # restarts the server whenever a .py file changes, which would kill that thread
     # mid-run and reset the scrape to "idle". Keep debug error pages, drop the reloader.
-    app.run(debug=True, use_reloader=False, port=5000)
+    # Bind to 127.0.0.1 by default (secure). Set HOST=0.0.0.0 to expose on the
+    # LAN for the Android companion app over Wi-Fi (trusted home network only).
+    app.run(debug=True, use_reloader=False,
+            host=os.environ.get("HOST", "127.0.0.1"), port=5000)

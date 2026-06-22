@@ -1,6 +1,40 @@
 import barcode
 
 
+def test_clean_product_title_strips_retail_noise():
+    cases = {
+        "Mario Kart 8 Deluxe racing video game (Nintendo Switch)": "Mario Kart 8 Deluxe",
+        "Animal Crossing: New Horizons  Nintendo Switch  [Physical] - U.S. Version":
+            "Animal Crossing: New Horizons",
+        "The Legend of Zelda: Breath of the Wild - Nintendo Switch":
+            "The Legend of Zelda: Breath of the Wild",
+        "Marvel's Spider-Man 2 - PS5": "Marvel's Spider-Man 2",
+    }
+    for raw, expected in cases.items():
+        assert barcode.clean_product_title(raw) == expected
+
+
+def test_clean_product_title_handles_empty():
+    assert barcode.clean_product_title(None) == ""
+    assert barcode.clean_product_title("") == ""
+
+
+def test_resolve_uses_cleaned_title_for_prefill(client, monkeypatch):
+    # UPC lookup returns a noisy retail title; force the IGDB match to miss so we
+    # hit the manual-search branch, which must hand back the cleaned name.
+    monkeypatch.setattr(
+        barcode, "lookup_product_title",
+        lambda upc: "Mario Kart 8 Deluxe racing video game (Nintendo Switch)",
+    )
+    monkeypatch.setattr(barcode.igdb_match, "candidates_for",
+                        lambda *a, **k: [])
+    resp = client.get("/api/barcode/resolve?upc=12345")
+    body = resp.get_json()
+    assert body["source"] == "upc_api"
+    assert body["candidates"] == []
+    assert body["product_title"] == "Mario Kart 8 Deluxe"
+
+
 def test_resolve_requires_upc(client):
     resp = client.get("/api/barcode/resolve")
     assert resp.status_code == 400
