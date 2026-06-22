@@ -3,6 +3,7 @@ package com.gametracker.companion.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -23,6 +24,7 @@ private data class Tab(val route: String, val label: String, val icon: androidx.
 private val TABS = listOf(
     Tab("picks", "Picks", Icons.Filled.Home),
     Tab("library", "Library", Icons.AutoMirrored.Filled.List),
+    Tab("add", "Add", Icons.Filled.Add),
     Tab("settings", "Settings", Icons.Filled.Settings),
 )
 
@@ -49,6 +51,20 @@ fun AppNav() {
             }
             composable("library") {
                 com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
+            }
+            composable(
+                "add?prefill={prefill}&upc={upc}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("prefill") { nullable = true; defaultValue = null },
+                    androidx.navigation.navArgument("upc") { nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
+                com.gametracker.companion.ui.add.AddScreen(
+                    initialQuery = entry.arguments?.getString("prefill"),
+                    pendingUpc = entry.arguments?.getString("upc"),
+                    onOpenGame = { id -> nav.navigate("detail/$id") },
+                    onScan = { nav.navigate("scan") },
+                )
             }
             composable("settings") { backStackEntry ->
                 com.gametracker.companion.ui.settings.SettingsScreen(
