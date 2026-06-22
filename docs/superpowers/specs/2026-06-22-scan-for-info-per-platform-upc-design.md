@@ -72,6 +72,10 @@ Today `resolve()` calls `igdb_match.candidates_for(title, set(), …)` with an *
 
 The parsed platform is reused downstream: it's the platform the UPC is stored under in `barcode_registry` and the default platform for "Add".
 
+**Status note (2026-06-22):** only the *first half* of this is shipped — `clean_product_title()` strips retail noise so common titles now match (Mario Kart, Animal Crossing). The platform **parse + filter + game-type exclusion** described here is **not built yet**; it is the fix for "finds every version of Paper Mario / TTYD" and for baking platform specifics into the result. It lands with Core.
+
+**Coverage gaps are separate from matching.** Some UPCs are simply absent from UPCitemdb (observed: certain Nintendo titles, e.g. *Link's Awakening*), so resolution returns *no product at all* — no amount of match-tuning helps. Those degrade to manual search (cleaned prefill) today, and are mitigated by (a) the multi-source resolver / enrichment worker in **Spec 2**, and (b) organic growth as scans are confirmed. Core should treat "no product found" as a first-class state in the scan-for-info UI (offer manual search), not a dead end.
+
 ---
 
 ## 4. Scan-for-info screen + ownership semantics
