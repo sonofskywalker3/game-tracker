@@ -108,6 +108,15 @@ def registry_put(conn: sqlite3.Connection, upc: str, *, igdb_id: int | None = No
     )
 
 
+def registry_upcs_for_game(conn: sqlite3.Connection, game_id: int) -> list[dict]:
+    """All known UPC -> platform rows for a game (the per-platform UPC set)."""
+    rows = conn.execute(
+        "SELECT upc, platform FROM barcode_registry WHERE game_id = ? ORDER BY platform",
+        (game_id,),
+    ).fetchall()
+    return [{"upc": r["upc"], "platform": r["platform"]} for r in rows]
+
+
 def _owned_game_id(conn: sqlite3.Connection, title: str) -> int | None:
     """id of an existing game whose normalized title matches, else None."""
     if not title:
