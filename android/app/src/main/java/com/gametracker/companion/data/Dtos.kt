@@ -51,6 +51,27 @@ data class SlotCandidate(
     val status: String? = null,
 )
 
+// /api/slots returns each ranked candidate as a wrapper: {game: <full game row>,
+// reasons, score, time_to_beat_minutes}. The game's id/title live under `game`.
+@Serializable
+data class RankedCandidate(
+    val game: SlotCandidate,
+    val reasons: List<String> = emptyList(),
+    val score: Double? = null,
+    @SerialName("time_to_beat_minutes") val timeToBeatMinutes: Int? = null,
+)
+
+// recently_finished rows are slot_history joined to game title/cover — keyed by
+// game_id (not id), so they need their own shape.
+@Serializable
+data class RecentlyFinished(
+    @SerialName("game_id") val gameId: Int? = null,
+    val title: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val outcome: String? = null,
+    @SerialName("removed_at") val removedAt: String? = null,
+)
+
 @Serializable
 data class Slot(
     val id: Int,
@@ -58,13 +79,13 @@ data class Slot(
     val goal: String? = null,
     @SerialName("sort_order") val sortOrder: Int = 0,
     @SerialName("current_game") val currentGame: SlotCandidate? = null,
-    val candidates: List<SlotCandidate> = emptyList(),
+    val candidates: List<RankedCandidate> = emptyList(),
 )
 
 @Serializable
 data class SlotsResponse(
     val slots: List<Slot> = emptyList(),
-    @SerialName("recently_finished") val recentlyFinished: List<SlotCandidate> = emptyList(),
+    @SerialName("recently_finished") val recentlyFinished: List<RecentlyFinished> = emptyList(),
 )
 
 @Serializable

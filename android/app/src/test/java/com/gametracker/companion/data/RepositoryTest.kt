@@ -123,4 +123,31 @@ class RepositoryTest {
         assertTrue(sent.contains("\"upc\":\"upc-1\""))
         assertTrue(sent.contains("\"physical\":true"))
     }
+
+    @Test fun slots_parses_real_payload_with_wrapper_candidates_and_recently_finished() = runTest {
+        // Mirrors the live /api/slots shape: current_game is a full game row (extra keys
+        // ignored); each candidate is a {game, reasons, score, time_to_beat_minutes} wrapper;
+        // recently_finished rows are keyed by game_id (not id). Regression for the parse
+        // failure that left Picks stuck on its error state.
+        server.enqueue(MockResponse().setBody(
+            """{"slots":[{"id":2,"label":"Switch · Long","goal":null,"sort_order":0,
+                 "current_game_id":688,"completionist":0,
+                 "current_game":{"id":688,"title":"Kirby","cover_url":"https://x/k.jpg",
+                                 "igdb_id":1,"normalized_title":"kirby"},
+                 "candidates":[
+                   {"game":{"id":42,"title":"Advance Wars","cover_url":null,"igdb_id":9},
+                    "reasons":["short"],"score":1.5,"time_to_beat_minutes":600}]}],
+               "recently_finished":[
+                 {"game_id":7,"title":"FF7R","cover_url":null,"outcome":"completed",
+                  "removed_at":"2026-06-20"}]}"""
+        ))
+        val result = repo.slots()
+        assertTrue(result.isSuccess)
+        val state = result.getOrThrow()
+        assertEquals(1, state.slots.size)
+        assertEquals(688, state.slots[0].currentGame?.id)
+        assertEquals("Advance Wars", state.slots[0].candidates[0].game.title)
+        assertEquals(42, state.slots[0].candidates[0].game.id)
+        assertEquals(7, state.recentlyFinished[0].gameId)
+    }
 }
