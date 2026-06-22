@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gametracker.companion.data.Slot
 import com.gametracker.companion.data.SlotsResponse
+import com.gametracker.companion.ui.common.AppScaffold
 import com.gametracker.companion.ui.common.CoverImage
 import com.gametracker.companion.ui.common.UiState
 import com.gametracker.companion.ui.common.rememberAppFactory
@@ -27,16 +28,20 @@ import com.gametracker.companion.ui.common.rememberAppFactory
 fun PicksScreen(onOpenGame: (Int) -> Unit) {
     val vm: PicksViewModel = viewModel(factory = rememberAppFactory())
     LaunchedEffect(Unit) { vm.load() }
-    when (val s = vm.state.collectAsState().value) {
-        is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-        is UiState.Empty -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No slots yet") }
-        is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Can't reach Game Tracker — VPN connected?")
-                Button(onClick = { vm.load() }) { Text("Retry") }
+    AppScaffold(title = "Picks") { pad ->
+        Box(Modifier.padding(pad).fillMaxSize()) {
+            when (val s = vm.state.collectAsState().value) {
+                is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                is UiState.Empty -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No slots yet") }
+                is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Can't reach Game Tracker — VPN connected?")
+                        Button(onClick = { vm.load() }) { Text("Retry") }
+                    }
+                }
+                is UiState.Success -> PicksContent(s.data, vm, onOpenGame)
             }
         }
-        is UiState.Success -> PicksContent(s.data, vm, onOpenGame)
     }
 }
 

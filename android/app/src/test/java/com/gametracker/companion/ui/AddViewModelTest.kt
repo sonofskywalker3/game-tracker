@@ -42,4 +42,16 @@ class AddViewModelTest {
         assertEquals("scan-upc", body.upc)
         assertEquals(listOf("ps5"), body.platforms)
     }
+
+    @Test fun add_uses_chosen_platforms_not_all_igdb_platforms() = runTest {
+        val repo = FakeRepo(igdb = emptyList())
+        val vm = AddViewModel(repo.asRepository())
+        // IGDB lists three platforms; the owner only owns PC.
+        vm.add(
+            IgdbResult(name = "Jedi Outcast", platforms = listOf("PC", "Xbox", "GC")),
+            platforms = listOf("PC"),
+        )
+        advanceUntilIdle()
+        assertEquals(listOf("PC"), repo.created.single().platforms)
+    }
 }

@@ -27,19 +27,28 @@ class PicksViewModel(private val repository: Repository) : ViewModel() {
     }
 
     fun pin(slotId: Int, gameId: Int, goal: String?) = viewModelScope.launch {
-        if (repository.pin(slotId, gameId, goal).isSuccess) load()
+        if (repository.pin(slotId, gameId, goal).isSuccess) refresh()
     }
 
     fun applyOutcome(slotId: Int, outcome: String) = viewModelScope.launch {
-        if (repository.outcome(slotId, outcome).isSuccess) load()
+        if (repository.outcome(slotId, outcome).isSuccess) refresh()
     }
 
     fun editGoal(slotId: Int, goal: String?) = viewModelScope.launch {
-        if (repository.setGoal(slotId, goal).isSuccess) load()
+        if (repository.setGoal(slotId, goal).isSuccess) refresh()
     }
 
     fun reorder(slotIds: List<Int>) = viewModelScope.launch {
-        if (repository.reorderSlots(slotIds).isSuccess) load()
+        if (repository.reorderSlots(slotIds).isSuccess) refresh()
+    }
+
+    /** Reload after a mutation WITHOUT going through Loading — keeps PicksContent
+     *  (and its HorizontalPager) composed so the view stays on the current slot
+     *  instead of snapping back to the first. */
+    private suspend fun refresh() {
+        repository.slots().onSuccess {
+            _state.value = if (it.slots.isEmpty()) UiState.Empty else UiState.Success(it)
+        }
     }
 
     fun searchLibrary(q: String) = viewModelScope.launch {
