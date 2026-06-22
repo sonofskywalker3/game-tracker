@@ -18,7 +18,7 @@ class LibraryViewModelTest {
 
     @Test fun load_success_lists_games() = runTest {
         val vm = LibraryViewModel(FakeRepo(gamesList = games(3)).asRepository())
-        vm.load(); advanceUntilIdle()
+        advanceUntilIdle()   // init { load() }
         val s = vm.state.value
         assertTrue(s is UiState.Success)
         assertEquals(3, (s as UiState.Success).data.size)
@@ -26,19 +26,21 @@ class LibraryViewModelTest {
 
     @Test fun load_empty_when_no_games() = runTest {
         val vm = LibraryViewModel(FakeRepo(gamesList = emptyList()).asRepository())
-        vm.load(); advanceUntilIdle()
+        advanceUntilIdle()
         assertEquals(UiState.Empty, vm.state.value)
     }
 
     @Test fun error_when_unreachable() = runTest {
         val vm = LibraryViewModel(FakeRepo(reachable = false).asRepository())
-        vm.load(); advanceUntilIdle()
+        advanceUntilIdle()
         assertTrue(vm.state.value is UiState.Error)
     }
 
     @Test fun search_requeries() = runTest {
         val vm = LibraryViewModel(FakeRepo(gamesList = games(1)).asRepository())
-        vm.onSearch("hal"); advanceUntilIdle()
+        advanceUntilIdle()
+        vm.onSearch("hal"); advanceUntilIdle()   // debounced reload
+        assertEquals("hal", vm.query.value)
         assertTrue(vm.state.value is UiState.Success)
     }
 }

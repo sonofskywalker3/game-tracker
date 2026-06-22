@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import com.gametracker.companion.App
+import com.gametracker.companion.ui.common.AppScaffold
 import com.gametracker.companion.ui.common.rememberAppFactory
 import com.gametracker.companion.vpn.TunnelStatus
 import com.gametracker.companion.vpn.parseWgConfig
@@ -101,9 +102,11 @@ fun SettingsScreen(
         }
     }
 
+    AppScaffold(title = "Settings") { pad ->
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(pad)
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -227,5 +230,6 @@ fun SettingsScreen(
                 onClick = { scope.launch { vpnController.disconnect() } }
             ) { Text("Disconnect") }
         }
+    }
     }
 }

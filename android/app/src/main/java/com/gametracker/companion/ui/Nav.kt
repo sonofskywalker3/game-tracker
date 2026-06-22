@@ -62,7 +62,7 @@ fun AppNav() {
                 com.gametracker.companion.ui.add.AddScreen(
                     initialQuery = entry.arguments?.getString("prefill"),
                     pendingUpc = entry.arguments?.getString("upc"),
-                    onOpenGame = { id -> nav.navigate("detail/$id") },
+                    onOpenGame = { id -> nav.navigate("detail/$id?added=true") },
                     onScan = { nav.navigate("scan") },
                 )
             }
@@ -72,9 +72,19 @@ fun AppNav() {
                     onNavigateToQrScan = { nav.navigate("vpn-scan") }
                 )
             }
-            composable("detail/{id}") { entry ->
+            composable(
+                "detail/{id}?added={added}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("added") { defaultValue = "false" },
+                ),
+            ) { entry ->
                 val id = entry.arguments?.getString("id")?.toIntOrNull() ?: return@composable
-                com.gametracker.companion.ui.detail.DetailScreen(gameId = id)
+                val added = entry.arguments?.getString("added") == "true"
+                com.gametracker.companion.ui.detail.DetailScreen(
+                    gameId = id,
+                    justAdded = added,
+                    onBack = { nav.popBackStack() },
+                )
             }
             composable("scan") {
                 com.gametracker.companion.ui.scan.ScanScreen(

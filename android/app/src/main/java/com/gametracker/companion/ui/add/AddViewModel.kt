@@ -23,10 +23,12 @@ class AddViewModel(private val repository: Repository) : ViewModel() {
         )
     }
 
-    /** Create the game; returns the new game_id (or null on failure). */
-    suspend fun add(result: IgdbResult, physical: Boolean = false, upc: String? = null): Int? =
+    /** Create the game with the platforms the user actually owns (not every platform
+     *  IGDB lists). Returns the new game_id (or null on failure). */
+    suspend fun add(result: IgdbResult, platforms: List<String> = result.platforms,
+                    physical: Boolean = false, upc: String? = null): Int? =
         repository.createGame(
             title = result.name, coverUrl = result.coverUrl,
-            platforms = result.platforms, physical = physical, upc = upc,
+            platforms = platforms, physical = physical, upc = upc,
         ).getOrNull()?.gameId
 }

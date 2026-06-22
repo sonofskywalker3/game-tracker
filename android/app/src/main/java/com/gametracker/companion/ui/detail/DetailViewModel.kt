@@ -25,6 +25,11 @@ class DetailViewModel(private val repository: Repository) : ViewModel() {
     }
 
     fun changeStatus(id: Int, status: String) = viewModelScope.launch {
-        if (repository.setStatus(id, status).isSuccess) load(id)
+        if (repository.setStatus(id, status).isSuccess) refresh(id)
+    }
+
+    /** Re-fetch the game after a mutation without flashing the loading spinner. */
+    private suspend fun refresh(id: Int) {
+        repository.game(id).onSuccess { _state.value = UiState.Success(it) }
     }
 }
