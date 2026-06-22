@@ -29,6 +29,7 @@ import com.google.mlkit.vision.common.InputImage
 fun QrScanScreen(onConfig: (String) -> Unit) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(false) }
+    var fired by remember { mutableStateOf(false) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -66,7 +67,7 @@ fun QrScanScreen(onConfig: (String) -> Unit) {
                             .addOnSuccessListener { codes ->
                                 codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }
                                     ?.rawValue
-                                    ?.let { onConfig(it) }
+                                    ?.let { if (!fired) { fired = true; onConfig(it) } }
                             }
                             .addOnCompleteListener { proxy.close() }
                     } else {
