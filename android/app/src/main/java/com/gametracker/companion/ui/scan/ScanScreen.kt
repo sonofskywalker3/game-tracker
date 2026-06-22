@@ -83,7 +83,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
             is ScanState.Candidates -> ResultCard {
                 s.candidates.forEach { c: BarcodeCandidate ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CoverImage(c.coverUrl, c.title ?: "", Modifier.width(40.dp).height(56.dp))
+                        CoverImage(c.coverUrl, c.title ?: "", Modifier.width(40.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(c.title ?: "Unknown", Modifier.weight(1f))
                         Button(onClick = { vm.addCandidate(c, s.upc) }) { Text("Add") }

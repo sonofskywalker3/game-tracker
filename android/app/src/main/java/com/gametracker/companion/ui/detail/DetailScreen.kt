@@ -30,7 +30,9 @@ fun DetailScreen(gameId: Int) {
 private fun DetailContent(g: GameDetail, onStatus: (String) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        CoverImage(g.coverUrl, g.title, Modifier.fillMaxWidth().height(280.dp))
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            CoverImage(g.coverUrl, g.title, Modifier.height(260.dp))
+        }
         Text(g.title, style = MaterialTheme.typography.headlineSmall)
         Text("Platforms: " + g.platforms.mapNotNull { it.shortName ?: it.name }.joinToString(", "))
         g.hoursPlayed?.let { Text("Hours: $it") }

@@ -60,7 +60,7 @@ fun LibraryScreen(onOpenGame: (Int) -> Unit) {
                 LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.fillMaxSize()) {
                     items(st.data, key = { it.id }) { g ->
                         Column(Modifier.padding(6.dp).clickable { onOpenGame(g.id) }) {
-                            CoverImage(g.coverUrl, g.title, Modifier.fillMaxWidth().height(150.dp))
+                            CoverImage(g.coverUrl, g.title, Modifier.fillMaxWidth())
                             Text(g.title, maxLines = 2, style = MaterialTheme.typography.labelSmall)
                         }
                     }
