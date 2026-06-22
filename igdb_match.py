@@ -73,6 +73,10 @@ _PLATFORM_OVERLAP = 50
 _MOBILE_PENALTY = -80
 _HAS_COVER = 10
 _BUNDLE_GAME_TYPE = 3
+
+# IGDB game_type values that represent a real, standalone game worth matching a
+# physical scan to. Excludes mods/forks (fan games, ROM hacks) and add-on types.
+REAL_GAME_TYPES = frozenset({0, 3, 8, 9, 10, 11})  # main, bundle, remake, remaster, expanded, port
 _REVIEW_MARGIN = 1                                 # flag when best beats stored by >= this
 _STRONG_MATCH = _TITLE_EXACT + _PLATFORM_OVERLAP   # bar for flagging an unmatched game
 
@@ -241,10 +245,15 @@ def _as_identity(igdb_id: int | None, name: str | None, cover_url: str | None, s
 
 
 def candidates_for(title: str, game_platform_ids: set[int],
-                   collection_name: str | None, client_id: str, token: str
-                   ) -> list[dict]:
+                   collection_name: str | None, client_id: str, token: str,
+                   *, drop_fan_types: bool = False,
+                   restrict_to_platform: bool = False) -> list[dict]:
     """Ranked identity candidates, bundle-derived first then scored search.
-    Each: {igdb_id, name, cover_url, platforms, source, score?}."""
+    Each: {igdb_id, name, cover_url, platforms, source, score?}.
+
+    drop_fan_types: drop candidates whose game_type is not a REAL_GAME_TYPE.
+    restrict_to_platform: when game_platform_ids is non-empty, drop candidates
+    whose platforms don't overlap it."""
     out: list[dict] = []
     seen: set[int] = set()
     target = normalize_title(title)
@@ -260,6 +269,11 @@ def candidates_for(title: str, game_platform_ids: set[int],
     for c in score_candidates(fetch_candidates(title, client_id, token),
                               game_platform_ids=game_platform_ids, title=title):
         if c.get("id") in seen:
+            continue
+        if drop_fan_types and c.get("game_type") not in REAL_GAME_TYPES:
+            continue
+        plats = set(c.get("platforms") or [])
+        if restrict_to_platform and game_platform_ids and not (plats & game_platform_ids):
             continue
         out.append({"igdb_id": c.get("id"), "name": c.get("name"),
                     "cover_url": cover_url_of(c), "platforms": c.get("platforms") or [],

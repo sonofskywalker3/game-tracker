@@ -1,3 +1,4 @@
+import igdb_dlc
 import igdb_match
 import models
 
@@ -417,3 +418,21 @@ def test_modal_candidates_drops_candidate_matching_current_cover():
     ]
     out = igdb_match.modal_candidates(cands, "Bugsnax", current_cover="https://x/co_same.jpg")
     assert [c["igdb_id"] for c in out] == [11]   # the candidate equal to current is dropped
+
+
+def test_candidates_for_drops_fan_types_and_wrong_platform(monkeypatch):
+    SWITCH = 130
+    rows = [
+        {"id": 1, "name": "Paper Mario: TTYD", "platforms": [130], "game_type": 8,
+         "cover": {"url": "//x/t_thumb/a.jpg"}, "total_rating_count": 50},   # remake, Switch
+        {"id": 2, "name": "Paper Mario: TTYD", "platforms": [21], "game_type": 0,
+         "cover": {"url": "//x/t_thumb/b.jpg"}, "total_rating_count": 80},   # GameCube original
+        {"id": 3, "name": "Paper Mario: TTYD", "platforms": [130], "game_type": 5,
+         "cover": {"url": "//x/t_thumb/c.jpg"}, "total_rating_count": 10},   # mod/ROM hack
+    ]
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda *a, **k: rows)
+    out = igdb_match.candidates_for(
+        "Paper Mario: TTYD", {SWITCH}, None, "cid", "tok",
+        drop_fan_types=True, restrict_to_platform=True)
+    ids = [c["igdb_id"] for c in out]
+    assert ids == [1]   # only the Switch remake survives
