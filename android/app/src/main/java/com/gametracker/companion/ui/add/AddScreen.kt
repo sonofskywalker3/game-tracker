@@ -45,7 +45,7 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> U
                                 else snackbar.showSnackbar("Couldn't add — it may already be in your library")
                             }
                         }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CoverImage(r.coverUrl, r.name, Modifier.width(48.dp).height(64.dp))
+                            CoverImage(r.coverUrl, r.name, Modifier.width(48.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(r.name)
                         }

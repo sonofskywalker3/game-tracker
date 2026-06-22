@@ -1,10 +1,12 @@
 package com.gametracker.companion.ui.picks
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -40,7 +42,11 @@ fun PicksScreen(onOpenGame: (Int) -> Unit) {
 
 @Composable
 private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (Int) -> Unit) {
-    val active = data.slots.filter { it.currentGame != null }
+    if (data.slots.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No slots yet") }
+        return
+    }
+
     var assignForSlot by remember { mutableStateOf<Int?>(null) }
 
     // Assign search dialog
@@ -94,48 +100,76 @@ private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (I
         )
     }
 
+    val pager = rememberPagerState(pageCount = { data.slots.size })
+    val currentSlot = data.slots[pager.currentPage]
+
     Column(Modifier.fillMaxSize()) {
-        if (active.isNotEmpty()) {
-            val pager = rememberPagerState(pageCount = { active.size })
-            HorizontalPager(
-                state = pager,
-                pageSpacing = 12.dp,
-                contentPadding = PaddingValues(horizontal = 32.dp),
+        // Carousel over all slots (including empty)
+        HorizontalPager(
+            state = pager,
+            pageSpacing = 12.dp,
+            contentPadding = PaddingValues(horizontal = 40.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) { page ->
+            val slot = data.slots[page]
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(320.dp),
-            ) { page ->
-                val slot = active[page]
-                Card(onClick = { slot.currentGame?.let { onOpenGame(it.id) } }) {
-                    CoverImage(
-                        slot.currentGame?.coverUrl,
-                        slot.currentGame?.title ?: "",
-                        Modifier
-                            .fillMaxWidth()
-                            .height(260.dp),
-                    )
-                    Text(slot.label, Modifier.padding(8.dp), style = MaterialTheme.typography.titleSmall)
-                    slot.goal?.let { Text(it, Modifier.padding(horizontal = 8.dp)) }
-                }
+                    .then(
+                        if (slot.currentGame != null)
+                            Modifier.clickable { onOpenGame(slot.currentGame.id) }
+                        else
+                            Modifier
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                CoverImage(
+                    slot.currentGame?.coverUrl,
+                    slot.currentGame?.title ?: slot.label,
+                    Modifier.height(240.dp),
+                )
             }
         }
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(data.slots, key = { it.id }) { slot ->
-                SlotRow(slot, data.slots, vm, onOpenGame, onAssign = { assignForSlot = slot.id })
+
+        // Page indicator dots
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(data.slots.size) { i ->
+                val selected = i == pager.currentPage
+                Surface(
+                    modifier = Modifier
+                        .padding(horizontal = 3.dp)
+                        .size(if (selected) 8.dp else 6.dp),
+                    shape = CircleShape,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                ) {}
             }
         }
+
+        // Detail panel for the currently selected slot
+        SlotDetailPanel(
+            slot = currentSlot,
+            allSlots = data.slots,
+            vm = vm,
+            onAssign = { assignForSlot = currentSlot.id },
+        )
     }
 }
 
 @Composable
-private fun SlotRow(
+private fun SlotDetailPanel(
     slot: Slot,
     allSlots: List<Slot>,
     vm: PicksViewModel,
-    onOpenGame: (Int) -> Unit,
     onAssign: () -> Unit,
 ) {
-    var showGoalDialog by remember { mutableStateOf(false) }
+    var showGoalDialog by remember(slot.id) { mutableStateOf(false) }
     var goalText by remember(slot.id) { mutableStateOf(slot.goal ?: "") }
 
     if (showGoalDialog) {
@@ -162,12 +196,21 @@ private fun SlotRow(
         )
     }
 
-    Card(Modifier.fillMaxWidth().padding(8.dp)) {
-        Column(Modifier.padding(12.dp)) {
+    val idx = allSlots.indexOfFirst { it.id == slot.id }
+
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Slot label + reorder buttons
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(slot.label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                // Up/Down reorder buttons
-                val idx = allSlots.indexOfFirst { it.id == slot.id }
+                Text(
+                    slot.label,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 IconButton(
                     onClick = {
                         if (idx > 0) {
@@ -189,28 +232,74 @@ private fun SlotRow(
                     enabled = idx < allSlots.size - 1,
                 ) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move down") }
             }
+
             val g = slot.currentGame
             if (g != null) {
+                Text(g.title, style = MaterialTheme.typography.bodyLarge)
+
+                // Goal row
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(g.title, Modifier.weight(1f))
+                    Text(
+                        if (slot.goal != null) "Goal: ${slot.goal}" else "No goal set",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     IconButton(onClick = { showGoalDialog = true }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Edit goal")
                     }
                 }
-                slot.goal?.let { Text("Goal: $it", style = MaterialTheme.typography.bodySmall) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.applyOutcome(slot.id, "beat") }) { Text("Complete") }
-                    OutlinedButton(onClick = { vm.applyOutcome(slot.id, "complete") }) { Text("100%") }
-                    OutlinedButton(onClick = { vm.applyOutcome(slot.id, "dropped") }) { Text("Drop") }
-                    OutlinedButton(onClick = { vm.applyOutcome(slot.id, "swap") }) { Text("Swap") }
-                    OutlinedButton(onClick = onAssign) { Text("Assign") }
+
+                // Outcome buttons — two rows of two, then Assign full-width
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedButton(
+                        onClick = { vm.applyOutcome(slot.id, "beat") },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Complete", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = { vm.applyOutcome(slot.id, "complete") },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("100%", maxLines = 1) }
                 }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedButton(
+                        onClick = { vm.applyOutcome(slot.id, "dropped") },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Drop", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = { vm.applyOutcome(slot.id, "swap") },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Swap", maxLines = 1) }
+                }
+                Button(
+                    onClick = onAssign,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Assign game") }
             } else {
-                Text("Empty — candidates:", style = MaterialTheme.typography.bodySmall)
-                slot.candidates.take(3).forEach { c ->
-                    TextButton(onClick = { vm.pin(slot.id, c.game.id, null) }) { Text(c.game.title) }
+                Text(
+                    "Empty slot",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (slot.candidates.isNotEmpty()) {
+                    Text("Quick picks:", style = MaterialTheme.typography.labelMedium)
+                    slot.candidates.take(3).forEach { c ->
+                        OutlinedButton(
+                            onClick = { vm.pin(slot.id, c.game.id, null) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(c.game.title, maxLines = 1) }
+                    }
                 }
-                OutlinedButton(onClick = onAssign) { Text("Assign") }
+                Button(
+                    onClick = onAssign,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Assign game") }
             }
         }
     }
