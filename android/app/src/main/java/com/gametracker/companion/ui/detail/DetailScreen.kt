@@ -16,7 +16,7 @@ import com.gametracker.companion.ui.common.rememberAppFactory
 
 @Composable
 fun DetailScreen(gameId: Int) {
-    val vm: DetailViewModel = viewModel(factory = rememberAppFactory())
+    val vm: DetailViewModel = viewModel(key = gameId.toString(), factory = rememberAppFactory())
     LaunchedEffect(gameId) { vm.load(gameId) }
     when (val s = vm.state.collectAsState().value) {
         is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
