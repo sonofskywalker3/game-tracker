@@ -134,6 +134,11 @@ SUBSCRIPTION_PLATFORM_SEED = (
     ("Amazon Luna", "Luna"),
 )
 
+# Short_names of the seeded mobile + subscription platforms, so classify_platform
+# (and thus the idempotent category re-derive) keeps them out of modern_console.
+MOBILE_PLATFORM_SHORTS = frozenset(short for _, short in MOBILE_PLATFORM_SEED)
+SUBSCRIPTION_PLATFORM_SHORTS = frozenset(short for _, short in SUBSCRIPTION_PLATFORM_SEED)
+
 # Legacy platforms that DID have a digital storefront (eShop/PSN/XBLA), so their
 # games still need a physical/digital qualifier. Pure cartridge/disc legacy do not.
 DIGITAL_MARKET_LEGACY_OVERRIDES = frozenset({"3DS", "WiiU", "PS3", "X360", "Vita", "PSP"})
@@ -143,6 +148,10 @@ def classify_platform(short_name: str) -> str:
     """Map a platform short_name to an era category."""
     if short_name in PC_PLATFORMS:
         return PC_CATEGORY
+    if short_name in MOBILE_PLATFORM_SHORTS:
+        return MOBILE_CATEGORY
+    if short_name in SUBSCRIPTION_PLATFORM_SHORTS:
+        return SUBSCRIPTION_CATEGORY
     if short_name in LEGACY_PLATFORMS:
         return LEGACY_CONSOLE
     return MODERN_CONSOLE
