@@ -80,3 +80,20 @@ data class CreateGameResponse(
     @SerialName("game_id") val gameId: Int? = null,
     val error: String? = null,
 )
+
+@Serializable
+data class BarcodeCandidate(
+    @SerialName("igdb_id") val igdbId: Int? = null,
+    val title: String? = null,
+    val platform: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("owned_game_id") val ownedGameId: Int? = null,
+)
+
+@Serializable
+data class BarcodeResolveResponse(
+    val upc: String,
+    val source: String,
+    val candidates: List<BarcodeCandidate> = emptyList(),
+    @SerialName("product_title") val productTitle: String? = null,
+)

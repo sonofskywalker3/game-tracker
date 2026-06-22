@@ -10,11 +10,13 @@ class FakeRepo(
     private val detail: GameDetail? = null,
     private val slotsResp: SlotsResponse = SlotsResponse(),
     private val igdb: List<IgdbResult> = emptyList(),
+    private val resolveResp: BarcodeResolveResponse = BarcodeResolveResponse("", "none"),
 ) {
     val pinned = mutableListOf<Triple<Int, Int, String?>>()
     val outcomes = mutableListOf<Pair<Int, String>>()
     val statusSets = mutableListOf<Pair<Int, String>>()
     val reorders = mutableListOf<List<Int>>()
+    val created = mutableListOf<CreateGameBody>()
 
     private val api = object : GameTrackerApi {
         override suspend fun games(status: String?, platform: String?, search: String?, sort: String?) =
@@ -24,7 +26,13 @@ class FakeRepo(
             else detail ?: throw RuntimeException("no detail")
         override suspend fun updateGame(id: Int, body: StatusBody) { statusSets += id to body.status }
         override suspend fun igdbSearch(q: String) = igdb
-        override suspend fun createGame(body: CreateGameBody) = CreateGameResponse(gameId = 1)
+        override suspend fun createGame(body: CreateGameBody): CreateGameResponse {
+            created += body
+            return if (reachable) CreateGameResponse(gameId = 1)
+                   else throw RuntimeException("unreachable")
+        }
+        override suspend fun resolveBarcode(upc: String): BarcodeResolveResponse =
+            if (reachable) resolveResp else throw RuntimeException("unreachable")
         override suspend fun slots() =
             if (reachable) slotsResp else throw RuntimeException("unreachable")
         override suspend fun pin(id: Int, body: PinBody) { pinned += Triple(id, body.game_id, body.goal) }

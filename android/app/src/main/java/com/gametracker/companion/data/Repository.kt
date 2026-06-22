@@ -28,4 +28,12 @@ class Repository(private val api: GameTrackerApi) {
 
     suspend fun reorderSlots(slotIds: List<Int>): Result<Unit> =
         runCatching { api.reorderSlots(ReorderBody(slotIds)) }
+
+    suspend fun resolveBarcode(upc: String): Result<BarcodeResolveResponse> =
+        runCatching { api.resolveBarcode(upc) }
+
+    suspend fun createGame(title: String, coverUrl: String? = null,
+                           platforms: List<String> = emptyList(),
+                           physical: Boolean = false, upc: String? = null): Result<CreateGameResponse> =
+        runCatching { api.createGame(CreateGameBody(title, coverUrl, platforms, physical, upc)) }
 }
