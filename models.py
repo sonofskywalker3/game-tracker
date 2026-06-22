@@ -119,6 +119,10 @@ MODERN_CONSOLE = "modern_console"
 LEGACY_CONSOLE = "legacy_console"
 PC_CATEGORY = "pc"
 
+# Legacy platforms that DID have a digital storefront (eShop/PSN/XBLA), so their
+# games still need a physical/digital qualifier. Pure cartridge/disc legacy do not.
+DIGITAL_MARKET_LEGACY_OVERRIDES = frozenset({"3DS", "WiiU", "PS3", "X360", "Vita", "PSP"})
+
 
 def classify_platform(short_name: str) -> str:
     """Map a platform short_name to an era category."""
@@ -515,6 +519,28 @@ def migrate_platform_category(conn):
         conn.execute(
             "UPDATE platforms SET category = ? WHERE id = ?",
             (classify_platform(row[1]), row[0]),
+        )
+    conn.commit()
+
+
+def migrate_platform_digital_market(conn: sqlite3.Connection) -> None:
+    """Add platforms.has_digital_market and (re)seed it. Idempotent.
+
+    Default by category: modern_console / pc / mobile / subscription have a digital
+    market (1); legacy_console does not (0), except the eShop/PSN-era overrides."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(platforms)").fetchall()]
+    if "has_digital_market" not in cols:
+        conn.execute(
+            "ALTER TABLE platforms ADD COLUMN has_digital_market INTEGER NOT NULL DEFAULT 0"
+        )
+    for row in conn.execute("SELECT id, short_name, category FROM platforms").fetchall():
+        has_market = (
+            row[2] in ("modern_console", "pc", "mobile", "subscription")
+            or row[1] in DIGITAL_MARKET_LEGACY_OVERRIDES
+        )
+        conn.execute(
+            "UPDATE platforms SET has_digital_market = ? WHERE id = ?",
+            (1 if has_market else 0, row[0]),
         )
     conn.commit()
 
@@ -958,6 +984,9 @@ def migrate_db():
 
     # Add/backfill platform era category
     migrate_platform_category(conn)
+
+    # Add/backfill has_digital_market flag
+    migrate_platform_digital_market(conn)
 
     # Seed legacy consoles as selectable platforms
     migrate_seed_legacy_platforms(conn)
