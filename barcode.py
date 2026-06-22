@@ -48,6 +48,33 @@ _NOISE_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(w) for w in _RETAIL_NOISE_WORDS) + r")\b",
     re.IGNORECASE,
 )
+# Retail platform phrase (as it appears in UPC titles) -> app short_name. Longest
+# phrases first so "nintendo switch" wins over "switch". Extensible.
+RETAIL_PLATFORM_TO_SHORT: tuple[tuple[str, str], ...] = (
+    ("nintendo switch 2", "Switch"), ("nintendo switch", "Switch"), ("switch", "Switch"),
+    ("playstation 5", "PS5"), ("ps5", "PS5"),
+    ("playstation 4", "PS4"), ("ps4", "PS4"),
+    ("playstation 3", "PS3"), ("ps3", "PS3"),
+    ("xbox series x|s", "Xbox"), ("xbox series x", "Xbox"), ("xbox series s", "Xbox"),
+    ("xbox one", "Xbox"), ("xbox 360", "X360"), ("xbox", "Xbox"),
+    ("wii u", "WiiU"), ("wii", "Wii"),
+    ("nintendo 3ds", "3DS"), ("3ds", "3DS"), ("nintendo ds", "NDS"),
+    ("gamecube", "GC"), ("nintendo 64", "N64"),
+    ("pc", "PC"), ("windows", "PC"),
+)
+
+
+def parse_retail_platform(raw: str | None) -> str | None:
+    """First platform named in a retail product title, mapped to an app short_name."""
+    if not raw:
+        return None
+    low = raw.lower()
+    for phrase, short in RETAIL_PLATFORM_TO_SHORT:
+        if re.search(r"\b" + re.escape(phrase) + r"\b", low):
+            return short
+    return None
+
+
 # Separator dashes only (space on both sides) — leaves intra-word hyphens like
 # "Spider-Man" untouched.
 _SEP_DASH_RE = re.compile(r"\s+[-–—]+\s+")
