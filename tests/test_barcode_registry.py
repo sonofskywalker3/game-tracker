@@ -1,3 +1,4 @@
+import barcode
 import models
 
 
@@ -25,3 +26,16 @@ def test_migration_renames_old_cache_preserving_rows(tmp_path, monkeypatch):
     conn.close()
     assert row[0] == "Halo"
     assert "barcode_cache" not in tables
+
+
+def test_registry_upcs_for_game_lists_per_platform(temp_db):
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (7, 'Z', 'z')")
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (99, 'Other', 'other')")
+    barcode.registry_put(conn, "AAA", platform="Switch", game_id=7)
+    barcode.registry_put(conn, "BBB", platform="PS5", game_id=7)
+    barcode.registry_put(conn, "CCC", platform="Switch", game_id=99)  # other game
+    conn.commit()
+    rows = barcode.registry_upcs_for_game(conn, 7)
+    conn.close()
+    assert rows == [{"upc": "BBB", "platform": "PS5"}, {"upc": "AAA", "platform": "Switch"}]
