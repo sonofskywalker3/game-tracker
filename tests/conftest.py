@@ -28,6 +28,7 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_barcode_registry(conn)
     models.migrate_seed_extra_platforms(conn)
     models.migrate_platform_digital_market(conn)
+    models.migrate_game_platform_format(conn)
     models.seed_default_slots(conn)
     conn.close()
     return db_path
