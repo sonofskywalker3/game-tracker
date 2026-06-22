@@ -118,6 +118,21 @@ LEGACY_PLATFORM_SEED = (
 MODERN_CONSOLE = "modern_console"
 LEGACY_CONSOLE = "legacy_console"
 PC_CATEGORY = "pc"
+MOBILE_CATEGORY = "mobile"
+SUBSCRIPTION_CATEGORY = "subscription"
+
+MOBILE_PLATFORM_SEED = (
+    ("iOS", "iOS"),
+    ("Android", "Android"),
+)
+SUBSCRIPTION_PLATFORM_SEED = (
+    ("Xbox Game Pass", "GamePass"),
+    ("PlayStation Plus", "PSPlus"),
+    ("Nintendo Switch Online", "NSO"),
+    ("EA Play", "EAPlay"),
+    ("Ubisoft+", "UbisoftPlus"),
+    ("Amazon Luna", "Luna"),
+)
 
 # Legacy platforms that DID have a digital storefront (eShop/PSN/XBLA), so their
 # games still need a physical/digital qualifier. Pure cartridge/disc legacy do not.
@@ -559,6 +574,17 @@ def migrate_seed_legacy_platforms(conn):
     conn.commit()
 
 
+def migrate_seed_extra_platforms(conn: sqlite3.Connection) -> None:
+    """Seed the mobile + subscription platform categories (stub for later catalogs).
+    Idempotent: INSERT OR IGNORE keys on the unique short_name."""
+    conn.executemany(
+        "INSERT OR IGNORE INTO platforms (name, short_name, category) VALUES (?, ?, ?)",
+        [(name, short, MOBILE_CATEGORY) for name, short in MOBILE_PLATFORM_SEED]
+        + [(name, short, SUBSCRIPTION_CATEGORY) for name, short in SUBSCRIPTION_PLATFORM_SEED],
+    )
+    conn.commit()
+
+
 def migrate_external_ids(conn):
     """Create the game_external_ids identity table if missing. Idempotent.
 
@@ -985,11 +1011,14 @@ def migrate_db():
     # Add/backfill platform era category
     migrate_platform_category(conn)
 
-    # Add/backfill has_digital_market flag
-    migrate_platform_digital_market(conn)
-
     # Seed legacy consoles as selectable platforms
     migrate_seed_legacy_platforms(conn)
+
+    # Seed mobile + subscription platform stubs
+    migrate_seed_extra_platforms(conn)
+
+    # Add/backfill has_digital_market flag (must run after all platform seeding)
+    migrate_platform_digital_market(conn)
 
     # Add the external-ids identity table
     migrate_external_ids(conn)
