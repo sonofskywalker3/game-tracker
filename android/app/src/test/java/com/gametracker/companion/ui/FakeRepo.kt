@@ -19,7 +19,9 @@ class FakeRepo(
     private val api = object : GameTrackerApi {
         override suspend fun games(status: String?, platform: String?, search: String?, sort: String?) =
             if (reachable) gamesList else throw RuntimeException("unreachable")
-        override suspend fun game(id: Int) = detail ?: throw RuntimeException("no detail")
+        override suspend fun game(id: Int) =
+            if (!reachable) throw RuntimeException("unreachable")
+            else detail ?: throw RuntimeException("no detail")
         override suspend fun updateGame(id: Int, body: StatusBody) { statusSets += id to body.status }
         override suspend fun igdbSearch(q: String) = igdb
         override suspend fun createGame(body: CreateGameBody) = CreateGameResponse(gameId = 1)
