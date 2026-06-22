@@ -50,12 +50,12 @@ def _seed_game(title, platform_short=None):
     return gid
 
 
-def test_cache_put_then_get_roundtrip(temp_db):
+def test_registry_put_then_get_roundtrip(temp_db):
     conn = models.get_db()
     game_id = _seed_game("Halo")
-    barcode.cache_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=game_id)
+    barcode.registry_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=game_id)
     conn.commit()
-    row = barcode.cache_get(conn, "abc")
+    row = barcode.registry_get(conn, "abc")
     conn.close()
     assert row["igdb_id"] == 42
     assert row["title"] == "Halo"
@@ -66,7 +66,7 @@ def test_cache_put_then_get_roundtrip(temp_db):
 def test_resolve_returns_cache_hit_without_calling_api(temp_db, monkeypatch):
     conn = models.get_db()
     game_id = _seed_game("Halo")
-    barcode.cache_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=game_id)
+    barcode.registry_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=game_id)
     conn.commit()
 
     def fail(*a, **k):

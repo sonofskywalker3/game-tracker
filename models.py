@@ -844,13 +844,21 @@ def migrate_psn_addons_synced_at(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def migrate_barcode_cache(conn: sqlite3.Connection) -> None:
-    """Self-growing UPC -> game cache for mobile barcode scanning.
+def migrate_barcode_registry(conn: sqlite3.Connection) -> None:
+    """Permanent UPC -> game registry for mobile barcode scanning. Every confirmed
+    scan writes a row, so repeat scans are instant, free, and human-accurate.
 
-    Each confirmed scan writes a row, so repeat scans of the same barcode are
-    instant, free, and human-accurate (no UPC-API rate limit, no fuzzy parsing)."""
+    Renamed from barcode_cache: if the old table exists and the new one does not,
+    rename it in place (preserving all rows); otherwise create barcode_registry.
+    Idempotent."""
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if "barcode_cache" in tables and "barcode_registry" not in tables:
+        conn.execute("ALTER TABLE barcode_cache RENAME TO barcode_registry")
+        conn.commit()
+        return
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS barcode_cache (
+        CREATE TABLE IF NOT EXISTS barcode_registry (
             upc TEXT PRIMARY KEY,
             igdb_id INTEGER,
             title TEXT,
@@ -980,7 +988,7 @@ def migrate_db():
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
-    migrate_barcode_cache(conn)
+    migrate_barcode_registry(conn)
     migrate_decider_chats(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
