@@ -50,10 +50,25 @@ fun AppNav() {
             composable("library") {
                 com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
             }
-            composable("settings") { com.gametracker.companion.ui.settings.SettingsScreen() }
+            composable("settings") { backStackEntry ->
+                com.gametracker.companion.ui.settings.SettingsScreen(
+                    backStackEntry = backStackEntry,
+                    onNavigateToQrScan = { nav.navigate("vpn-scan") }
+                )
+            }
             composable("detail/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toIntOrNull() ?: return@composable
                 com.gametracker.companion.ui.detail.DetailScreen(gameId = id)
+            }
+            composable("vpn-scan") {
+                com.gametracker.companion.ui.vpn.QrScanScreen(onConfig = { conf ->
+                    // Pass the raw conf text back to the Settings back-stack entry,
+                    // then pop back to Settings. SettingsScreen reads + validates it.
+                    nav.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("scanned_conf", conf)
+                    nav.popBackStack()
+                })
             }
         }
     }
