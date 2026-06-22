@@ -880,6 +880,30 @@
             return checkboxes + dropdown;
         }
 
+        function renderPlatformFormats(game) {
+            // Per-platform Physical/Digital toggle. Shown only for owned platforms
+            // whose platform has a digital storefront (has_digital_market); pure
+            // cartridge/disc legacy systems have no format choice (spec §2.3).
+            const owned = (game.platforms || []).filter(p => p.has_digital_market);
+            if (!owned.length) return '';
+            return '<div class="text-xs text-gray-400 mb-1 mt-2">Format</div>' +
+                owned.map(p => {
+                    const fmt = p.format || 'digital';
+                    return '<div class="flex items-center gap-2 mb-1">' +
+                        '<span class="platform-badge platform-' + p.short_name + '">' + p.short_name + '</span>' +
+                        '<select onchange="setPlatformFormat(' + game.id + ', \'' + p.short_name + '\', this.value)" ' +
+                        'class="bg-surface rounded border border-gray-600 px-2 py-1 text-white text-xs focus:border-accent focus:outline-none">' +
+                        '<option value="physical"' + (fmt === 'physical' ? ' selected' : '') + '>Physical</option>' +
+                        '<option value="digital"' + (fmt === 'digital' ? ' selected' : '') + '>Digital</option>' +
+                        '</select></div>';
+                }).join('');
+        }
+
+        async function setPlatformFormat(gameId, shortName, fmt) {
+            await api.put('/api/games/' + gameId, { platform_formats: { [shortName]: fmt } });
+            if (typeof refreshGameList === 'function') refreshGameList();
+        }
+
         // Load stats into nav
         async function loadNavStats() {
             const el = document.getElementById('stats-summary');
@@ -1120,6 +1144,9 @@
                                 <label class="block text-sm font-medium text-gray-400 mb-1">Platforms</label>
                                 <div class="flex flex-wrap gap-2" id="platform-checkboxes-${game.id}">
                                     ${renderPlatformCheckboxes(game)}
+                                </div>
+                                <div id="platform-formats-${game.id}">
+                                    ${renderPlatformFormats(game)}
                                 </div>
                             </div>
                             <div>
@@ -1497,6 +1524,7 @@
 
             await api.put(`/api/games/${gameId}`, { platforms: platforms });
             if (typeof refreshGameList === 'function') refreshGameList();
+            if (typeof loadGameModal === 'function') loadGameModal(gameId);
         }
 
         // Swap the game's legacy platform: drop whatever legacy platform it had
@@ -1512,6 +1540,7 @@
             if (shortName) platforms.push(shortName);
             await api.put(`/api/games/${gameId}`, { platforms: platforms });
             if (typeof refreshGameList === 'function') refreshGameList();
+            if (typeof loadGameModal === 'function') loadGameModal(gameId);
         }
 
         // Add Game Modal
