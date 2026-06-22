@@ -223,7 +223,7 @@ def api_create_game():
 
     if existing:
         if upc:
-            barcode.cache_put(conn, upc, igdb_id=existing['igdb_id'], title=title,
+            barcode.registry_put(conn, upc, igdb_id=existing['igdb_id'], title=title,
                               game_id=existing['id'])
             conn.commit()
         conn.close()
@@ -292,7 +292,7 @@ def api_create_game():
         igdb_row = conn.execute(
             "SELECT igdb_id FROM games WHERE id = ?", (game_id,)
         ).fetchone()
-        barcode.cache_put(conn, upc, igdb_id=igdb_row['igdb_id'] if igdb_row else None,
+        barcode.registry_put(conn, upc, igdb_id=igdb_row['igdb_id'] if igdb_row else None,
                           title=title, platform=platform_short, game_id=game_id)
         conn.commit()
 

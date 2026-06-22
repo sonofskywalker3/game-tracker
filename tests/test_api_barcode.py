@@ -44,7 +44,7 @@ def test_resolve_requires_upc(client):
 def test_resolve_returns_cache_hit(client, monkeypatch):
     import models
     conn = models.get_db()
-    barcode.cache_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=None)
+    barcode.registry_put(conn, "abc", igdb_id=42, title="Halo", platform="xbox", game_id=None)
     conn.commit()
     conn.close()
 
@@ -71,7 +71,7 @@ def test_post_game_with_upc_writes_cache(client):
     gid = resp.get_json()["game_id"]
 
     conn = models.get_db()
-    row = barcode.cache_get(conn, "abc123")
+    row = barcode.registry_get(conn, "abc123")
     conn.close()
     assert row is not None
     assert row["game_id"] == gid
@@ -87,7 +87,7 @@ def test_post_existing_game_with_upc_links_existing(client):
     assert dup.status_code == 409
 
     conn = models.get_db()
-    row = barcode.cache_get(conn, "ean999")
+    row = barcode.registry_get(conn, "ean999")
     conn.close()
     assert row["game_id"] == gid
 
@@ -96,7 +96,7 @@ def test_post_game_without_upc_writes_no_cache_row(client):
     import models
     client.post("/api/games", json={"title": "Tunic"})
     conn = models.get_db()
-    count = conn.execute("SELECT COUNT(*) FROM barcode_cache").fetchone()[0]
+    count = conn.execute("SELECT COUNT(*) FROM barcode_registry").fetchone()[0]
     conn.close()
     assert count == 0
 
@@ -117,7 +117,7 @@ def test_existing_game_with_upc_caches_igdb_id(client):
     assert resp.get_json()["game_id"] == gid
 
     conn = models.get_db()
-    row = barcode.cache_get(conn, "upc-existing")
+    row = barcode.registry_get(conn, "upc-existing")
     conn.close()
     assert row["game_id"] == gid
     assert row["igdb_id"] == 555
@@ -141,7 +141,7 @@ def test_post_game_with_upc_caches_igdb_id_from_enrichment(client, monkeypatch):
     gid = resp.get_json()["game_id"]
 
     conn = models.get_db()
-    row = barcode.cache_get(conn, "upc-enrich")
+    row = barcode.registry_get(conn, "upc-enrich")
     conn.close()
     assert row["game_id"] == gid
     assert row["igdb_id"] == 424242
