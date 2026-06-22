@@ -176,12 +176,15 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
     {igdb_id, title, platform, cover_url, game_type, owned_game_id, owned_platforms}."""
     cached = registry_get(conn, upc)
     if cached:
+        owned_id = cached["game_id"] or _owned_game_id(conn, cached["title"] or "")
         return {"upc": upc, "source": "cache", "scanned_platform": None, "candidates": [{
             "igdb_id": cached["igdb_id"],
             "title": cached["title"],
             "platform": cached["platform"],
             "cover_url": None,
-            "owned_game_id": cached["game_id"] or _owned_game_id(conn, cached["title"] or ""),
+            "game_type": None,
+            "owned_game_id": owned_id,
+            "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
         }]}
 
     product = lookup_product_title(upc)

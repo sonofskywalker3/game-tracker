@@ -183,3 +183,22 @@ def test_resolve_records_unmatched_scan(client, monkeypatch):
     row = barcode.registry_get(conn, "NEW123")
     conn.close()
     assert row is not None and row["game_id"] is None   # recorded, not owned
+
+
+def test_resolve_cache_hit_includes_owned_platforms(client):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (8,'Halo','halo')")
+    conn.execute("INSERT OR IGNORE INTO platforms (name, short_name, category, has_digital_market) "
+                 "VALUES ('Xbox','Xbox','modern_console',1)")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='Xbox'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (8, ?, 'physical')", (pid,))
+    barcode.registry_put(conn, "HALOUPC", igdb_id=1, title="Halo", platform="Xbox", game_id=8)
+    conn.commit()
+    conn.close()
+    body = client.get("/api/barcode/resolve?upc=HALOUPC").get_json()
+    assert body["source"] == "cache"
+    cand = body["candidates"][0]
+    assert cand["owned_game_id"] == 8
+    assert cand["owned_platforms"] == [{"short_name": "Xbox", "format": "physical", "has_digital_market": 1}]
