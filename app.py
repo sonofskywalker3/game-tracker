@@ -331,9 +331,11 @@ def api_game(game_id):
 
     result = dict(game)
 
-    # Get platforms
+    # Get platforms (with per-platform format + the platform's digital-market flag,
+    # which drives the (Physical/Digital) qualifier in the editor and on mobile)
     platforms = conn.execute("""
-        SELECT p.id, p.name, p.short_name
+        SELECT p.id, p.name, p.short_name, p.category,
+               p.has_digital_market, gp.format
         FROM platforms p
         JOIN game_platforms gp ON gp.platform_id = p.id
         WHERE gp.game_id = ?

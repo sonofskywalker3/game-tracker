@@ -706,3 +706,22 @@ def test_add_platform_to_existing_game(client):
     conn.close()
     assert fmt == "physical"
     assert reg["game_id"] == 1 and reg["platform"] == "Switch"
+
+
+def test_game_detail_platforms_include_format_and_market(client):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1, 'A', 'a')")
+    conn.execute("INSERT INTO platforms (name, short_name, category, has_digital_market) "
+                 "VALUES ('PlayStation 5', 'PS5', 'modern_console', 1)")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, ?, 'digital')", (pid,))
+    conn.commit()
+    conn.close()
+
+    p = client.get("/api/games/1").get_json()["platforms"][0]
+    assert p["short_name"] == "PS5"
+    assert p["format"] == "digital"
+    assert p["has_digital_market"] == 1
+    assert p["category"] == "modern_console"
