@@ -202,3 +202,35 @@ def test_resolve_cache_hit_includes_owned_platforms(client):
     cand = body["candidates"][0]
     assert cand["owned_game_id"] == 8
     assert cand["owned_platforms"] == [{"short_name": "Xbox", "format": "physical", "has_digital_market": 1}]
+
+
+def test_resolve_reports_owned_bundle_constituents(client, monkeypatch):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES "
+                 "(10, 'Mega Man X', ?)", (models.normalize_title("Mega Man X"),))
+    conn.execute("INSERT OR IGNORE INTO platforms (name, short_name, category, has_digital_market) "
+                 "VALUES ('Super Nintendo','SNES','legacy_console',0)")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='SNES'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (10, ?, 'physical')", (pid,))
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(barcode, "lookup_product_title",
+                        lambda upc: "Mega Man X Legacy Collection (Nintendo Switch)")
+    monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 500, "name": "Mega Man X Legacy Collection", "platforms": [130],
+         "cover_url": "c", "source": "search", "score": 100, "game_type": 3}])
+    monkeypatch.setattr(barcode.igdb_match, "bundle_constituents", lambda *a, **k: [
+        {"igdb_id": 1, "name": "Mega Man X", "normalized_title": "mega man x",
+         "cover_url": "x", "platforms": [19]},
+        {"igdb_id": 2, "name": "Mega Man X2", "normalized_title": "mega man x2",
+         "cover_url": "y", "platforms": [19]}])
+
+    body = client.get("/api/barcode/resolve?upc=MMX").get_json()
+    cons = body["candidates"][0]["constituents"]
+    owned = {c["title"]: c["owned_platforms"] for c in cons}
+    assert owned["Mega Man X"] == [{"short_name": "SNES", "format": "physical",
+                                    "has_digital_market": 0}]
+    assert owned["Mega Man X2"] == []

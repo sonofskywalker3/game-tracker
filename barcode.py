@@ -214,6 +214,21 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
                 "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
             })
 
+    BUNDLE_GAME_TYPE = 3
+    if client_id and token:
+        for cand in candidates:
+            if cand.get("game_type") != BUNDLE_GAME_TYPE or not cand.get("igdb_id"):
+                continue
+            cons = []
+            for k in igdb_match.bundle_constituents(cand["igdb_id"], client_id, token):
+                owned_id = _owned_game_id(conn, k.get("name") or "")
+                cons.append({
+                    "title": k.get("name"),
+                    "owned_game_id": owned_id,
+                    "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
+                })
+            cand["constituents"] = cons
+
     # Record EVERY scan (knowledge, not ownership): upc -> best-guess title/igdb,
     # game_id stays NULL until a confirmed add links it.
     top = candidates[0] if candidates else None
