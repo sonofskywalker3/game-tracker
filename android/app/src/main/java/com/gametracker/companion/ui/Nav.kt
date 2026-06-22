@@ -51,7 +51,10 @@ fun AppNav() {
                 com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
             }
             composable("settings") { com.gametracker.companion.ui.settings.SettingsScreen() }
-            composable("detail/{id}") { Text("Detail") } // replaced in Task 6
+            composable("detail/{id}") { entry ->
+                val id = entry.arguments?.getString("id")?.toIntOrNull() ?: return@composable
+                com.gametracker.companion.ui.detail.DetailScreen(gameId = id)
+            }
         }
     }
 }
