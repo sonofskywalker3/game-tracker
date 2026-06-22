@@ -76,6 +76,17 @@ fun AppNav() {
                 val id = entry.arguments?.getString("id")?.toIntOrNull() ?: return@composable
                 com.gametracker.companion.ui.detail.DetailScreen(gameId = id)
             }
+            composable("scan") {
+                com.gametracker.companion.ui.scan.ScanScreen(
+                    onOpenGame = { id -> nav.navigate("detail/$id") },
+                    onManualSearch = { productTitle, upc ->
+                        val q = productTitle?.let { java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+                        nav.navigate("add?prefill=$q&upc=$upc") {
+                            popUpTo("scan") { inclusive = true }
+                        }
+                    },
+                )
+            }
             composable("vpn-scan") {
                 com.gametracker.companion.ui.vpn.QrScanScreen(onConfig = { conf ->
                     // Pass the raw conf text back to the Settings back-stack entry,
