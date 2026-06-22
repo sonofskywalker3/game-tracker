@@ -923,12 +923,19 @@ def api_update_game(game_id):
                 conn.execute("INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)",
                             (game_id, tag_id))
 
-        # Update platforms if provided
+        # Update platforms if provided (full replace). Preserve each platform's
+        # existing `format` across the delete+reinsert so editing membership never
+        # wipes the per-platform physical/digital values set elsewhere. The set of
+        # platforms inserted is unchanged from before — only `format` is carried.
         if 'platforms' in data:
-            # Remove existing platform links
+            existing_fmt = {
+                r['short_name']: r['format']
+                for r in conn.execute(
+                    "SELECT p.short_name, gp.format FROM game_platforms gp "
+                    "JOIN platforms p ON p.id = gp.platform_id WHERE gp.game_id = ?",
+                    (game_id,)).fetchall()
+            }
             conn.execute("DELETE FROM game_platforms WHERE game_id = ?", (game_id,))
-
-            # Add new platform links
             for platform_short_name in data['platforms']:
                 platform = conn.execute(
                     "SELECT id FROM platforms WHERE short_name = ?",
@@ -936,8 +943,9 @@ def api_update_game(game_id):
                 ).fetchone()
                 if platform:
                     conn.execute(
-                        "INSERT OR IGNORE INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
-                        (game_id, platform['id'])
+                        "INSERT OR IGNORE INTO game_platforms (game_id, platform_id, format) "
+                        "VALUES (?, ?, ?)",
+                        (game_id, platform['id'], existing_fmt.get(platform_short_name))
                     )
 
         # Single-platform add (mobile scan "I bought the <platform> copy"). Appends
