@@ -23,6 +23,8 @@ class AppViewModelFactory(private val c: AppContainer) : ViewModelProvider.Facto
                 com.gametracker.companion.ui.detail.DetailViewModel(c.repository) as T
             modelClass.isAssignableFrom(com.gametracker.companion.ui.add.AddViewModel::class.java) ->
                 com.gametracker.companion.ui.add.AddViewModel(c.repository) as T
+            modelClass.isAssignableFrom(com.gametracker.companion.ui.scan.ScanViewModel::class.java) ->
+                com.gametracker.companion.ui.scan.ScanViewModel(c.repository) as T
             else -> throw IllegalArgumentException("Unknown VM ${modelClass.name}")
         }
 }
