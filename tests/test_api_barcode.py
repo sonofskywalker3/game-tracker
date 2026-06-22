@@ -65,3 +65,49 @@ def test_post_game_without_upc_writes_no_cache_row(client):
     count = conn.execute("SELECT COUNT(*) FROM barcode_cache").fetchone()[0]
     conn.close()
     assert count == 0
+
+
+def test_existing_game_with_upc_caches_igdb_id(client):
+    import models
+    conn = models.get_db()
+    conn.execute(
+        "INSERT INTO games (title, normalized_title, igdb_id) VALUES (?, ?, ?)",
+        ("Owned RPG", models.normalize_title("Owned RPG"), 555),
+    )
+    gid = conn.execute("SELECT id FROM games WHERE title = 'Owned RPG'").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    resp = client.post("/api/games", json={"title": "Owned RPG", "upc": "upc-existing"})
+    assert resp.status_code == 409
+    assert resp.get_json()["game_id"] == gid
+
+    conn = models.get_db()
+    row = barcode.cache_get(conn, "upc-existing")
+    conn.close()
+    assert row["game_id"] == gid
+    assert row["igdb_id"] == 555
+
+
+def test_post_game_with_upc_caches_igdb_id_from_enrichment(client, monkeypatch):
+    import app
+    import igdb_dlc
+    import models
+
+    monkeypatch.setattr(app, "get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda client_id, secret: "tok")
+
+    def fake_enrich(conn, game_id, client_id, token):
+        conn.execute("UPDATE games SET igdb_id = ? WHERE id = ?", (424242, game_id))
+
+    monkeypatch.setattr(igdb_dlc, "enrich_game", fake_enrich)
+
+    resp = client.post("/api/games", json={"title": "Tunic Scan", "upc": "upc-enrich"})
+    assert resp.status_code == 201
+    gid = resp.get_json()["game_id"]
+
+    conn = models.get_db()
+    row = barcode.cache_get(conn, "upc-enrich")
+    conn.close()
+    assert row["game_id"] == gid
+    assert row["igdb_id"] == 424242
