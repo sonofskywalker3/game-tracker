@@ -681,3 +681,28 @@ def test_refresh_psn_409_when_scrape_busy(client, temp_db, monkeypatch):
     resp = client.post(f"/api/games/{gid}/dlc/refresh-psn")
     assert resp.status_code == 409
     assert resp.get_json()["started"] is False
+
+
+def test_add_platform_to_existing_game(client):
+    import models
+    import barcode
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1,'A','a')")
+    conn.execute("INSERT OR IGNORE INTO platforms (name, short_name, category) "
+                 "VALUES ('Nintendo Switch','Switch','modern_console')")
+    conn.commit()
+    conn.close()
+
+    resp = client.put("/api/games/1", json={
+        "add_platform": {"short_name": "Switch", "format": "physical", "upc": "U1"}})
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    fmt = conn.execute(
+        "SELECT gp.format FROM game_platforms gp JOIN platforms p "
+        "ON p.id=gp.platform_id WHERE gp.game_id=1 AND p.short_name='Switch'"
+    ).fetchone()[0]
+    reg = barcode.registry_get(conn, "U1")
+    conn.close()
+    assert fmt == "physical"
+    assert reg["game_id"] == 1 and reg["platform"] == "Switch"

@@ -245,6 +245,7 @@ def api_create_game():
 
     # Add platforms if provided
     platforms = data.get('platforms', [])
+    fmt = 'physical' if data.get('physical') else 'digital'
     for platform_short_name in platforms:
         platform = conn.execute(
             "SELECT id FROM platforms WHERE short_name = ?",
@@ -252,8 +253,8 @@ def api_create_game():
         ).fetchone()
         if platform:
             conn.execute(
-                "INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
-                (game_id, platform['id'])
+                "INSERT INTO game_platforms (game_id, platform_id, format) VALUES (?, ?, ?)",
+                (game_id, platform['id'], fmt)
             )
 
     # Optional physical-copy flag, surfaced via the 'Physical' tag (see api_games).
@@ -936,6 +937,25 @@ def api_update_game(game_id):
                         "INSERT OR IGNORE INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
                         (game_id, platform['id'])
                     )
+
+        # Single-platform add (mobile scan "I bought the <platform> copy"). Appends
+        # one platform with its format + records the UPC, without touching the
+        # existing full-`platforms` replace path above.
+        add = data.get('add_platform')
+        if add and add.get('short_name'):
+            prow = conn.execute(
+                "SELECT id FROM platforms WHERE short_name = ?", (add['short_name'],)
+            ).fetchone()
+            if prow:
+                conn.execute(
+                    "INSERT OR IGNORE INTO game_platforms (game_id, platform_id, format) "
+                    "VALUES (?, ?, ?)", (game_id, prow['id'], add.get('format')))
+                conn.execute(
+                    "UPDATE game_platforms SET format = ? WHERE game_id = ? AND platform_id = ?",
+                    (add.get('format'), game_id, prow['id']))
+            if add.get('upc'):
+                barcode.registry_put(conn, add['upc'], title=None,
+                                     platform=add['short_name'], game_id=game_id)
 
         conn.commit()
         return jsonify({'success': True})
