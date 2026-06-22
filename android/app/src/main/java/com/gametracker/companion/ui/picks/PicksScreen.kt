@@ -41,6 +41,59 @@ fun PicksScreen(onOpenGame: (Int) -> Unit) {
 @Composable
 private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (Int) -> Unit) {
     val active = data.slots.filter { it.currentGame != null }
+    var assignForSlot by remember { mutableStateOf<Int?>(null) }
+
+    // Assign search dialog
+    if (assignForSlot != null) {
+        val slotId = assignForSlot!!
+        var query by remember { mutableStateOf("") }
+        val pickerResults by vm.picker.collectAsState()
+        AlertDialog(
+            onDismissRequest = {
+                query = ""
+                vm.searchLibrary("")
+                assignForSlot = null
+            },
+            title = { Text("Assign game to slot") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it; vm.searchLibrary(it) },
+                        label = { Text("Search library") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(Modifier.heightIn(max = 240.dp)) {
+                        items(pickerResults, key = { it.id }) { game ->
+                            TextButton(
+                                onClick = {
+                                    vm.pin(slotId, game.id, null)
+                                    query = ""
+                                    vm.searchLibrary("")
+                                    assignForSlot = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                val platformLabel = game.platforms.firstOrNull()?.let { " ($it)" } ?: ""
+                                Text(game.title + platformLabel)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = {
+                    query = ""
+                    vm.searchLibrary("")
+                    assignForSlot = null
+                }) { Text("Cancel") }
+            },
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         if (active.isNotEmpty()) {
             val pager = rememberPagerState(pageCount = { active.size })
@@ -68,14 +121,20 @@ private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (I
         }
         LazyColumn(Modifier.fillMaxSize()) {
             items(data.slots, key = { it.id }) { slot ->
-                SlotRow(slot, data.slots, vm, onOpenGame)
+                SlotRow(slot, data.slots, vm, onOpenGame, onAssign = { assignForSlot = slot.id })
             }
         }
     }
 }
 
 @Composable
-private fun SlotRow(slot: Slot, allSlots: List<Slot>, vm: PicksViewModel, onOpenGame: (Int) -> Unit) {
+private fun SlotRow(
+    slot: Slot,
+    allSlots: List<Slot>,
+    vm: PicksViewModel,
+    onOpenGame: (Int) -> Unit,
+    onAssign: () -> Unit,
+) {
     var showGoalDialog by remember { mutableStateOf(false) }
     var goalText by remember(slot.id) { mutableStateOf(slot.goal ?: "") }
 
@@ -144,12 +203,14 @@ private fun SlotRow(slot: Slot, allSlots: List<Slot>, vm: PicksViewModel, onOpen
                     OutlinedButton(onClick = { vm.applyOutcome(slot.id, "complete") }) { Text("100%") }
                     OutlinedButton(onClick = { vm.applyOutcome(slot.id, "dropped") }) { Text("Drop") }
                     OutlinedButton(onClick = { vm.applyOutcome(slot.id, "swap") }) { Text("Swap") }
+                    OutlinedButton(onClick = onAssign) { Text("Assign") }
                 }
             } else {
                 Text("Empty — candidates:", style = MaterialTheme.typography.bodySmall)
                 slot.candidates.take(3).forEach { c ->
                     TextButton(onClick = { vm.pin(slot.id, c.id, null) }) { Text(c.title) }
                 }
+                OutlinedButton(onClick = onAssign) { Text("Assign") }
             }
         }
     }

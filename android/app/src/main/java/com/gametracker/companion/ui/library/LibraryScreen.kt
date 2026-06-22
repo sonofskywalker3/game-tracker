@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -24,6 +25,8 @@ fun LibraryScreen(onOpenGame: (Int) -> Unit) {
     LaunchedEffect(Unit) { vm.load() }
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
+    var platform by remember { mutableStateOf<String?>(null) }
+    val knownPlatforms = remember { mutableStateListOf<String>() }
     LaunchedEffect(query) { delay(300); vm.onSearch(query) }   // debounce
 
     Column(Modifier.fillMaxSize()) {
@@ -40,11 +43,27 @@ fun LibraryScreen(onOpenGame: (Int) -> Unit) {
             is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
             is UiState.Empty -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No games") }
             is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text(st.message) }
-            is UiState.Success -> LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.fillMaxSize()) {
-                items(st.data, key = { it.id }) { g ->
-                    Column(Modifier.padding(6.dp).clickable { onOpenGame(g.id) }) {
-                        CoverImage(g.coverUrl, g.title, Modifier.fillMaxWidth().height(150.dp))
-                        Text(g.title, maxLines = 2, style = MaterialTheme.typography.labelSmall)
+            is UiState.Success -> {
+                LaunchedEffect(st.data) {
+                    st.data.flatMap { it.platforms }.forEach { p ->
+                        if (!knownPlatforms.contains(p)) knownPlatforms.add(p)
+                    }
+                }
+                if (knownPlatforms.isNotEmpty()) {
+                    Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        knownPlatforms.sorted().forEach { p ->
+                            FilterChip(selected = platform == p, onClick = {
+                                platform = if (platform == p) null else p; vm.setPlatformFilter(platform)
+                            }, label = { Text(p) })
+                        }
+                    }
+                }
+                LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.fillMaxSize()) {
+                    items(st.data, key = { it.id }) { g ->
+                        Column(Modifier.padding(6.dp).clickable { onOpenGame(g.id) }) {
+                            CoverImage(g.coverUrl, g.title, Modifier.fillMaxWidth().height(150.dp))
+                            Text(g.title, maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }

@@ -60,4 +60,16 @@ class PicksViewModelTest {
         vm.reorder(listOf(2, 1)); advanceUntilIdle()
         assertEquals(listOf(2, 1), repo.reorders.single())
     }
+
+    @Test fun searchLibrary_populates_picker_and_clears_below_two_chars() = runTest {
+        val repo = FakeRepo(slotsResp = SlotsResponse(), gamesList = listOf(
+            com.gametracker.companion.data.GameSummary(1, "Halo"),
+            com.gametracker.companion.data.GameSummary(2, "Hades"),
+        ))
+        val vm = PicksViewModel(repo.asRepository())
+        vm.searchLibrary("ha"); advanceUntilIdle()
+        assertEquals(2, vm.picker.value.size)
+        vm.searchLibrary("h"); advanceUntilIdle()   // below 2 chars -> cleared
+        assertEquals(0, vm.picker.value.size)
+    }
 }
