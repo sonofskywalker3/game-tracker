@@ -26,6 +26,7 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_igdb_review_reason(conn)
     models.migrate_psn_addons_synced_at(conn)
     models.migrate_barcode_registry(conn)
+    models.migrate_platform_digital_market(conn)
     models.seed_default_slots(conn)
     conn.close()
     return db_path
