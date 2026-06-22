@@ -16,7 +16,8 @@ import retrofit2.http.Query
 @Serializable data class ReorderBody(val slot_ids: List<Int>)
 @Serializable data class CreateGameBody(val title: String, val cover_url: String? = null,
                                         val platforms: List<String> = emptyList(),
-                                        val physical: Boolean = false)
+                                        val physical: Boolean = false,
+                                        val upc: String? = null)
 
 interface GameTrackerApi {
     @GET("api/games")
@@ -35,6 +36,9 @@ interface GameTrackerApi {
 
     @GET("api/igdb/search")
     suspend fun igdbSearch(@Query("q") q: String): List<IgdbResult>
+
+    @GET("api/barcode/resolve")
+    suspend fun resolveBarcode(@Query("upc") upc: String): BarcodeResolveResponse
 
     @POST("api/games")
     suspend fun createGame(@Body body: CreateGameBody): CreateGameResponse
