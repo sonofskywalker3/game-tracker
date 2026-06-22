@@ -737,7 +737,8 @@ def test_platforms_replace_preserves_format(client):
     pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
     conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
                  "VALUES (1, ?, 'physical')", (pid,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
     # Add Switch via the full-replace path; PS5's existing format must survive.
     resp = client.put("/api/games/1", json={"platforms": ["PS5", "Switch"]})
@@ -750,3 +751,28 @@ def test_platforms_replace_preserves_format(client):
     conn.close()
     assert fmts["PS5"] == "physical"   # preserved, not wiped
     assert fmts["Switch"] is None      # newly added, no format yet
+
+
+def test_platform_formats_setter_updates_without_membership_change(client):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1, 'A', 'a')")
+    conn.execute("INSERT INTO platforms (name, short_name, category) "
+                 "VALUES ('PlayStation 5', 'PS5', 'modern_console')")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, ?, 'digital')", (pid,))
+    conn.commit()
+    conn.close()
+
+    resp = client.put("/api/games/1", json={
+        "platform_formats": {"PS5": "physical", "Bogus": "physical", "PS5_bad": "weird"}})
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    rows = conn.execute(
+        "SELECT p.short_name, gp.format FROM game_platforms gp "
+        "JOIN platforms p ON p.id = gp.platform_id WHERE gp.game_id = 1").fetchall()
+    conn.close()
+    assert len(rows) == 1                 # membership unchanged
+    assert dict(rows)["PS5"] == "physical"  # format updated
