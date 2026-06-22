@@ -46,7 +46,7 @@ fun AppNav() {
         NavHost(nav, startDestination = "picks", modifier = Modifier.padding(padding)) {
             composable("picks") { Text("Picks") }      // replaced in Task 4
             composable("library") { Text("Library") }  // replaced in Task 5
-            composable("settings") { Text("Settings") } // replaced in Task 3
+            composable("settings") { com.gametracker.companion.ui.settings.SettingsScreen() }
             composable("detail/{id}") { Text("Detail") } // replaced in Task 6
         }
     }
