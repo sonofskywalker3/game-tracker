@@ -145,3 +145,12 @@ def test_post_game_with_upc_caches_igdb_id_from_enrichment(client, monkeypatch):
     conn.close()
     assert row["game_id"] == gid
     assert row["igdb_id"] == 424242
+
+
+def test_parse_retail_platform():
+    assert barcode.parse_retail_platform(
+        "Mario Kart 8 Deluxe (Nintendo Switch)") == "Switch"
+    assert barcode.parse_retail_platform(
+        "God of War Ragnarok - PlayStation 5") == "PS5"
+    assert barcode.parse_retail_platform("Some PC Game") == "PC"
+    assert barcode.parse_retail_platform("No platform here") is None
