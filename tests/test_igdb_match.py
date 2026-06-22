@@ -436,3 +436,13 @@ def test_candidates_for_drops_fan_types_and_wrong_platform(monkeypatch):
         drop_fan_types=True, restrict_to_platform=True)
     ids = [c["igdb_id"] for c in out]
     assert ids == [1]   # only the Switch remake survives
+
+
+def test_candidates_for_returns_game_type(monkeypatch):
+    import igdb_dlc
+    import igdb_match
+    rows = [{"id": 1, "name": "X Collection", "platforms": [130], "game_type": 3,
+             "cover": {"url": "//x/t_thumb/a.jpg"}, "total_rating_count": 50}]
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda *a, **k: rows)
+    out = igdb_match.candidates_for("X Collection", {130}, None, "cid", "tok")
+    assert out[0]["game_type"] == 3

@@ -277,7 +277,8 @@ def candidates_for(title: str, game_platform_ids: set[int],
             continue
         out.append({"igdb_id": c.get("id"), "name": c.get("name"),
                     "cover_url": cover_url_of(c), "platforms": c.get("platforms") or [],
-                    "source": "search", "score": c["_score"]})
+                    "source": "search", "score": c["_score"],
+                    "game_type": c.get("game_type")})
     return out
 
 
