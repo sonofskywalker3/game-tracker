@@ -36,4 +36,7 @@ class Repository(private val api: GameTrackerApi) {
                            platforms: List<String> = emptyList(),
                            physical: Boolean = false, upc: String? = null): Result<CreateGameResponse> =
         runCatching { api.createGame(CreateGameBody(title, coverUrl, platforms, physical, upc)) }
+
+    suspend fun addPlatform(id: Int, shortName: String, format: String?, upc: String?): Result<Unit> =
+        runCatching { api.addPlatform(id, AddPlatformBody(AddPlatformPayload(shortName, format, upc))) }
 }
