@@ -74,4 +74,87 @@ class SlotScheduleTest {
         val short = ScheduleWindow(days = 0b0000011, startMin = 600, endMin = 660)
         assertEquals(240.0 + 120.0, restrictivenessScore(listOf(cross, short)), 0.0)
     }
+
+    // ---- test slot impl ----
+    private data class TestSlot(
+        override val id: Int,
+        override val sortOrder: Int,
+        override val windows: List<ScheduleWindow>,
+    ) : ScheduleSlot
+
+    private fun win(days: Int, start: Int, end: Int) = ScheduleWindow(days, start, end)
+    private val allDays = 0b1111111
+
+    // ---- orderActive: most-restrictive-first, anytime last, tie-break sortOrder then id ----
+    @Test fun orderActive_filtersInactive_andSortsByScore_anytimeLast() {
+        // now = Mon 21:00 (weekday 0, minute 1260)
+        val tight = TestSlot(1, 0, listOf(win(0b0000001, 1200, 1380)))   // Mon 20-23, 1 day*180=180
+        val wide  = TestSlot(2, 0, listOf(win(allDays, 1200, 1380)))     // every day 20-23, 7*180=1260
+        val anytime = TestSlot(3, 0, emptyList())                        // inf -> last
+        val inactive = TestSlot(4, 0, listOf(win(allDays, 360, 540)))    // 06-09, not active at 21:00
+        val ordered = orderActive(listOf(anytime, wide, tight, inactive), weekday = 0, minute = 1260)
+        assertEquals(listOf(1, 2, 3), ordered.map { it.id })             // tight, wide, anytime; inactive dropped
+    }
+
+    @Test fun orderActive_tieBreak_sortOrderThenId() {
+        // two slots with identical scores -> sortOrder asc, then id asc
+        val a = TestSlot(id = 9, sortOrder = 1, windows = listOf(win(allDays, 1200, 1380)))
+        val b = TestSlot(id = 8, sortOrder = 0, windows = listOf(win(allDays, 1200, 1380)))
+        val c = TestSlot(id = 7, sortOrder = 1, windows = listOf(win(allDays, 1200, 1380)))
+        val ordered = orderActive(listOf(a, b, c), weekday = 0, minute = 1260)
+        assertEquals(listOf(8, 7, 9), ordered.map { it.id })  // b(so0), then so1 by id: 7,9
+    }
+
+    @Test fun orderActive_midnightCross_activeInMorningPortion() {
+        // window Mon 22:00..02:00 ; now Tue 00:30 -> active via (weekday-1)%7
+        val late = TestSlot(1, 0, listOf(win(0b0000001, 1320, 120)))
+        val ordered = orderActive(listOf(late), weekday = 1, minute = 30)
+        assertEquals(listOf(1), ordered.map { it.id })
+    }
+
+    // ---- scheduleAwareOrder: active (ranked) then inactive (incoming order) ----
+    @Test fun scheduleAwareOrder_activeFirstThenInactiveInOrder() {
+        val activeWide = TestSlot(1, 0, listOf(win(allDays, 1200, 1380)))  // active
+        val inactiveA  = TestSlot(2, 0, listOf(win(allDays, 360, 540)))    // inactive
+        val activeTight= TestSlot(3, 0, listOf(win(0b0000001, 1200, 1380)))// active, more restrictive
+        val inactiveB  = TestSlot(4, 0, listOf(win(allDays, 0, 60)))       // inactive
+        val out = scheduleAwareOrder(listOf(activeWide, inactiveA, activeTight, inactiveB),
+                                     weekday = 0, minute = 1260)
+        assertEquals(listOf(3, 1, 2, 4), out.map { it.id })  // tight, wide, then inactive A,B in order
+    }
+
+    // ---- minutesUntilActive ----
+    @Test fun minutesUntilActive_zeroWhenActiveOrAnytime() {
+        assertEquals(0, minutesUntilActive(emptyList(), 0, 0))
+        val active = listOf(win(allDays, 1200, 1380))
+        assertEquals(0, minutesUntilActive(active, weekday = 0, minute = 1260))
+    }
+
+    @Test fun minutesUntilActive_laterToday() {
+        // 20:00 window, now 18:00 -> 120 min
+        assertEquals(120, minutesUntilActive(listOf(win(allDays, 1200, 1380)), weekday = 0, minute = 1080))
+    }
+
+    @Test fun minutesUntilActive_nextDay() {
+        // Tue-only 09:00 window, now Mon 23:00 -> until Tue 09:00 = 60 (to midnight) + 540 = 600
+        assertEquals(600, minutesUntilActive(listOf(win(0b0000010, 540, 600)), weekday = 0, minute = 1380))
+    }
+
+    @Test fun minutesUntilActive_nullWhenNever() {
+        assertNull(minutesUntilActive(listOf(win(0b0000000, 540, 600)), weekday = 0, minute = 0)) // no days set
+    }
+
+    // ---- nextUpcoming ----
+    @Test fun nextUpcoming_picksSoonestInactiveWithGame() {
+        val soon = TestSlot(1, 0, listOf(win(allDays, 1320, 1380)))  // 22:00, now 21:00 -> 60 min
+        val later= TestSlot(2, 0, listOf(win(allDays, 1380, 1410)))  // 23:00 -> 120 min
+        val out = nextUpcoming(listOf(later, soon), weekday = 0, minute = 1260, hasGame = { true })
+        assertEquals(1, out!!.slot.id)
+        assertEquals(60, out.minutesUntil)
+    }
+
+    @Test fun nextUpcoming_skipsSlotsWithoutGame_andReturnsNullWhenNone() {
+        val noGame = TestSlot(1, 0, listOf(win(allDays, 1320, 1380)))
+        assertNull(nextUpcoming(listOf(noGame), weekday = 0, minute = 1260, hasGame = { false }))
+    }
 }

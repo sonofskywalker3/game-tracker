@@ -73,3 +73,55 @@ fun restrictivenessScore(windows: List<ScheduleWindow>): Double {
     }
     return total.toDouble()
 }
+
+/**
+ * Active slots only, most-restrictive-first (score asc, then sortOrder, then id).
+ * Pure: rank is the returned list index (mirrors order_active's restrictiveness_rank
+ * output WITHOUT mutating the inputs).
+ */
+fun <T : ScheduleSlot> orderActive(slots: List<T>, weekday: Int, minute: Int): List<T> =
+    slots.filter { slotActiveAt(it.windows, weekday, minute) }
+        .sortedWith(
+            compareBy({ restrictivenessScore(it.windows) }, { it.sortOrder }, { it.id })
+        )
+
+/** Active slots (ranked) followed by the inactive slots in their incoming order. */
+fun <T : ScheduleSlot> scheduleAwareOrder(slots: List<T>, weekday: Int, minute: Int): List<T> {
+    val active = orderActive(slots, weekday, minute)
+    val activeIds = active.mapTo(HashSet()) { it.id }
+    val inactive = slots.filter { it.id !in activeIds }
+    return active + inactive
+}
+
+/**
+ * Minutes until the slot next becomes active, scanning the next 7 days minute-by-minute.
+ * 0 if active now (incl. anytime). null if it never activates within a week.
+ */
+fun minutesUntilActive(windows: List<ScheduleWindow>, weekday: Int, minute: Int): Int? {
+    if (slotActiveAt(windows, weekday, minute)) return 0
+    for (delta in 1..(7 * DAY_MINUTES)) {
+        val abs = weekday * DAY_MINUTES + minute + delta
+        val wd = (abs / DAY_MINUTES) % 7
+        val m = abs % DAY_MINUTES
+        if (windows.any { windowCovers(it, wd, m) }) return delta
+    }
+    return null
+}
+
+data class Upcoming<T>(val slot: T, val minutesUntil: Int)
+
+/**
+ * Among inactive slots passing [hasGame], the soonest to activate (tie-break sortOrder,
+ * then id). null if none qualify.
+ */
+fun <T : ScheduleSlot> nextUpcoming(
+    slots: List<T>,
+    weekday: Int,
+    minute: Int,
+    hasGame: (T) -> Boolean,
+): Upcoming<T>? =
+    slots.asSequence()
+        .filter { hasGame(it) && !slotActiveAt(it.windows, weekday, minute) }
+        .mapNotNull { s -> minutesUntilActive(s.windows, weekday, minute)?.let { Upcoming(s, it) } }
+        .sortedWith(compareBy({ it.minutesUntil }, { it.slot.sortOrder }, { it.slot.id }))
+        .firstOrNull()
