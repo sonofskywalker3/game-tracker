@@ -1,6 +1,7 @@
 package com.gametracker.companion.ui
 
 import com.gametracker.companion.data.BarcodeCandidate
+import com.gametracker.companion.data.BarcodeConstituent
 import com.gametracker.companion.data.BarcodeResolveResponse
 import com.gametracker.companion.data.OwnedPlatform
 import com.gametracker.companion.ui.scan.ScanState
@@ -63,6 +64,28 @@ class ScanViewModelTest {
         assertEquals("physical", payload.format)
         assertEquals("711", payload.upc)
         assertTrue(vm.state.value is ScanState.Added)
+    }
+
+    @Test fun bundle_candidate_keeps_constituents_in_info() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("MMX", "upc_api",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(
+                igdbId = 500, title = "Mega Man X Legacy Collection", platform = "Switch",
+                gameType = 3,
+                constituents = listOf(
+                    BarcodeConstituent(title = "Mega Man X", ownedGameId = 10,
+                        ownedPlatforms = listOf(OwnedPlatform("SNES", "physical", 0))),
+                    BarcodeConstituent(title = "Mega Man X2", ownedGameId = null))))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.onBarcode("MMX"); advanceUntilIdle()
+        val s = vm.state.value
+        assertTrue(s is ScanState.Info)
+        val cons = (s as ScanState.Info).candidate.constituents
+        assertEquals(2, cons.size)
+        assertEquals("Mega Man X", cons[0].title)
+        assertEquals(10, cons[0].ownedGameId)
+        assertEquals("SNES", cons[0].ownedPlatforms[0].shortName)
+        assertEquals(null, cons[1].ownedGameId)
     }
 
     @Test fun reset_returns_to_scanning() = runTest {
