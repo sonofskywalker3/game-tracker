@@ -1,4 +1,4 @@
-"""barcode.search_products_by_name: parse, failure->[], rate-limit capture."""
+"""barcode.search_products_by_name: parse, failure->None, empty->[], rate-limit capture."""
 import requests
 
 import barcode
@@ -34,17 +34,36 @@ def test_parses_items_into_title_upc(monkeypatch):
     assert barcode.last_rate_remaining() == 68
 
 
-def test_network_failure_returns_empty(monkeypatch):
+def test_network_failure_returns_none(monkeypatch):
     def boom(*a, **k):
         raise requests.Timeout("slow")
     monkeypatch.setattr(barcode.requests, "get", boom)
-    assert barcode.search_products_by_name("anything") == []
+    assert barcode.search_products_by_name("anything") is None
 
 
-def test_bad_json_returns_empty(monkeypatch):
+def test_bad_json_returns_none(monkeypatch):
     monkeypatch.setattr(barcode.requests, "get",
                         lambda *a, **k: _Resp(None, exc=ValueError("bad json")))
-    assert barcode.search_products_by_name("anything") == []
+    assert barcode.search_products_by_name("anything") is None
+
+
+def test_empty_items_returns_empty_list(monkeypatch):
+    """A 200 response with no items returns [] (genuinely empty, distinct from None)."""
+    monkeypatch.setattr(barcode.requests, "get",
+                        lambda *a, **k: _Resp({"items": []}, {"X-RateLimit-Remaining": "50"}))
+    result = barcode.search_products_by_name("no results game")
+    assert result == []
+
+
+def test_rate_limit_header_captured_before_raise(monkeypatch):
+    """X-RateLimit-Remaining is captured even when raise_for_status raises (e.g. 429)."""
+    barcode._last_rate_remaining = None
+    resp = _Resp(None, headers={"X-RateLimit-Remaining": "3"},
+                 exc=requests.HTTPError("429"))
+    monkeypatch.setattr(barcode.requests, "get", lambda *a, **k: resp)
+    result = barcode.search_products_by_name("anything")
+    assert result is None
+    assert barcode.last_rate_remaining() == 3
 
 
 def test_missing_header_leaves_remaining_none(monkeypatch):

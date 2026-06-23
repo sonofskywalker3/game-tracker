@@ -7,6 +7,7 @@ barcode_registry or rows to upc_review. External calls go through barcode.py
 """
 import logging
 import sqlite3
+import time
 
 import barcode
 import models
@@ -22,6 +23,7 @@ _MIN_CONTAIN_LEN = 4
 
 UPC_ENRICH_DAILY_BUDGET = 90          # < 100/day trial cap (shared per-IP bucket)
 UPC_ENRICH_QUOTA_SAFETY_MARGIN = 5    # stop if live remaining drops to/below this
+UPC_ENRICH_CALL_DELAY_SECONDS = 2     # inter-call throttle to avoid burst rate-limit
 
 
 def classify_match(normalized_title: str, short_name: str,
@@ -121,12 +123,16 @@ def set_enrichment_state(conn: sqlite3.Connection, *, last_run_date: str,
 
 def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET,
               search_fn=barcode.search_products_by_name,
-              remaining_fn=barcode.last_rate_remaining, progress=None) -> dict:
+              remaining_fn=barcode.last_rate_remaining, progress=None,
+              sleep_fn=time.sleep) -> dict:
     """Run one throttled enrichment batch. Idempotent + resumable.
 
     Selects up to `budget` eligible pairs, name-searches each, and writes a
     confident registry link / pending review / no_match row. Stops early if the
-    live trial quota (remaining_fn) drops to the safety margin. Commits per write.
+    live trial quota (remaining_fn) drops to the safety margin, or if a search
+    call fails (returns None). A failed call is never recorded as no_match.
+    Throttles between calls by sleeping UPC_ENRICH_CALL_DELAY_SECONDS (injectable
+    via sleep_fn for tests). Commits per write.
     """
     pairs = select_eligible_pairs(conn, limit=budget)
     total = len(pairs)
@@ -138,8 +144,13 @@ def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET
         if live is not None and live <= UPC_ENRICH_QUOTA_SAFETY_MARGIN:
             log.warning("UPC enrichment stopping: trial quota remaining=%s", live)
             break
+        if calls_used > 0:
+            sleep_fn(UPC_ENRICH_CALL_DELAY_SECONDS)
         products = search_fn(row["title"])
         calls_used += 1
+        if products is None:
+            log.warning("UPC enrichment stopping: name-search failed for %r", row["title"])
+            break
         verdict = classify_match(row["normalized_title"], row["short_name"], products)
         status = verdict["status"]
         if status == CONFIDENT:
