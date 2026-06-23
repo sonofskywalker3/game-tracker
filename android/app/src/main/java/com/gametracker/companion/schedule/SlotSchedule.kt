@@ -103,7 +103,7 @@ fun minutesUntilActive(windows: List<ScheduleWindow>, weekday: Int, minute: Int)
         val abs = weekday * DAY_MINUTES + minute + delta
         val wd = (abs / DAY_MINUTES) % 7
         val m = abs % DAY_MINUTES
-        if (windows.any { windowCovers(it, wd, m) }) return delta
+        if (slotActiveAt(windows, wd, m)) return delta
     }
     return null
 }
