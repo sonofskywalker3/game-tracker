@@ -20,6 +20,7 @@ def test_status_returns_shape(client):
     assert r.status_code == 200
     data = r.get_json()
     assert "status" in data and "remaining_eligible" in data and "remaining_today" in data
+    assert "last_run_date" in data
 
 
 def test_review_lists_pending(client):
@@ -72,4 +73,9 @@ def test_reject_marks_dismissed(client):
 
 def test_confirm_missing_row_404(client):
     r = client.post("/api/enrichment/review/99999/confirm")
+    assert r.status_code == 404
+
+
+def test_reject_missing_row_404(client):
+    r = client.post("/api/enrichment/review/99999/reject")
     assert r.status_code == 404

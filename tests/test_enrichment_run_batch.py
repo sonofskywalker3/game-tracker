@@ -84,6 +84,8 @@ def test_budget_caps_calls(temp_db):
     res = enrichment.run_batch(conn, budget=2, search_fn=fn, remaining_fn=lambda: None,
                                sleep_fn=_no_sleep)
     assert len(calls) == 2 and res["calls_used"] == 2
+    # the two budgeted lookups each resolve to a no_match write (title "x" is junk)
+    assert (res["no_match"], res["found"], res["queued"]) == (2, 0, 0)
     conn.close()
 
 

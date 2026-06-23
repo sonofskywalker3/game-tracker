@@ -57,7 +57,7 @@ def test_empty_items_returns_empty_list(monkeypatch):
 
 def test_rate_limit_header_captured_before_raise(monkeypatch):
     """X-RateLimit-Remaining is captured even when raise_for_status raises (e.g. 429)."""
-    barcode._last_rate_remaining = None
+    monkeypatch.setattr(barcode, "_last_rate_remaining", None)
     resp = _Resp(None, headers={"X-RateLimit-Remaining": "3"},
                  exc=requests.HTTPError("429"))
     monkeypatch.setattr(barcode.requests, "get", lambda *a, **k: resp)
@@ -67,8 +67,19 @@ def test_rate_limit_header_captured_before_raise(monkeypatch):
 
 
 def test_missing_header_leaves_remaining_none(monkeypatch):
-    barcode._last_rate_remaining = None  # reset module state for the assertion
+    monkeypatch.setattr(barcode, "_last_rate_remaining", None)  # auto-reverts after test
     monkeypatch.setattr(barcode.requests, "get",
                         lambda *a, **k: _Resp({"items": []}, {}))
     barcode.search_products_by_name("q")
     assert barcode.last_rate_remaining() is None
+
+
+def test_json_parse_error_returns_none(monkeypatch):
+    """A 200 whose body fails to parse (json() raises ValueError) returns None,
+    not [] — the json()-path is distinct from a raise_for_status failure."""
+    class _BadJson(_Resp):
+        def json(self):
+            raise ValueError("not json")
+    monkeypatch.setattr(barcode.requests, "get",
+                        lambda *a, **k: _BadJson({}, {"X-RateLimit-Remaining": "40"}))
+    assert barcode.search_products_by_name("anything") is None
