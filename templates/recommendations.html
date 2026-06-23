@@ -498,7 +498,7 @@
         // sensible default: weekdays 19:00-21:00
         const res = await api.post(`/api/slots/${slotId}/windows`,
             { days: 0b0011111, start_min: 1140, end_min: 1260 });
-        if (!res.ok) { alert('Could not add window: ' + (res.data.error || res.status)); return; }
+        if (!res.ok) { alert('Could not add window: ' + (res.data?.error || res.status)); return; }
         await loadSlate();
     }
 
@@ -506,7 +506,7 @@
         const payload = collectWindowPayload(slotId, windowId);
         if (payload.start_min === payload.end_min) { alert('Start and end times must differ.'); return; }
         const res = await api.put(`/api/slots/${slotId}/windows/${windowId}`, payload);
-        if (!res.ok) { alert('Could not save window: ' + (res.data.error || res.status)); return; }
+        if (!res.ok) { alert('Could not save window: ' + (res.data?.error || res.status)); return; }
         await loadSlate();
     }
 
