@@ -116,7 +116,8 @@ def lookup_product_title(upc: str, *, url: str = UPCITEMDB_TRIAL_URL,
 def registry_get(conn: sqlite3.Connection, upc: str) -> dict | None:
     """Return the cached mapping for a UPC, or None."""
     row = conn.execute(
-        "SELECT upc, igdb_id, title, platform, game_id FROM barcode_registry WHERE upc = ?",
+        "SELECT upc, igdb_id, title, platform, game_id, cover_url "
+        "FROM barcode_registry WHERE upc = ?",
         (upc,),
     ).fetchone()
     return dict(row) if row else None
@@ -124,14 +125,21 @@ def registry_get(conn: sqlite3.Connection, upc: str) -> dict | None:
 
 def registry_put(conn: sqlite3.Connection, upc: str, *, igdb_id: int | None = None,
                  title: str | None = None, platform: str | None = None,
+                 cover_url: str | None = None,
                  game_id: int | None = None) -> None:
-    """Upsert a UPC -> game mapping (stamps confirmed_at)."""
+    """Upsert a UPC -> game mapping (stamps confirmed_at).
+
+    cover_url is stored but never clobbered with NULL on update — an existing
+    cover is preserved when a later call omits it (COALESCE guard)."""
     conn.execute(
-        "INSERT INTO barcode_registry (upc, igdb_id, title, platform, game_id, confirmed_at) "
-        "VALUES (?, ?, ?, ?, ?, datetime('now')) "
+        "INSERT INTO barcode_registry "
+        "(upc, igdb_id, title, platform, cover_url, game_id, confirmed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, datetime('now')) "
         "ON CONFLICT(upc) DO UPDATE SET igdb_id=excluded.igdb_id, title=excluded.title, "
-        "platform=excluded.platform, game_id=excluded.game_id, confirmed_at=datetime('now')",
-        (upc, igdb_id, title, platform, game_id),
+        "platform=excluded.platform, "
+        "cover_url=COALESCE(excluded.cover_url, barcode_registry.cover_url), "
+        "game_id=excluded.game_id, confirmed_at=datetime('now')",
+        (upc, igdb_id, title, platform, cover_url, game_id),
     )
 
 
@@ -177,15 +185,16 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
     cached = registry_get(conn, upc)
     if cached:
         owned_id = cached["game_id"] or _owned_game_id(conn, cached["title"] or "")
-        return {"upc": upc, "source": "cache", "scanned_platform": None, "candidates": [{
-            "igdb_id": cached["igdb_id"],
-            "title": cached["title"],
-            "platform": cached["platform"],
-            "cover_url": None,
-            "game_type": None,
-            "owned_game_id": owned_id,
-            "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
-        }]}
+        return {"upc": upc, "source": "cache",
+                "scanned_platform": cached["platform"], "candidates": [{
+                    "igdb_id": cached["igdb_id"],
+                    "title": cached["title"],
+                    "platform": cached["platform"],
+                    "cover_url": cached["cover_url"],
+                    "game_type": None,
+                    "owned_game_id": owned_id,
+                    "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
+                }]}
 
     product = lookup_product_title(upc)
     if not product:
@@ -243,7 +252,9 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
     registry_put(conn, upc,
                  igdb_id=top["igdb_id"] if top else None,
                  title=top["title"] if top else search_title,
-                 platform=scanned_platform, game_id=None)
+                 platform=scanned_platform,
+                 cover_url=top["cover_url"] if top else None,
+                 game_id=None)
     conn.commit()
 
     if not candidates:

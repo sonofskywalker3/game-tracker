@@ -960,9 +960,17 @@ def api_update_game(game_id):
                 conn.execute(
                     "INSERT OR IGNORE INTO game_platforms (game_id, platform_id, format) "
                     "VALUES (?, ?, ?)", (game_id, prow['id'], add.get('format')))
+                existing = conn.execute(
+                    "SELECT format FROM game_platforms WHERE game_id = ? AND platform_id = ?",
+                    (game_id, prow['id'])).fetchone()
+                new_fmt = add.get('format')
+                cur_fmt = existing['format'] if existing else None
+                # Collector owns both: if a different format already exists, mark 'both'.
+                final_fmt = ('both' if cur_fmt and new_fmt and cur_fmt != new_fmt
+                             and cur_fmt != 'both' else (new_fmt or cur_fmt))
                 conn.execute(
                     "UPDATE game_platforms SET format = ? WHERE game_id = ? AND platform_id = ?",
-                    (add.get('format'), game_id, prow['id']))
+                    (final_fmt, game_id, prow['id']))
             if add.get('upc'):
                 barcode.registry_put(conn, add['upc'], title=None,
                                      platform=add['short_name'], game_id=game_id)

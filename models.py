@@ -931,6 +931,15 @@ def migrate_barcode_registry(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_barcode_registry_cover(conn: sqlite3.Connection) -> None:
+    """Add barcode_registry.cover_url so a re-scan (cache hit) can show the same
+    cover art the first scan did. Idempotent."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(barcode_registry)").fetchall()]
+    if "cover_url" not in cols:
+        conn.execute("ALTER TABLE barcode_registry ADD COLUMN cover_url TEXT")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -1074,6 +1083,7 @@ def migrate_db():
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
     migrate_barcode_registry(conn)
+    migrate_barcode_registry_cover(conn)
     migrate_game_platform_format(conn)
     migrate_decider_chats(conn)
     backfill_series_source(conn)

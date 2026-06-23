@@ -257,3 +257,40 @@ def test_resolve_retries_unrestricted_when_platform_filter_zeroes_out(client, mo
     body = client.get("/api/barcode/resolve?upc=OBSCURE1").get_json()
     assert calls == [True, False]          # restricted first, then unrestricted retry
     assert body["candidates"][0]["title"] == "Obscure Game"
+
+
+def test_registry_stores_and_returns_cover_url(temp_db):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (5,'G','g')")
+    barcode.registry_put(conn, "U1", title="G", platform="Switch",
+                         cover_url="http://x/c.jpg", game_id=5)
+    conn.commit()
+    row = barcode.registry_get(conn, "U1")
+    conn.close()
+    assert row["cover_url"] == "http://x/c.jpg"
+
+
+def test_registry_put_does_not_clobber_cover_with_null(temp_db):
+    import models
+    conn = models.get_db()
+    barcode.registry_put(conn, "U2", title="G", platform="Switch", cover_url="http://x/c.jpg")
+    barcode.registry_put(conn, "U2", title="G", platform="Switch")  # no cover this time
+    conn.commit()
+    row = barcode.registry_get(conn, "U2")
+    conn.close()
+    assert row["cover_url"] == "http://x/c.jpg"   # preserved
+
+
+def test_cache_hit_returns_platform_and_cover(client, monkeypatch):
+    import models
+    conn = models.get_db()
+    barcode.registry_put(conn, "CACHED1", igdb_id=9, title="Cached Game",
+                         platform="Switch", cover_url="http://x/cc.jpg")
+    conn.commit()
+    conn.close()
+    body = client.get("/api/barcode/resolve?upc=CACHED1").get_json()
+    assert body["source"] == "cache"
+    assert body["scanned_platform"] == "Switch"
+    assert body["candidates"][0]["cover_url"] == "http://x/cc.jpg"
+    assert body["candidates"][0]["platform"] == "Switch"
