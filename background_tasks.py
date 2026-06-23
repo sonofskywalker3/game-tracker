@@ -1,10 +1,14 @@
 """
 Background task manager for long-running operations.
 """
+import logging
 import threading
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
-from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,6 +23,10 @@ class TaskProgress:
     error: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    queued: int = 0
+    no_match: int = 0
+    last_run_date: Optional[str] = None
+    remaining_eligible: int = 0
 
 
 class TaskManager:
@@ -124,3 +132,98 @@ def get_cover_fetch_status() -> dict:
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
     }
+
+
+ENRICH_TASK_ID = "upc_enrichment"
+DRIP_SLEEP_SECONDS = 3 * 60 * 60   # re-check the daily gate every 3 hours
+
+
+def should_run_today(last_run_date: str | None, today: str) -> bool:
+    """The drip runs at most one batch per UTC calendar day."""
+    return last_run_date != today
+
+
+def get_enrichment_status() -> dict:
+    """Current enrichment task status (mirrors get_cover_fetch_status)."""
+    task = task_manager.get_task(ENRICH_TASK_ID)
+    if not task:
+        return {"status": "idle"}
+    return {
+        "status": task.status,
+        "current": task.current,
+        "total": task.total,
+        "found": task.found,
+        "queued": task.queued,
+        "no_match": task.no_match,
+        "error": task.error,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+    }
+
+
+def run_enrichment_background(budget: int, *, db_factory=None) -> tuple[bool, str]:
+    """Start one enrichment batch in a daemon thread. Mirrors cover-fetch."""
+    import enrichment
+    import models
+    db_factory = db_factory or models.get_db
+
+    if task_manager.is_running(ENRICH_TASK_ID):
+        return False, "Enrichment already in progress"
+    if budget <= 0:
+        return False, "Daily quota exhausted"
+
+    task = task_manager.create_task(ENRICH_TASK_ID)
+    task.status = "running"
+    task.started_at = datetime.now()
+
+    def do_run():
+        try:
+            conn = db_factory()
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            state = enrichment.get_enrichment_state(conn)
+            already = state["last_run_count"] if state["last_run_date"] == today else 0
+
+            def progress(done, total, found, queued, no_match):
+                task_manager.update_task(ENRICH_TASK_ID, current=done, total=total,
+                                         found=found, queued=queued, no_match=no_match)
+
+            result = enrichment.run_batch(conn, budget=budget, progress=progress)
+            enrichment.set_enrichment_state(
+                conn, last_run_date=today, last_run_count=already + result["calls_used"])
+            task_manager.update_task(
+                ENRICH_TASK_ID, status="complete", completed_at=datetime.now(),
+                found=result["found"], queued=result["queued"], no_match=result["no_match"],
+                current=result["calls_used"], total=result["total"])
+            conn.close()
+        except Exception as exc:  # daemon must never crash the app; logged + isolated
+            log.exception("UPC enrichment batch failed")
+            task_manager.update_task(ENRICH_TASK_ID, status="error", error=str(exc),
+                                     completed_at=datetime.now())
+
+    threading.Thread(target=do_run, daemon=True).start()
+    return True, "Enrichment started"
+
+
+def start_enrichment_drip(*, db_factory=None, sleep_fn=time.sleep) -> threading.Thread:
+    """Daemon: at most one batch per UTC day, re-checking every few hours."""
+    import enrichment
+    import models
+    db_factory = db_factory or models.get_db
+
+    def loop():
+        while True:
+            try:
+                conn = db_factory()
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                state = enrichment.get_enrichment_state(conn)
+                conn.close()
+                if should_run_today(state["last_run_date"], today):
+                    from enrichment import UPC_ENRICH_DAILY_BUDGET
+                    run_enrichment_background(UPC_ENRICH_DAILY_BUDGET, db_factory=db_factory)
+            except Exception:
+                log.exception("UPC enrichment drip tick failed")
+            sleep_fn(DRIP_SLEEP_SECONDS)
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+    return t
