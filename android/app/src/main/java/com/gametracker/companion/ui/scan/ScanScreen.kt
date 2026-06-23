@@ -11,7 +11,6 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -127,11 +126,7 @@ private fun ScanInfo(s: ScanState.Info, onOpenGame: (Int) -> Unit,
                 Text("Add to library" + (s.scannedPlatform?.let { " ($it)" } ?: ""))
             }
         }
-        Ownership.SAME_PLATFORM -> {
-            Text("You already own this on ${ownedLabels(c.ownedPlatforms)} ✓")
-            c.ownedGameId?.let { TextButton(onClick = { onOpenGame(it) }) { Text("View") } }
-        }
-        Ownership.OTHER_PLATFORM -> {
+        Ownership.SAME_PLATFORM, Ownership.OTHER_PLATFORM -> {
             Text("You already own this on ${ownedLabels(c.ownedPlatforms)}")
             s.scannedPlatform?.let { p ->
                 Button(onClick = { onAddCopy(p) }) { Text("Add the $p copy") }
@@ -164,13 +159,6 @@ private fun ResultCard(onDismiss: (() -> Unit)?, content: @Composable ColumnScop
         Box(Modifier.fillMaxSize(), Alignment.BottomCenter) {
             Card(Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (onDismiss != null) {
-                        Box(Modifier.fillMaxWidth(), Alignment.TopEnd) {
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Filled.Close, contentDescription = "Dismiss")
-                            }
-                        }
-                    }
                     content()
                 }
             }
