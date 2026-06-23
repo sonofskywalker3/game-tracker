@@ -2001,6 +2001,46 @@ def api_delete_slot_window(slot_id: int, wid: int):
     return jsonify({'ok': True})
 
 
+_PROFILE_MINUTE_FIELDS = ("work_start_min", "work_end_min", "bed_time_min")
+
+
+@app.route('/api/profile')
+def api_get_profile():
+    """The single user_profile row; meal_windows parsed to a list."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT work_start_min, work_end_min, bed_time_min, meal_windows "
+        "FROM user_profile WHERE id = 1").fetchone()
+    conn.close()
+    data = dict(row) if row else {f: None for f in _PROFILE_MINUTE_FIELDS}
+    data["meal_windows"] = json.loads(data["meal_windows"]) if data.get("meal_windows") else []
+    return jsonify(data)
+
+
+@app.route('/api/profile', methods=['PUT'])
+def api_update_profile():
+    """Update profile fields (used for web editor pre-fill suggestions)."""
+    data = request.get_json() or {}
+    fields, params = [], []
+    for key in _PROFILE_MINUTE_FIELDS:
+        if key in data:
+            val = data[key]
+            if val is not None and not (isinstance(val, int) and 0 <= val <= _MINUTE_MAX):
+                return jsonify({'error': f'{key} out of range'}), 400
+            fields.append(f"{key} = ?")
+            params.append(val)
+    if 'meal_windows' in data:
+        fields.append("meal_windows = ?")
+        params.append(json.dumps(data['meal_windows']))
+    if not fields:
+        return jsonify({'error': 'no fields'}), 400
+    conn = get_db()
+    conn.execute(f"UPDATE user_profile SET {', '.join(fields)} WHERE id = 1", params)
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @app.route('/api/slots/<int:slot_id>', methods=['DELETE'])
 def api_delete_slot(slot_id: int):
     """Delete a slot definition."""
