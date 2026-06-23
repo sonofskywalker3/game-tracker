@@ -157,4 +157,17 @@ class SlotScheduleTest {
         val noGame = TestSlot(1, 0, listOf(win(allDays, 1320, 1380)))
         assertNull(nextUpcoming(listOf(noGame), weekday = 0, minute = 1260, hasGame = { false }))
     }
+
+    @Test fun nextUpcoming_tieBreak_sortOrderThenId() {
+        // now Mon 21:00 (1260); all candidates inactive, all activate at 22:00 -> equal minutesUntil
+        val w = win(allDays, 1320, 1380)  // 22:00-23:00
+        // sortOrder tie-break: so=0 beats so=1 even with a higher id
+        val a = TestSlot(id = 5, sortOrder = 1, windows = listOf(w))
+        val b = TestSlot(id = 9, sortOrder = 0, windows = listOf(w))
+        assertEquals(9, nextUpcoming(listOf(a, b), weekday = 0, minute = 1260, hasGame = { true })!!.slot.id)
+        // id tie-break when sortOrder equal: lower id wins
+        val c = TestSlot(id = 7, sortOrder = 0, windows = listOf(w))
+        val d = TestSlot(id = 3, sortOrder = 0, windows = listOf(w))
+        assertEquals(3, nextUpcoming(listOf(c, d), weekday = 0, minute = 1260, hasGame = { true })!!.slot.id)
+    }
 }
