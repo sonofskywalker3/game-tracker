@@ -1,8 +1,10 @@
 package com.gametracker.companion
 
 import android.content.Context
+import com.gametracker.companion.data.DataStoreScheduleSnapshotStore
 import com.gametracker.companion.data.DataStoreSettings
 import com.gametracker.companion.data.Repository
+import com.gametracker.companion.data.ScheduleSnapshotStore
 import com.gametracker.companion.data.SettingsStore
 import com.gametracker.companion.data.appJson
 import com.gametracker.companion.data.buildApi
@@ -21,6 +23,7 @@ class AppContainer(private val appContext: Context) {
         .build()
 
     val repository: Repository = Repository(buildApi(client, appJson()))
+    val scheduleSnapshotStore: ScheduleSnapshotStore = DataStoreScheduleSnapshotStore(appContext)
 
     val wgConfigStore: WgConfigStore = WgConfigStore(appContext)
     val vpnController: VpnController = VpnController(appContext, wgConfigStore)
