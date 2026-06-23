@@ -417,6 +417,10 @@
         document.getElementById('enrich-progress').classList.remove('hidden');
     }
 
+    function hideEnrichProgress() {
+        document.getElementById('enrich-progress').classList.add('hidden');
+    }
+
     function updateEnrichUI(s) {
         const bar = document.getElementById('enrich-progress-bar');
         const txt = document.getElementById('enrich-progress-text');
@@ -434,6 +438,7 @@
             else {
                 clearInterval(enrichPoll); enrichPoll = null;
                 updateEnrichUI(s);
+                hideEnrichProgress();
                 await loadEnrichStatus();
                 await loadEnrichReview();
             }
@@ -446,9 +451,10 @@
             const resp = await fetch('/api/enrichment/run', { method: 'POST' });
             const data = await resp.json();
             if (data.error) throw new Error(data.error);
-            if (data.success === false) { alert(data.message); await loadEnrichStatus(); return; }
+            if (data.success === false) { hideEnrichProgress(); alert(data.message); await loadEnrichStatus(); return; }
             startEnrichPolling();
         } catch (e) {
+            hideEnrichProgress();
             alert('Error: ' + e.message);
             await loadEnrichStatus();
         }
