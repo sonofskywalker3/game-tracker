@@ -25,15 +25,19 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val container = (applicationContext as App).container
-        val store = container.scheduleSnapshotStore
-        val now = System.currentTimeMillis()
-        val cached = store.load()
-        if (shouldFetch(cached?.savedAtMillis, now)) {
-            container.repository.slots().onSuccess { resp ->
-                store.save(ScheduleSnapshot(resp, savedAtMillis = now))
+        try {
+            val container = (applicationContext as App).container
+            val store = container.scheduleSnapshotStore
+            val now = System.currentTimeMillis()
+            val cached = store.load()
+            if (shouldFetch(cached?.savedAtMillis, now)) {
+                container.repository.slots().onSuccess { resp ->
+                    store.save(ScheduleSnapshot(resp, savedAtMillis = now))
+                }
+                // On failure: keep the existing cache (offline-resilient).
             }
-            // On failure: keep the existing cache (offline-resilient).
+        } catch (e: Exception) {
+            // Cache load/save failed — keep whatever is cached; still re-render below.
         }
         // Always re-render so the widget advances through the day off the phone clock.
         PicksWidget().updateAll(applicationContext)
