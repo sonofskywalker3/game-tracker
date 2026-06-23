@@ -103,12 +103,29 @@ data class CreateGameResponse(
 )
 
 @Serializable
+data class OwnedPlatform(
+    @SerialName("short_name") val shortName: String? = null,
+    val format: String? = null,
+    @SerialName("has_digital_market") val hasDigitalMarket: Int = 0,
+)
+
+@Serializable
+data class BarcodeConstituent(
+    val title: String? = null,
+    @SerialName("owned_game_id") val ownedGameId: Int? = null,
+    @SerialName("owned_platforms") val ownedPlatforms: List<OwnedPlatform> = emptyList(),
+)
+
+@Serializable
 data class BarcodeCandidate(
     @SerialName("igdb_id") val igdbId: Int? = null,
     val title: String? = null,
     val platform: String? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("owned_game_id") val ownedGameId: Int? = null,
+    @SerialName("game_type") val gameType: Int? = null,
+    @SerialName("owned_platforms") val ownedPlatforms: List<OwnedPlatform> = emptyList(),
+    val constituents: List<BarcodeConstituent> = emptyList(),
 )
 
 @Serializable
@@ -117,4 +134,5 @@ data class BarcodeResolveResponse(
     val source: String,
     val candidates: List<BarcodeCandidate> = emptyList(),
     @SerialName("product_title") val productTitle: String? = null,
+    @SerialName("scanned_platform") val scannedPlatform: String? = null,
 )
