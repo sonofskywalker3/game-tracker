@@ -26,6 +26,8 @@ def test_resolve_uses_cleaned_title_for_prefill(client, monkeypatch):
         barcode, "lookup_product_title",
         lambda upc: "Mario Kart 8 Deluxe racing video game (Nintendo Switch)",
     )
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(barcode.igdb_match, "candidates_for",
                         lambda *a, **k: [])
     resp = client.get("/api/barcode/resolve?upc=12345")
@@ -58,7 +60,8 @@ def test_resolve_returns_cache_hit(client, monkeypatch):
 def test_resolve_miss_is_source_none(client, monkeypatch):
     # No Twitch creds in the temp config -> client_id None -> never calls IGDB;
     # force the UPC lookup to miss so we get source 'none'.
-    monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: None)
+    # Neutralize the whole chain so no real network call falls through to Wikidata.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (lambda u: None,))
     resp = client.get("/api/barcode/resolve?upc=999")
     assert resp.status_code == 200
     assert resp.get_json() == {"upc": "999", "source": "none", "candidates": [], "scanned_platform": None}
@@ -175,6 +178,8 @@ def test_resolve_records_unmatched_scan(client, monkeypatch):
     import models
     monkeypatch.setattr(barcode, "lookup_product_title",
                         lambda upc: "Totally Unknown Game (Nintendo Switch)")
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [])
     resp = client.get("/api/barcode/resolve?upc=NEW123")
     body = resp.get_json()
@@ -219,6 +224,8 @@ def test_resolve_reports_owned_bundle_constituents(client, monkeypatch):
 
     monkeypatch.setattr(barcode, "lookup_product_title",
                         lambda upc: "Mega Man X Legacy Collection (Nintendo Switch)")
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [
         {"igdb_id": 500, "name": "Mega Man X Legacy Collection", "platforms": [130],
          "cover_url": "c", "source": "search", "score": 100, "game_type": 3}])
@@ -239,6 +246,8 @@ def test_resolve_reports_owned_bundle_constituents(client, monkeypatch):
 def test_resolve_retries_unrestricted_when_platform_filter_zeroes_out(client, monkeypatch):
     monkeypatch.setattr(barcode, "lookup_product_title",
                         lambda upc: "Obscure Game (Nintendo Switch)")
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(barcode.igdb_match, "platform_ids_for", lambda shorts: {130})
     monkeypatch.setattr(barcode.igdb_match, "short_names_for", lambda ids: ["Switch"])
 
