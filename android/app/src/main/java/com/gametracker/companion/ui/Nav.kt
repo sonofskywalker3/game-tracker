@@ -15,6 +15,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
@@ -32,8 +33,11 @@ private val TABS = listOf(
 )
 
 @Composable
-fun AppNav() {
+fun AppNav(initialTab: String? = null) {
     val nav = rememberNavController()
+    LaunchedEffect(initialTab) {
+        if (initialTab != null) nav.navigate(initialTab) { launchSingleTop = true }
+    }
     Scaffold(
         bottomBar = {
             val entry by nav.currentBackStackEntryAsState()
