@@ -106,6 +106,43 @@
         </div>
     </div>
 
+    <!-- UPC Enrichment Section -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🏷️</span>
+            UPC Enrichment
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            Backfill retail UPCs for your collection so scans resolve instantly.
+            Runs automatically once a day; you can also run a batch now.
+        </p>
+
+        <div id="enrich-status" class="mb-4 text-sm text-gray-400">Loading status...</div>
+
+        <button onclick="runEnrichment()" id="enrich-button"
+                class="px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            Run an enrichment batch now
+        </button>
+
+        <div id="enrich-progress" class="hidden mt-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm text-gray-400">Enriching…</span>
+                <span id="enrich-progress-text" class="text-sm text-white">0/0</span>
+            </div>
+            <div class="w-full bg-surface rounded-full h-2 overflow-hidden">
+                <div id="enrich-progress-bar" class="bg-accent h-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+            <div id="enrich-counts" class="mt-2 text-sm text-gray-500"></div>
+        </div>
+
+        <!-- Needs-review queue -->
+        <div class="mt-6">
+            <h3 class="font-medium text-white mb-2">Needs review</h3>
+            <div id="enrich-review-empty" class="text-sm text-gray-500">No items awaiting review.</div>
+            <div id="enrich-review-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+        </div>
+    </div>
+
     <!-- Instructions -->
     <div class="bg-surface-light/50 rounded-xl p-6 border border-gray-700/50">
         <h2 class="text-lg font-medium text-white mb-4">Setup Instructions</h2>
@@ -160,6 +197,7 @@
 
         loadCoverStatus();
         checkFetchStatus(); // Check if a fetch is already running
+        loadEnrichment();
     }
 
     async function loadCoverStatus() {
@@ -354,5 +392,103 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', loadSettings);
+
+    let enrichPoll = null;
+
+    async function loadEnrichment() {
+        await loadEnrichStatus();
+        await loadEnrichReview();
+    }
+
+    async function loadEnrichStatus() {
+        const s = await api.get('/api/enrichment/status');
+        const el = document.getElementById('enrich-status');
+        const btn = document.getElementById('enrich-button');
+        const last = s.last_run_date ? `Last run ${s.last_run_date}.` : 'Not run yet.';
+        el.innerHTML = `<span><strong class="text-white">${s.remaining_eligible}</strong> games still to enrich.</span>
+            <span class="ml-3">${last}</span>
+            <span class="ml-3 text-gray-500">${s.remaining_today} lookups left today.</span>`;
+        if (s.status === 'running') { showEnrichProgress(); updateEnrichUI(s); startEnrichPolling(); }
+        btn.disabled = (s.remaining_today <= 0) || (s.remaining_eligible <= 0) || s.status === 'running';
+    }
+
+    function showEnrichProgress() {
+        document.getElementById('enrich-button').disabled = true;
+        document.getElementById('enrich-progress').classList.remove('hidden');
+    }
+
+    function updateEnrichUI(s) {
+        const bar = document.getElementById('enrich-progress-bar');
+        const txt = document.getElementById('enrich-progress-text');
+        const counts = document.getElementById('enrich-counts');
+        if (s.total > 0) { bar.style.width = `${(s.current / s.total) * 100}%`; }
+        txt.textContent = `${s.current || 0}/${s.total || 0}`;
+        counts.textContent = `linked ${s.found || 0} · review ${s.queued || 0} · no match ${s.no_match || 0}`;
+    }
+
+    function startEnrichPolling() {
+        if (enrichPoll) return;
+        enrichPoll = setInterval(async () => {
+            const s = await api.get('/api/enrichment/status');
+            if (s.status === 'running') { updateEnrichUI(s); }
+            else {
+                clearInterval(enrichPoll); enrichPoll = null;
+                updateEnrichUI(s);
+                await loadEnrichStatus();
+                await loadEnrichReview();
+            }
+        }, 500);
+    }
+
+    async function runEnrichment() {
+        showEnrichProgress();
+        try {
+            const resp = await fetch('/api/enrichment/run', { method: 'POST' });
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            if (data.success === false) { alert(data.message); await loadEnrichStatus(); return; }
+            startEnrichPolling();
+        } catch (e) {
+            alert('Error: ' + e.message);
+            await loadEnrichStatus();
+        }
+    }
+
+    async function loadEnrichReview() {
+        const res = await api.get('/api/enrichment/review');
+        const list = document.getElementById('enrich-review-list');
+        const empty = document.getElementById('enrich-review-empty');
+        const cands = res.candidates || [];
+        empty.classList.toggle('hidden', cands.length > 0);
+        const cover = (u) => u
+            ? `<img src="${escapeHtml(u)}" class="w-12 aspect-[3/4] object-contain rounded bg-black/20">`
+            : `<div class="w-12 aspect-[3/4] rounded bg-black/20 flex items-center justify-center">🎮</div>`;
+        list.innerHTML = cands.map(c => `
+            <div class="bg-surface rounded-lg border border-gray-700 p-3 flex gap-3">
+                ${cover(c.cover_url)}
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm text-white truncate" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</div>
+                    <div class="text-[11px] text-gray-400 truncate">${escapeHtml(c.platform || '')} · UPC ${escapeHtml(c.upc || '')}</div>
+                    <div class="text-[11px] text-gray-500 truncate" title="${escapeHtml(c.product_title || '')}">${escapeHtml(c.product_title || '')}</div>
+                    <div class="text-[11px] text-yellow-400/80 truncate">${escapeHtml(c.reason || '')}</div>
+                    <div class="mt-2 flex gap-2">
+                        <button onclick="confirmEnrich(${c.id})" class="text-xs bg-accent/80 hover:bg-accent text-white rounded px-2 py-1">Confirm</button>
+                        <button onclick="rejectEnrich(${c.id})" class="text-xs bg-surface-light hover:bg-gray-600 rounded px-2 py-1">Reject</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    async function confirmEnrich(id) {
+        const r = await api.post(`/api/enrichment/review/${id}/confirm`, {});
+        if (!r.ok) { alert(r.data?.error || 'Could not confirm'); return; }
+        await loadEnrichReview(); await loadEnrichStatus();
+    }
+
+    async function rejectEnrich(id) {
+        const r = await api.post(`/api/enrichment/review/${id}/reject`, {});
+        if (!r.ok) { alert(r.data?.error || 'Could not reject'); return; }
+        await loadEnrichReview(); await loadEnrichStatus();
+    }
 </script>
 {% endblock %}
