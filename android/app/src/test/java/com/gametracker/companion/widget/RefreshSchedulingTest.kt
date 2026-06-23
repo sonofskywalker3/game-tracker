@@ -17,4 +17,9 @@ class RefreshSchedulingTest {
         val now = 100_000_000L
         assertFalse(shouldFetch(lastSavedMillis = now - 1_000L, nowMillis = now))
     }
+
+    @Test fun shouldFetch_atExactStaleBoundary() {
+        val now = 100_000_000L
+        assertTrue(shouldFetch(lastSavedMillis = now - FETCH_STALE_MILLIS, nowMillis = now))
+    }
 }
