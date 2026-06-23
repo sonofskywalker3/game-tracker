@@ -156,6 +156,20 @@ def lookup_wikidata_gtin(upc: str, *, url: str = WIKIDATA_SPARQL_URL,
     return label or None
 
 
+# Ordered product-title sources tried by resolve(); first non-empty hit wins.
+# Append new free sources here — the chain is the extensibility seam.
+PRODUCT_SOURCES: tuple = (lookup_product_title, lookup_wikidata_gtin)
+
+
+def _product_via_sources(upc: str) -> str | None:
+    """Try each product source in order; return the first non-empty title, else None."""
+    for source in PRODUCT_SOURCES:
+        title = source(upc)
+        if title:
+            return title
+    return None
+
+
 def last_rate_remaining() -> int | None:
     """Last-seen UPCitemdb trial quota remaining (X-RateLimit-Remaining), or None."""
     return _last_rate_remaining
@@ -274,7 +288,7 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
                     "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
                 }]}
 
-    product = lookup_product_title(upc)
+    product = _product_via_sources(upc)
     if not product:
         return {"upc": upc, "source": "none", "candidates": [], "scanned_platform": None}
 

@@ -80,7 +80,8 @@ def test_resolve_returns_cache_hit_without_calling_api(temp_db, monkeypatch):
 
 
 def test_resolve_miss_returns_source_none(temp_db, monkeypatch):
-    monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: None)
+    # Neutralize the whole chain so no real network call falls through to Wikidata.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (lambda u: None,))
     conn = models.get_db()
     result = barcode.resolve(conn, "999")
     conn.close()
@@ -91,6 +92,8 @@ def test_resolve_via_api_maps_candidates_and_flags_ownership(temp_db, monkeypatc
     owned_id = _seed_game("Marvel's Spider-Man 2")
     monkeypatch.setattr(barcode, "lookup_product_title",
                         lambda upc: "Marvel's Spider-Man 2 - PS5")
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
         {"igdb_id": 119171, "name": "Marvel's Spider-Man 2",
          "cover_url": "https://img/x.jpg", "platforms": [167], "source": "search"},
@@ -108,6 +111,8 @@ def test_resolve_via_api_maps_candidates_and_flags_ownership(temp_db, monkeypatc
 
 def test_resolve_api_hit_no_igdb_match_returns_product_title(temp_db, monkeypatch):
     monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: "Some Obscure Game")
+    # Pin the chain to the mocked source so no real network call falls through.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [])
     conn = models.get_db()
     result = barcode.resolve(conn, "555", client_id="cid", token="tok")
