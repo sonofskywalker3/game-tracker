@@ -28,7 +28,7 @@ def test_empty_string_is_treated_as_miss(monkeypatch):
 
 def test_resolve_uses_the_chain(monkeypatch, tmp_path):
     import models
-    models.DB_PATH = tmp_path / "g.db"
+    monkeypatch.setattr(models, "DB_PATH", tmp_path / "g.db")  # auto-reverts; no global leak
     models.init_db()
     models.migrate_db()
     conn = models.get_db()
