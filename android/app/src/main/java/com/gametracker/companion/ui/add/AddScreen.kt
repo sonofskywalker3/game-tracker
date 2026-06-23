@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> Unit, onScan: () -> Unit) {
+fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> Unit) {
     val vm: AddViewModel = viewModel(factory = rememberAppFactory())
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -49,10 +49,7 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> U
         Column(Modifier.fillMaxSize().padding(pad)) {
             OutlinedTextField(query, { query = it }, label = { Text("Search to add a game") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(8.dp))
-            Button(onClick = onScan, modifier = Modifier.padding(horizontal = 8.dp)) {
-                Text("Scan barcode")
-            }
-            when (val st = vm.results.collectAsState().value) {
+when (val st = vm.results.collectAsState().value) {
                 is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 is UiState.Empty -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Search IGDB to add") }
                 is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text(st.message) }
