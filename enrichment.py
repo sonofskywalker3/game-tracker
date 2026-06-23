@@ -6,6 +6,7 @@ barcode_registry or rows to upc_review. External calls go through barcode.py
 (which degrades to []/None); this module never raises out to its caller.
 """
 import logging
+import sqlite3
 
 import barcode
 import models
@@ -54,3 +55,61 @@ def classify_match(normalized_title: str, short_name: str,
     if uncertain is not None:
         return uncertain
     return {"status": NO_MATCH, "upc": None, "product_title": None, "reason": "no plausible product"}
+
+
+# Platform categories that can never have a physical retail UPC.
+_NON_RETAIL_CATEGORIES = ("mobile", "subscription")
+
+_ELIGIBLE_SQL = """
+    SELECT g.id, g.title, g.normalized_title, g.igdb_id, g.cover_url, p.short_name
+    FROM games g
+    JOIN game_platforms gp ON gp.game_id = g.id
+    JOIN platforms p ON p.id = gp.platform_id
+    WHERE gp.owned = 1
+      AND p.category NOT IN ('mobile', 'subscription')
+      AND NOT EXISTS (SELECT 1 FROM barcode_registry br
+                      WHERE br.game_id = g.id AND br.platform = p.short_name)
+      AND NOT EXISTS (SELECT 1 FROM upc_review ur
+                      WHERE ur.game_id = g.id AND ur.platform = p.short_name)
+    ORDER BY g.id, p.short_name
+"""
+
+
+def select_eligible_pairs(conn: sqlite3.Connection, *,
+                          limit: int | None = None) -> list[sqlite3.Row]:
+    """Owned (game, platform) pairs with no known UPC and no review row.
+
+    Excludes mobile/subscription platforms (no physical retail UPC exists).
+    Idempotent: covered/queued/attempted/dismissed pairs are all skipped.
+    """
+    sql = _ELIGIBLE_SQL
+    params: tuple = ()
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (limit,)
+    return conn.execute(sql, params).fetchall()
+
+
+def count_eligible_pairs(conn: sqlite3.Connection) -> int:
+    """How many eligible pairs remain (for the status display)."""
+    return conn.execute(
+        f"SELECT COUNT(*) FROM ({_ELIGIBLE_SQL})").fetchone()[0]
+
+
+def get_enrichment_state(conn: sqlite3.Connection) -> dict:
+    """The single drip-state row as a dict (seeded by the migration)."""
+    row = conn.execute(
+        "SELECT last_run_date, last_run_count FROM upc_enrichment_state WHERE id = 1"
+    ).fetchone()
+    if row is None:
+        return {"last_run_date": None, "last_run_count": 0}
+    return {"last_run_date": row["last_run_date"], "last_run_count": row["last_run_count"]}
+
+
+def set_enrichment_state(conn: sqlite3.Connection, *, last_run_date: str,
+                         last_run_count: int) -> None:
+    """Persist the last drip run date + per-day call count."""
+    conn.execute(
+        "UPDATE upc_enrichment_state SET last_run_date = ?, last_run_count = ? WHERE id = 1",
+        (last_run_date, last_run_count))
+    conn.commit()
