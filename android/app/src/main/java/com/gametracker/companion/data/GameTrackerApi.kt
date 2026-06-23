@@ -18,6 +18,9 @@ import retrofit2.http.Query
                                         val platforms: List<String> = emptyList(),
                                         val physical: Boolean = false,
                                         val upc: String? = null)
+@Serializable data class AddPlatformPayload(val short_name: String, val format: String? = null,
+                                            val upc: String? = null)
+@Serializable data class AddPlatformBody(val add_platform: AddPlatformPayload)
 
 interface GameTrackerApi {
     @GET("api/games")
@@ -33,6 +36,9 @@ interface GameTrackerApi {
 
     @PUT("api/games/{id}")
     suspend fun updateGame(@Path("id") id: Int, @Body body: StatusBody)
+
+    @PUT("api/games/{id}")
+    suspend fun addPlatform(@Path("id") id: Int, @Body body: AddPlatformBody)
 
     @GET("api/igdb/search")
     suspend fun igdbSearch(@Query("q") q: String): List<IgdbResult>

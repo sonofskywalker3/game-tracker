@@ -124,6 +124,20 @@ class RepositoryTest {
         assertTrue(sent.contains("\"physical\":true"))
     }
 
+    @Test fun addPlatform_sends_put_with_add_platform_body() = runTest {
+        server.enqueue(MockResponse().setBody("""{"success":true}"""))
+        val r = repo.addPlatform(341, "Switch", "physical", "upc-9")
+        assertTrue(r.isSuccess)
+        val recorded = server.takeRequest()
+        assertEquals("PUT", recorded.method)
+        assertEquals("/api/games/341", recorded.path)
+        val sent = recorded.body.readUtf8()
+        assertTrue(sent.contains("\"add_platform\""))
+        assertTrue(sent.contains("\"short_name\":\"Switch\""))
+        assertTrue(sent.contains("\"format\":\"physical\""))
+        assertTrue(sent.contains("\"upc\":\"upc-9\""))
+    }
+
     @Test fun slots_parses_real_payload_with_wrapper_candidates_and_recently_finished() = runTest {
         // Mirrors the live /api/slots shape: current_game is a full game row (extra keys
         // ignored); each candidate is a {game, reasons, score, time_to_beat_minutes} wrapper;
