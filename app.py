@@ -1925,6 +1925,82 @@ def api_reorder_slots():
     return jsonify({'success': True})
 
 
+_WINDOW_DAYS_MAX = 0b1111111   # all 7 day bits set
+_MINUTE_MAX = 1439
+
+
+def _validate_window(data: dict) -> "str | None":
+    """Return an error message if the window payload is invalid, else None."""
+    try:
+        days = int(data["days"])
+        start = int(data["start_min"])
+        end = int(data["end_min"])
+    except (KeyError, TypeError, ValueError):
+        return "days, start_min, end_min are required integers"
+    if not (0 <= days <= _WINDOW_DAYS_MAX):
+        return "days out of range"
+    if not (0 <= start <= _MINUTE_MAX and 0 <= end <= _MINUTE_MAX):
+        return "start_min/end_min out of range"
+    if start == end:
+        return "start_min and end_min must differ"
+    return None
+
+
+@app.route('/api/slots/<int:slot_id>/windows', methods=['POST'])
+def api_create_slot_window(slot_id: int):
+    """Add one schedule window to a slot."""
+    data = request.get_json() or {}
+    err = _validate_window(data)
+    if err:
+        return jsonify({'error': err}), 400
+    conn = get_db()
+    if conn.execute("SELECT 1 FROM slots WHERE id = ?", (slot_id,)).fetchone() is None:
+        conn.close()
+        return jsonify({'error': 'slot not found'}), 404
+    cur = conn.execute(
+        "INSERT INTO slot_schedule_window (slot_id, days, start_min, end_min) "
+        "VALUES (?, ?, ?, ?)",
+        (slot_id, int(data['days']), int(data['start_min']), int(data['end_min'])))
+    conn.commit()
+    wid = cur.lastrowid
+    conn.close()
+    return jsonify({'ok': True, 'id': wid}), 201
+
+
+@app.route('/api/slots/<int:slot_id>/windows/<int:wid>', methods=['PUT'])
+def api_update_slot_window(slot_id: int, wid: int):
+    """Replace a window's days/time."""
+    data = request.get_json() or {}
+    err = _validate_window(data)
+    if err:
+        return jsonify({'error': err}), 400
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE slot_schedule_window SET days = ?, start_min = ?, end_min = ? "
+        "WHERE id = ? AND slot_id = ?",
+        (int(data['days']), int(data['start_min']), int(data['end_min']), wid, slot_id))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    if not changed:
+        return jsonify({'error': 'window not found'}), 404
+    return jsonify({'ok': True})
+
+
+@app.route('/api/slots/<int:slot_id>/windows/<int:wid>', methods=['DELETE'])
+def api_delete_slot_window(slot_id: int, wid: int):
+    """Remove a schedule window from a slot."""
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM slot_schedule_window WHERE id = ? AND slot_id = ?", (wid, slot_id))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    if not changed:
+        return jsonify({'error': 'window not found'}), 404
+    return jsonify({'ok': True})
+
+
 @app.route('/api/slots/<int:slot_id>', methods=['DELETE'])
 def api_delete_slot(slot_id: int):
     """Delete a slot definition."""
