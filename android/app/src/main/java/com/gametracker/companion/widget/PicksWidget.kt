@@ -26,7 +26,7 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.gametracker.companion.App
@@ -51,7 +51,7 @@ class PicksWidget : GlanceAppWidget() {
     /** Best-effort cover load → Bitmap for ImageProvider; null on any failure. */
     private suspend fun loadCoverBitmap(context: Context, url: String): Bitmap? {
         return try {
-            val loader = ImageLoader(context)
+            val loader = context.imageLoader
             val request = ImageRequest.Builder(context)
                 .data(url)
                 .allowHardware(false)
