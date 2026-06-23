@@ -1060,6 +1060,52 @@ def migrate_upc_enrichment_state(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_slot_schedule_window(conn: sqlite3.Connection) -> None:
+    """Create the per-slot schedule-window table if missing. Idempotent.
+
+    Each row is one day/time window for a slot; a slot may have 0..N windows.
+    Zero windows means the slot is 'anytime' (always active). Cascades away with
+    its slot so a deleted slot never orphans windows.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS slot_schedule_window (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            slot_id   INTEGER NOT NULL,
+            days      INTEGER NOT NULL,   -- 7-bit mask, bit 0 = Monday .. bit 6 = Sunday
+            start_min INTEGER NOT NULL,   -- minutes since local midnight, 0..1439
+            end_min   INTEGER NOT NULL,   -- minutes since local midnight, 0..1439
+            FOREIGN KEY (slot_id) REFERENCES slots(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_schedule_window_slot "
+        "ON slot_schedule_window(slot_id)")
+    conn.commit()
+
+
+def migrate_user_profile(conn: sqlite3.Connection) -> None:
+    """Create + seed the single-row user_profile table if missing. Idempotent.
+
+    Holds the owner's daily rhythm (work hours, bedtime, meal windows). Used only
+    to pre-fill suggested window times in the web editor; it does not affect
+    matching.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_profile (
+            id             INTEGER PRIMARY KEY CHECK(id = 1),
+            work_start_min INTEGER,
+            work_end_min   INTEGER,
+            bed_time_min   INTEGER,
+            meal_windows   TEXT        -- JSON list of {start_min, end_min}, optional
+        )
+    """)
+    conn.execute(
+        "INSERT OR IGNORE INTO user_profile "
+        "(id, work_start_min, work_end_min, bed_time_min, meal_windows) "
+        "VALUES (1, NULL, NULL, NULL, NULL)")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -1138,6 +1184,8 @@ def migrate_db():
     migrate_decider_chats(conn)
     migrate_upc_review(conn)
     migrate_upc_enrichment_state(conn)
+    migrate_slot_schedule_window(conn)
+    migrate_user_profile(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)
