@@ -5,7 +5,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -31,20 +34,34 @@ private val TABS = listOf(
 @Composable
 fun AppNav() {
     val nav = rememberNavController()
-    Scaffold(bottomBar = {
-        val entry by nav.currentBackStackEntryAsState()
-        val current = entry?.destination?.route
-        NavigationBar {
-            TABS.forEach { tab ->
-                NavigationBarItem(
-                    selected = current == tab.route,
-                    onClick = { nav.navigate(tab.route) { launchSingleTop = true } },
-                    icon = { Icon(tab.icon, contentDescription = tab.label) },
-                    label = { Text(tab.label) },
-                )
+    Scaffold(
+        bottomBar = {
+            val entry by nav.currentBackStackEntryAsState()
+            val current = entry?.destination?.route
+            NavigationBar {
+                TABS.forEach { tab ->
+                    NavigationBarItem(
+                        selected = current == tab.route,
+                        onClick = { nav.navigate(tab.route) { launchSingleTop = true } },
+                        icon = { Icon(tab.icon, contentDescription = tab.label) },
+                        label = { Text(tab.label) },
+                    )
+                }
             }
-        }
-    }) { padding ->
+        },
+        floatingActionButton = {
+            val entry by nav.currentBackStackEntryAsState()
+            val route = entry?.destination?.route
+            // Show the scan FAB only on the main browsing routes (not on scan itself,
+            // detail, settings, or the VPN QR screen).
+            if (route == "picks" || route == "library" || route?.startsWith("add") == true) {
+                FloatingActionButton(onClick = { nav.navigate("scan") }) {
+                    Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan barcode")
+                }
+            }
+        },
+        floatingActionButtonPosition = FabPosition.Center,
+    ) { padding ->
         NavHost(nav, startDestination = "picks", modifier = Modifier.padding(padding)) {
             composable("picks") {
                 com.gametracker.companion.ui.picks.PicksScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
@@ -63,7 +80,6 @@ fun AppNav() {
                     initialQuery = entry.arguments?.getString("prefill"),
                     pendingUpc = entry.arguments?.getString("upc"),
                     onOpenGame = { id -> nav.navigate("detail/$id?added=true") },
-                    onScan = { nav.navigate("scan") },
                 )
             }
             composable("settings") { backStackEntry ->
