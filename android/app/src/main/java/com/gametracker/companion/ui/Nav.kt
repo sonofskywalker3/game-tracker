@@ -52,9 +52,8 @@ fun AppNav() {
         floatingActionButton = {
             val entry by nav.currentBackStackEntryAsState()
             val route = entry?.destination?.route
-            // Show the scan FAB only on the main browsing routes (not on scan itself,
-            // detail, settings, or the VPN QR screen).
-            if (route == "picks" || route == "library" || route?.startsWith("add") == true) {
+            // Show the scan FAB only on the Add screen (not on scan, detail, settings, etc.).
+            if (route?.startsWith("add") == true) {
                 FloatingActionButton(onClick = { nav.navigate("scan") }) {
                     Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan barcode")
                 }

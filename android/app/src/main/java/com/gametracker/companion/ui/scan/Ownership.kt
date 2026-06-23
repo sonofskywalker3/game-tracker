@@ -10,8 +10,12 @@ enum class Ownership { NOT_OWNED, SAME_PLATFORM, OTHER_PLATFORM }
 fun platformLabel(p: OwnedPlatform): String {
     val base = p.shortName ?: "?"
     val fmt = p.format
-    return if (p.hasDigitalMarket == 1 && fmt != null)
-        "$base (${fmt.replaceFirstChar { it.uppercase() }})" else base
+    if (p.hasDigitalMarket != 1 || fmt == null) return base
+    val label = when (fmt) {
+        "both" -> "Physical & Digital"
+        else -> fmt.replaceFirstChar { it.uppercase() }
+    }
+    return "$base ($label)"
 }
 
 fun ownedLabels(platforms: List<OwnedPlatform>): String =

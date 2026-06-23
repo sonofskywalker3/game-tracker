@@ -10,6 +10,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OwnershipTest {
+    @Test fun label_both_format_reads_physical_and_digital() {
+        assertEquals("Switch (Physical & Digital)",
+            platformLabel(OwnedPlatform("Switch", "both", 1)))
+    }
+
     @Test fun label_adds_qualifier_only_for_digital_market() {
         assertEquals("PS5 (Physical)",
             platformLabel(OwnedPlatform("PS5", "physical", 1)))
