@@ -24,6 +24,8 @@ _MIN_CONTAIN_LEN = 4
 UPC_ENRICH_DAILY_BUDGET = 90          # < 100/day trial cap (shared per-IP bucket)
 UPC_ENRICH_QUOTA_SAFETY_MARGIN = 5    # stop if live remaining drops to/below this
 UPC_ENRICH_CALL_DELAY_SECONDS = 2     # inter-call throttle to avoid burst rate-limit
+UPC_ENRICH_MAX_RETRIES = 3            # transient-429 burst retries before giving up
+UPC_ENRICH_BACKOFF_BASE_SECONDS = 5   # exponential: 5, 10, 20s
 
 
 def classify_match(normalized_title: str, short_name: str,
@@ -129,10 +131,13 @@ def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET
 
     Selects up to `budget` eligible pairs, name-searches each, and writes a
     confident registry link / pending review / no_match row. Stops early if the
-    live trial quota (remaining_fn) drops to the safety margin, or if a search
-    call fails (returns None). A failed call is never recorded as no_match.
+    live trial quota (remaining_fn) drops to the safety margin. On a transient
+    failure (search_fn returns None with quota unknown), retries up to
+    UPC_ENRICH_MAX_RETRIES times with exponential backoff before giving up.
+    If the daily quota is confirmed exhausted, skips retries and stops immediately.
+    A failed call is never recorded as no_match (no poisoning).
     Throttles between calls by sleeping UPC_ENRICH_CALL_DELAY_SECONDS (injectable
-    via sleep_fn for tests). Commits per write.
+    via sleep_fn for tests). All sleeps go through sleep_fn. Commits per write.
     """
     pairs = select_eligible_pairs(conn, limit=budget)
     total = len(pairs)
@@ -149,8 +154,26 @@ def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET
         products = search_fn(row["title"])
         calls_used += 1
         if products is None:
-            log.warning("UPC enrichment stopping: name-search failed for %r", row["title"])
-            break
+            live = remaining_fn()
+            if live is not None and live <= UPC_ENRICH_QUOTA_SAFETY_MARGIN:
+                log.warning(
+                    "UPC enrichment stopping: daily quota exhausted, remaining=%s", live)
+                break
+            # Transient burst — retry with exponential backoff.
+            resolved = False
+            for attempt in range(UPC_ENRICH_MAX_RETRIES):
+                if calls_used >= budget:
+                    break
+                sleep_fn(UPC_ENRICH_BACKOFF_BASE_SECONDS * (2 ** attempt))
+                products = search_fn(row["title"])
+                calls_used += 1
+                if products is not None:
+                    resolved = True
+                    break
+            if not resolved:
+                log.warning(
+                    "UPC enrichment giving up after retries for %r", row["title"])
+                break
         verdict = classify_match(row["normalized_title"], row["short_name"], products)
         status = verdict["status"]
         if status == CONFIDENT:
