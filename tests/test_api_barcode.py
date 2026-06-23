@@ -234,3 +234,26 @@ def test_resolve_reports_owned_bundle_constituents(client, monkeypatch):
     assert owned["Mega Man X"] == [{"short_name": "SNES", "format": "physical",
                                     "has_digital_market": 0}]
     assert owned["Mega Man X2"] == []
+
+
+def test_resolve_retries_unrestricted_when_platform_filter_zeroes_out(client, monkeypatch):
+    monkeypatch.setattr(barcode, "lookup_product_title",
+                        lambda upc: "Obscure Game (Nintendo Switch)")
+    monkeypatch.setattr(barcode.igdb_match, "platform_ids_for", lambda shorts: {130})
+    monkeypatch.setattr(barcode.igdb_match, "short_names_for", lambda ids: ["Switch"])
+
+    calls = []
+
+    def fake_candidates_for(title, plat_ids, coll, cid, tok, *,
+                            drop_fan_types=False, restrict_to_platform=False):
+        calls.append(restrict_to_platform)
+        if restrict_to_platform:
+            return []   # platform-restricted search finds nothing
+        return [{"igdb_id": 77, "name": "Obscure Game", "platforms": [130],
+                 "cover_url": "c", "source": "search", "score": 50, "game_type": 0}]
+
+    monkeypatch.setattr(barcode.igdb_match, "candidates_for", fake_candidates_for)
+
+    body = client.get("/api/barcode/resolve?upc=OBSCURE1").get_json()
+    assert calls == [True, False]          # restricted first, then unrestricted retry
+    assert body["candidates"][0]["title"] == "Obscure Game"

@@ -199,9 +199,18 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
 
     candidates: list[dict] = []
     if client_id and token:
-        for c in igdb_match.candidates_for(
+        raw = igdb_match.candidates_for(
+            search_title, platform_ids, None, client_id, token,
+            drop_fan_types=True, restrict_to_platform=bool(platform_ids))
+        # Some valid IGDB entries have empty/incomplete platform lists, so a
+        # platform-restricted search can drop the real game entirely. If the
+        # restricted search found nothing, retry once unrestricted (still dropping
+        # fan/mod types) so a known scanned platform never zeroes out a valid scan.
+        if not raw and platform_ids:
+            raw = igdb_match.candidates_for(
                 search_title, platform_ids, None, client_id, token,
-                drop_fan_types=True, restrict_to_platform=bool(platform_ids))[:MAX_CANDIDATES]:
+                drop_fan_types=True, restrict_to_platform=False)
+        for c in raw[:MAX_CANDIDATES]:
             owned_id = _owned_game_id(conn, c.get("name") or "")
             shorts = igdb_match.short_names_for(c.get("platforms") or [])
             candidates.append({
