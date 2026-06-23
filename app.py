@@ -2193,7 +2193,7 @@ def api_igdb_search():
 
         igdb_query = f'''
             search "{query}";
-            fields name, slug, cover.url, platforms;
+            fields name, slug, cover.url, platforms, first_release_date;
             limit 8;
         '''
 
@@ -2205,6 +2205,8 @@ def api_igdb_search():
         response.raise_for_status()
         results = response.json()
 
+        from datetime import datetime as _datetime
+
         # Format results
         games = []
         for game in results:
@@ -2215,6 +2217,13 @@ def api_igdb_search():
                     cover_url = 'https:' + cover_url
 
             slug = game.get('slug') or ''
+            year = None
+            ts = game.get('first_release_date')
+            if ts:
+                try:
+                    year = _datetime.utcfromtimestamp(int(ts)).year
+                except (ValueError, OverflowError, OSError):
+                    year = None
             games.append({
                 'name': game.get('name', ''),
                 'slug': slug,
@@ -2223,6 +2232,7 @@ def api_igdb_search():
                 # IGDB platform ids mapped to the short_names we model (for the
                 # Add Game modal's tab-scoped single-platform auto-select).
                 'platforms': igdb_match.short_names_for(game.get('platforms') or []),
+                'year': year,
             })
 
         return jsonify(games)
