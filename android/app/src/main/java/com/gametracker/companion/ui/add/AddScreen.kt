@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gametracker.companion.data.IgdbResult
@@ -27,10 +28,10 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> U
     var pendingAdd by remember { mutableStateOf<IgdbResult?>(null) }
     LaunchedEffect(query) { delay(300); vm.search(query) }   // debounce
 
-    // Commit an add (optionally with chosen platforms) then open the new game's detail.
-    fun commit(result: IgdbResult, platforms: List<String>) {
+    // Commit an add with chosen platforms and format, then open the new game's detail.
+    fun commit(result: IgdbResult, platforms: List<String>, physical: Boolean) {
         scope.launch {
-            val gid = vm.add(result, platforms = platforms, physical = pendingUpc != null, upc = pendingUpc)
+            val gid = vm.add(result, platforms = platforms, physical = physical, upc = pendingUpc)
             pendingAdd = null
             if (gid != null) onOpenGame(gid)
             else snackbar.showSnackbar("Couldn't add — it may already be in your library")
@@ -38,9 +39,10 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> U
     }
 
     pendingAdd?.let { result ->
-        PlatformPickDialog(
+        GameDetailPickDialog(
             result = result,
-            onConfirm = { chosen -> commit(result, chosen) },
+            defaultPhysical = pendingUpc != null,   // barcode→physical default, search→digital
+            onConfirm = { chosen, physical -> commit(result, chosen, physical) },
             onDismiss = { pendingAdd = null },
         )
     }
@@ -56,8 +58,7 @@ when (val st = vm.results.collectAsState().value) {
                 is UiState.Success -> LazyColumn(Modifier.fillMaxSize()) {
                     items(st.data) { r: IgdbResult ->
                         Row(Modifier.fillMaxWidth().clickable {
-                            // No platforms to choose from → add straight away.
-                            if (r.platforms.isEmpty()) commit(r, emptyList()) else pendingAdd = r
+                            pendingAdd = r
                         }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             CoverImage(r.coverUrl, r.name, Modifier.width(48.dp))
                             Spacer(Modifier.width(8.dp))
@@ -72,33 +73,55 @@ when (val st = vm.results.collectAsState().value) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PlatformPickDialog(
+private fun GameDetailPickDialog(
     result: IgdbResult,
-    onConfirm: (List<String>) -> Unit,
+    defaultPhysical: Boolean,
+    onConfirm: (List<String>, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Pre-select nothing — the point is the owner picks the ones they actually own,
-    // not every platform IGDB lists for the title.
-    val selected = remember(result) { mutableStateListOf<String>() }
+    val selected = remember(result) {
+        mutableStateListOf<String>().apply { if (result.platforms.size == 1) add(result.platforms[0]) }
+    }
+    var physical by remember(result) { mutableStateOf(defaultPhysical) }
+    val uriHandler = LocalUriHandler.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add ${result.name}") },
+        title = { Text(result.name) },
         text = {
             Column {
-                Text("Which platform(s) do you own?", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    result.platforms.forEach { p ->
-                        FilterChip(
-                            selected = p in selected,
-                            onClick = { if (!selected.remove(p)) selected.add(p) },
-                            label = { Text(p) },
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CoverImage(result.coverUrl, result.name, Modifier.width(96.dp))
+                    Column {
+                        result.year?.let { Text("Released $it", style = MaterialTheme.typography.bodyMedium) }
+                        if (!result.igdbUrl.isNullOrBlank()) {
+                            TextButton(contentPadding = PaddingValues(0.dp),
+                                onClick = { uriHandler.openUri(result.igdbUrl) }) { Text("View on IGDB") }
+                        }
                     }
+                }
+                if (result.platforms.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Which platform(s) do you own?", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        result.platforms.forEach { p ->
+                            FilterChip(selected = p in selected,
+                                onClick = { if (!selected.remove(p)) selected.add(p) },
+                                label = { Text(p) })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Format", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = physical, onClick = { physical = true }, label = { Text("Physical") })
+                    FilterChip(selected = !physical, onClick = { physical = false }, label = { Text("Digital") })
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected.toList()) }) { Text("Add") } },
+        confirmButton = { TextButton(onClick = { onConfirm(selected.toList(), physical) }) { Text("Add") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

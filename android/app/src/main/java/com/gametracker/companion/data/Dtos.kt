@@ -93,6 +93,8 @@ data class IgdbResult(
     val name: String,
     val slug: String? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("igdb_url") val igdbUrl: String? = null,
+    val year: Int? = null,
     val platforms: List<String> = emptyList(),
 )
 

@@ -4,6 +4,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BarcodeDtosTest {
+    @Test fun parses_igdb_result_with_year_and_igdb_url() {
+        val json = appJson()
+        val results = json.decodeFromString<List<IgdbResult>>(
+            """[{"name":"Hades","slug":"hades","cover_url":"https://x/c.jpg",
+                 "igdb_url":"https://www.igdb.com/games/hades","year":2020,
+                 "platforms":["PC","Switch"]}]"""
+        )
+        val r = results[0]
+        assertEquals("Hades", r.name)
+        assertEquals("https://www.igdb.com/games/hades", r.igdbUrl)
+        assertEquals(2020, r.year)
+        assertEquals(listOf("PC", "Switch"), r.platforms)
+    }
+
+    @Test fun parses_igdb_result_with_null_year_and_igdb_url() {
+        val json = appJson()
+        val results = json.decodeFromString<List<IgdbResult>>(
+            """[{"name":"Unknown Game","platforms":[]}]"""
+        )
+        val r = results[0]
+        assertEquals("Unknown Game", r.name)
+        assertNull(r.igdbUrl)
+        assertNull(r.year)
+    }
+
     @Test fun parses_enhanced_resolve_with_ownership_and_constituents() {
         val json = appJson()
         val body = json.decodeFromString<BarcodeResolveResponse>(
