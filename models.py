@@ -1010,6 +1010,56 @@ def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_upc_review(conn: sqlite3.Connection) -> None:
+    """Create the upc_review table if missing. Idempotent.
+
+    Doubles as the enrichment review queue (status='pending') and the
+    dedup/attempt ledger ('no_match' attempted, 'dismissed' rejected). Confirmed
+    links live in barcode_registry, not here.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS upc_review (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id       INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+            platform      TEXT    NOT NULL,
+            upc           TEXT,
+            product_title TEXT,
+            cover_url     TEXT,
+            status        TEXT NOT NULL CHECK(status IN ('pending', 'no_match', 'dismissed')),
+            reason        TEXT,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_upc_review_game_platform
+            ON upc_review(game_id, platform)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_upc_review_pending
+            ON upc_review(status)
+    """)
+    conn.commit()
+
+
+def migrate_upc_enrichment_state(conn: sqlite3.Connection) -> None:
+    """Create the single-row upc_enrichment_state table if missing. Idempotent.
+
+    Holds the daily-drip bookkeeping: last UTC date a batch ran + calls used that
+    day (shared per-IP UPCitemdb quota). One row, id=1, seeded on create.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS upc_enrichment_state (
+            id             INTEGER PRIMARY KEY CHECK(id = 1),
+            last_run_date  TEXT,
+            last_run_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute(
+        "INSERT OR IGNORE INTO upc_enrichment_state (id, last_run_date, last_run_count) "
+        "VALUES (1, NULL, 0)")
+    conn.commit()
+
+
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
@@ -1086,6 +1136,8 @@ def migrate_db():
     migrate_barcode_registry_cover(conn)
     migrate_game_platform_format(conn)
     migrate_decider_chats(conn)
+    migrate_upc_review(conn)
+    migrate_upc_enrichment_state(conn)
     backfill_series_source(conn)
     apply_traits_catalog(conn)
     apply_series_catalog(conn)
