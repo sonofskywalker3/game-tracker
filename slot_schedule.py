@@ -38,3 +38,36 @@ def slot_active_at(windows: list[dict], weekday: int, minute: int) -> bool:
     if not windows:
         return True
     return any(window_covers(w, weekday, minute) for w in windows)
+
+
+def _window_length(start_min: int, end_min: int) -> int:
+    """Length of a window in minutes (handles midnight-cross; degenerate -> 0)."""
+    if end_min > start_min:
+        return end_min - start_min
+    if end_min < start_min:
+        return (DAY_MINUTES - start_min) + end_min
+    return 0
+
+
+def restrictiveness_score(windows: list[dict]) -> float:
+    """Total active minutes per week. Smaller = more restrictive. Zero windows
+    ('anytime') scores infinity so it always sorts last. Overlapping windows are
+    summed (an acceptable approximation for ordering)."""
+    if not windows:
+        return float("inf")
+    total = 0
+    for w in windows:
+        total += bin(w["days"]).count("1") * _window_length(w["start_min"], w["end_min"])
+    return float(total)
+
+
+def order_active(slots: list[dict], weekday: int, minute: int) -> list[dict]:
+    """Return only the active slots, most-restrictive-first (score asc, then
+    sort_order, then id). Mutates each returned slot to add 'restrictiveness_rank'
+    (0-based). Each slot dict must have 'id', 'sort_order', 'windows'."""
+    active = [s for s in slots if slot_active_at(s["windows"], weekday, minute)]
+    active.sort(key=lambda s: (restrictiveness_score(s["windows"]),
+                               s.get("sort_order", 0), s["id"]))
+    for rank, s in enumerate(active):
+        s["restrictiveness_rank"] = rank
+    return active
