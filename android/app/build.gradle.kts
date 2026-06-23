@@ -56,6 +56,9 @@ dependencies {
     implementation(libs.camera.view)
     implementation(libs.mlkit.barcode)
     implementation(libs.wireguard.tunnel)
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
+    implementation(libs.work.runtime.ktx)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

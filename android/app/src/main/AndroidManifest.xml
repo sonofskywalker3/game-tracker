@@ -26,6 +26,17 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".widget.PicksWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/picks_widget_info" />
+        </receiver>
+
         <!--
             Override the library's GoBackend$VpnService declaration to add
             foregroundServiceType="specialUse" (required on Android 14+) and

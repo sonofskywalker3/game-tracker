@@ -16,6 +16,8 @@ camerax = "1.4.1"
 mlkitBarcode = "17.3.0"
 wireguard = "1.0.20260102"
 coroutines = "1.9.0"
+glance = "1.1.1"
+work = "2.10.0"
 junit = "4.13.2"
 mockwebserver = "4.12.0"
 
@@ -46,6 +48,9 @@ mlkit-barcode = { module = "com.google.mlkit:barcode-scanning", version.ref = "m
 wireguard-tunnel = { module = "com.wireguard.android:tunnel", version.ref = "wireguard" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
+glance-material3 = { module = "androidx.glance:glance-material3", version.ref = "glance" }
+work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 junit = { module = "junit:junit", version.ref = "junit" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "mockwebserver" }
 
