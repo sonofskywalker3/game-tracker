@@ -107,21 +107,84 @@ def test_stops_when_remaining_quota_low(temp_db):
 
 
 def test_failed_search_stops_batch_without_no_match(temp_db):
-    """search_fn returning None (call failed) must not write a upc_review row
-    and must stop the batch immediately without poisoning the game as no_match."""
+    """search_fn always returning None (transient, remaining=None) must not write
+    a upc_review row and must stop after 1 initial call + UPC_ENRICH_MAX_RETRIES
+    retries; no poisoning, no rows written for any game."""
     conn = models.get_db()
     gids = [_setup(conn, t, "Switch") for t in ("Alpha", "Beta", "Gamma")]
     calls = []
 
     def fn(q):
         calls.append(q)
-        return None  # simulate network/429 failure
+        return None  # simulate persistent transient failure
 
     res = enrichment.run_batch(conn, search_fn=fn, remaining_fn=lambda: None,
                                sleep_fn=_no_sleep)
-    # Only 1 call should have been made before the batch stopped
-    assert len(calls) == 1
-    # No upc_review rows should have been written for any game
+    # 1 initial call + UPC_ENRICH_MAX_RETRIES retries before giving up
+    expected_calls = 1 + enrichment.UPC_ENRICH_MAX_RETRIES
+    assert len(calls) == expected_calls, (
+        f"expected {expected_calls} calls (1 + {enrichment.UPC_ENRICH_MAX_RETRIES} retries), "
+        f"got {len(calls)}")
+    # No upc_review rows should have been written for any game (no poisoning)
+    for gid in gids:
+        row = conn.execute("SELECT 1 FROM upc_review WHERE game_id=?", (gid,)).fetchone()
+        assert row is None, f"game_id={gid} got a poisoned upc_review row"
+    assert res["no_match"] == 0
+    conn.close()
+
+
+def test_backoff_retries_then_succeeds(temp_db):
+    """search_fn returning None twice then a confident hit on the 3rd call
+    (transient burst, remaining=None) — the pair IS processed (registry link
+    written), batch does not abort, calls_used counts the failed attempts too."""
+    conn = models.get_db()
+    gid = _setup(conn, "Celeste", "Switch", igdb_id=77)
+    attempt_counter = [0]
+
+    def fn(q):
+        attempt_counter[0] += 1
+        if attempt_counter[0] < 3:
+            return None
+        return [{"title": "Celeste (Nintendo Switch)", "upc": "88888"}]
+
+    res = enrichment.run_batch(conn, search_fn=fn, remaining_fn=lambda: None,
+                               sleep_fn=_no_sleep)
+    # The pair should have been resolved and a registry link written
+    row = conn.execute(
+        "SELECT game_id FROM barcode_registry WHERE upc='88888'").fetchone()
+    assert row is not None, "registry link not written after successful retry"
+    assert row["game_id"] == gid
+    # 1 initial call + 2 retry calls (success on 3rd overall call = retry index 1)
+    assert res["calls_used"] == 3, f"expected 3 calls_used, got {res['calls_used']}"
+    assert res["found"] == 1
+    conn.close()
+
+
+def test_quota_exhausted_skips_retry(temp_db):
+    """search_fn returns None with remaining_fn returning healthy before the call
+    but exactly the safety margin after — daily quota is confirmed exhausted after
+    the first failure, so NO retries happen (only 1 call total), batch stops,
+    no row written."""
+    conn = models.get_db()
+    gids = [_setup(conn, t, "Switch") for t in ("X1", "X2")]
+    calls = []
+    # First remaining_fn call (pre-call margin check) returns healthy value so the
+    # call proceeds; second call (post-failure quota check) returns safety margin.
+    remaining_seq = iter([50, enrichment.UPC_ENRICH_QUOTA_SAFETY_MARGIN])
+
+    def remaining_fn():
+        return next(remaining_seq, enrichment.UPC_ENRICH_QUOTA_SAFETY_MARGIN)
+
+    def fn(q):
+        calls.append(q)
+        return None  # simulate failure
+
+    res = enrichment.run_batch(
+        conn, search_fn=fn, remaining_fn=remaining_fn,
+        sleep_fn=_no_sleep)
+    # Only 1 call — quota exhausted detected after failure, no retries
+    assert len(calls) == 1, f"expected 1 call (no retries), got {len(calls)}"
+    # No rows written for any game (no poisoning)
     for gid in gids:
         row = conn.execute("SELECT 1 FROM upc_review WHERE game_id=?", (gid,)).fetchone()
         assert row is None, f"game_id={gid} got a poisoned upc_review row"
