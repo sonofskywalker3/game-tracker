@@ -851,7 +851,7 @@
             const gamePlatforms = (game.platforms || []).map(p => p.short_name);
             const platformOrder = ['PS4', 'PS5', 'Switch', 'Xbox'];
             const modern = [...allPlatforms]
-                .filter(p => p.category !== 'legacy_console' && p.short_name !== 'PC')
+                .filter(p => p.category === 'modern_console')
                 .sort((a, b) => platformOrder.indexOf(a.short_name) - platformOrder.indexOf(b.short_name));
             const checkboxes = modern.map(p => {
                 const checked = gamePlatforms.includes(p.short_name) ? 'checked' : '';
