@@ -72,4 +72,20 @@ class PicksViewModelTest {
         vm.searchLibrary("h"); advanceUntilIdle()   // below 2 chars -> cleared
         assertEquals(0, vm.picker.value.size)
     }
+
+    @Test fun load_ordersActiveSlotsMostRestrictiveFirst() = runTest {
+        val win = com.gametracker.companion.schedule.ScheduleWindow(days = 0b1111111, startMin = 1200, endMin = 1380)
+        val tight = com.gametracker.companion.schedule.ScheduleWindow(days = 0b0000001, startMin = 1200, endMin = 1380)
+        // incoming order: wide(1), inactive(2 @ morning), tight(3)
+        val wide = Slot(id = 1, label = "Wide", windows = listOf(win))
+        val inactive = Slot(id = 2, label = "Morning",
+            windows = listOf(com.gametracker.companion.schedule.ScheduleWindow(0b1111111, 360, 540)))
+        val tightSlot = Slot(id = 3, label = "Tight", windows = listOf(tight))
+        val repo = FakeRepo(slotsResp = SlotsResponse(slots = listOf(wide, inactive, tightSlot)))
+        // Fixed clock: Mon 21:00 -> tight & wide active, morning inactive
+        val vm = PicksViewModel(repo.asRepository(), nowProvider = { 0 to 1260 })
+        vm.load(); advanceUntilIdle()
+        val st = vm.state.value as UiState.Success
+        assertEquals(listOf(3, 1, 2), st.data.slots.map { it.id })  // tight, wide, inactive
+    }
 }
