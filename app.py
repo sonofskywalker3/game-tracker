@@ -23,7 +23,11 @@ from models import (
 )
 from recommendation import get_recommendations, get_quick_picks
 from config import load_config, save_config, get_twitch_credentials, DECIDER_MODELS
-from background_tasks import run_cover_fetch_background, get_cover_fetch_status
+from background_tasks import (
+    run_cover_fetch_background, get_cover_fetch_status,
+    run_enrichment_background, get_enrichment_status, start_enrichment_drip,
+)
+import enrichment
 import scrape_service
 
 app = Flask(__name__)
@@ -2267,6 +2271,87 @@ def api_fetch_covers_status():
     return jsonify(get_cover_fetch_status())
 
 
+@app.route('/api/enrichment/run', methods=['POST'])
+def api_enrichment_run():
+    """Trigger one enrichment batch now (respects the shared daily quota cap)."""
+    from datetime import datetime, timezone
+    conn = get_db()
+    state = enrichment.get_enrichment_state(conn)
+    conn.close()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    used = state["last_run_count"] if state["last_run_date"] == today else 0
+    remaining_today = enrichment.UPC_ENRICH_DAILY_BUDGET - used
+    if remaining_today <= 0:
+        return jsonify({'success': False, 'message': 'Daily quota exhausted'})
+    success, message = run_enrichment_background(remaining_today)
+    if success:
+        return jsonify({'success': True, 'message': message})
+    return jsonify({'error': message}), 409
+
+
+@app.route('/api/enrichment/status')
+def api_enrichment_status():
+    """Enrichment task status + eligible-remaining + today's remaining quota."""
+    from datetime import datetime, timezone
+    status = get_enrichment_status()
+    conn = get_db()
+    state = enrichment.get_enrichment_state(conn)
+    status['remaining_eligible'] = enrichment.count_eligible_pairs(conn)
+    conn.close()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    used = state["last_run_count"] if state["last_run_date"] == today else 0
+    status['last_run_date'] = state["last_run_date"]
+    status['remaining_today'] = max(0, enrichment.UPC_ENRICH_DAILY_BUDGET - used)
+    return jsonify(status)
+
+
+@app.route('/api/enrichment/review')
+def api_enrichment_review():
+    """List pending review candidates (game + candidate product)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT ur.id, ur.game_id, ur.platform, ur.upc, ur.product_title, "
+        "       COALESCE(ur.cover_url, g.cover_url) AS cover_url, ur.reason, g.title "
+        "FROM upc_review ur JOIN games g ON g.id = ur.game_id "
+        "WHERE ur.status = 'pending' ORDER BY g.title").fetchall()
+    conn.close()
+    return jsonify({'candidates': [dict(r) for r in rows]})
+
+
+@app.route('/api/enrichment/review/<int:rid>/confirm', methods=['POST'])
+def api_enrichment_review_confirm(rid):
+    """Link the candidate UPC to the game (registry_put) + clear the review row."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT ur.upc, ur.platform, ur.game_id, g.igdb_id, g.title, g.cover_url "
+        "FROM upc_review ur JOIN games g ON g.id = ur.game_id "
+        "WHERE ur.id = ? AND ur.status = 'pending'", (rid,)).fetchone()
+    if not row or not row["upc"]:
+        conn.close()
+        return jsonify({'error': 'No pending review row with a UPC'}), 404
+    barcode.registry_put(conn, row["upc"], igdb_id=row["igdb_id"], title=row["title"],
+                         platform=row["platform"], game_id=row["game_id"],
+                         cover_url=row["cover_url"])
+    conn.execute("DELETE FROM upc_review WHERE id = ?", (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/enrichment/review/<int:rid>/reject', methods=['POST'])
+def api_enrichment_review_reject(rid):
+    """Dismiss a review candidate so the drip never re-surfaces that pair."""
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE upc_review SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (rid,))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    if not changed:
+        return jsonify({'error': 'No pending review row'}), 404
+    return jsonify({'success': True})
+
+
 @app.route('/api/scrape/start', methods=['POST'])
 def api_scrape_start():
     """Start a web-driven vendor library scrape in the background."""
@@ -2310,6 +2395,8 @@ if __name__ == '__main__':
     else:
         # Run migrations for existing databases
         migrate_db()
+
+    start_enrichment_drip()
 
     # use_reloader=False: the "scrape now" feature runs a long-lived background
     # thread (browser -> import -> IGDB enrich -> ownership). The dev auto-reloader
