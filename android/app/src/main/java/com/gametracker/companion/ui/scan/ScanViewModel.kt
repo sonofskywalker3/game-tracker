@@ -11,8 +11,8 @@ import kotlinx.coroutines.launch
 sealed interface ScanState {
     data object Scanning : ScanState
     data object Resolving : ScanState
-    data class Owned(val gameId: Int, val title: String?, val platform: String?) : ScanState
-    data class Candidates(val candidates: List<BarcodeCandidate>, val upc: String) : ScanState
+    data class Info(val candidate: BarcodeCandidate, val scannedPlatform: String?,
+                    val upc: String) : ScanState
     data class NoMatch(val upc: String, val productTitle: String?) : ScanState
     data class Error(val message: String) : ScanState
     data class Added(val gameId: Int?) : ScanState
@@ -27,24 +27,33 @@ class ScanViewModel(private val repository: Repository) : ViewModel() {
         _state.value = ScanState.Resolving
         repository.resolveBarcode(upc).fold(
             onSuccess = { r ->
-                val owned = r.candidates.firstOrNull { it.ownedGameId != null }
-                _state.value = when {
-                    owned != null -> ScanState.Owned(owned.ownedGameId!!, owned.title, owned.platform)
-                    r.candidates.isNotEmpty() -> ScanState.Candidates(r.candidates, upc)
-                    else -> ScanState.NoMatch(upc, r.productTitle)
-                }
+                val top = r.candidates.firstOrNull()
+                _state.value = if (top == null) ScanState.NoMatch(upc, r.productTitle)
+                               else ScanState.Info(top, r.scannedPlatform, upc)
             },
             onFailure = { _state.value = ScanState.Error(it.message ?: "Can't reach Game Tracker") },
         )
     }
 
-    fun addCandidate(c: BarcodeCandidate, upc: String) = viewModelScope.launch {
-        val gid = repository.createGame(
-            title = c.title ?: "", coverUrl = c.coverUrl,
-            platforms = listOfNotNull(c.platform), physical = true, upc = upc,
-        ).getOrNull()?.gameId
-        _state.value = ScanState.Added(gid)
-    }
+    /** Add a not-owned game, defaulting to the scanned platform + physical format. */
+    fun addToLibrary(c: BarcodeCandidate, scannedPlatform: String?, upc: String) =
+        viewModelScope.launch {
+            val platforms = listOfNotNull(scannedPlatform ?: c.platform)
+            val gid = repository.createGame(
+                title = c.title ?: "", coverUrl = c.coverUrl,
+                platforms = platforms, physical = true, upc = upc,
+            ).getOrNull()?.gameId
+            _state.value = ScanState.Added(gid)
+        }
+
+    /** "I also bought the <scanned> copy": append that platform (physical) + UPC to the
+     *  already-owned game. */
+    fun addPlatformCopy(c: BarcodeCandidate, scannedPlatform: String, upc: String) =
+        viewModelScope.launch {
+            val gid = c.ownedGameId
+            if (gid != null) repository.addPlatform(gid, scannedPlatform, "physical", upc)
+            _state.value = ScanState.Added(gid)
+        }
 
     fun reset() { _state.value = ScanState.Scanning }
 }
