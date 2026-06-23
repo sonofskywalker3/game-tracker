@@ -4,6 +4,7 @@ Background task manager for long-running operations.
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -62,6 +63,20 @@ class TaskManager:
 task_manager = TaskManager()
 
 
+def _run_daemon(task_id: str, work: Callable[[], None]) -> None:
+    """Run ``work()`` in a daemon thread, isolating failures: on an unhandled
+    exception the task is logged and marked errored. A background daemon must
+    never crash the app, so every launcher routes its body through here."""
+    def runner():
+        try:
+            work()
+        except Exception as exc:  # daemon must never crash the app; logged + isolated
+            log.exception("Background task %r failed", task_id)
+            task_manager.update_task(task_id, status="error", error=str(exc),
+                                     completed_at=datetime.now())
+    threading.Thread(target=runner, daemon=True).start()
+
+
 def run_cover_fetch_background(client_id: str, client_secret: str):
     """Run cover fetch in background thread."""
     from fetch_covers import fetch_covers_generator
@@ -77,41 +92,31 @@ def run_cover_fetch_background(client_id: str, client_secret: str):
     task.started_at = datetime.now()
 
     def do_fetch():
-        try:
-            for progress in fetch_covers_generator(client_id, client_secret):
-                if 'error' in progress:
-                    task_manager.update_task(task_id,
-                        status="error",
-                        error=progress['error'],
-                        completed_at=datetime.now()
-                    )
-                    return
-
+        for progress in fetch_covers_generator(client_id, client_secret):
+            if 'error' in progress:
                 task_manager.update_task(task_id,
-                    current=progress.get('current', 0),
-                    total=progress.get('total', 0),
-                    current_item=progress.get('title', ''),
-                    found=progress.get('found', 0),
-                    not_found=progress.get('not_found', [])
+                    status="error",
+                    error=progress['error'],
+                    completed_at=datetime.now()
                 )
+                return
 
-                if progress.get('status') == 'complete':
-                    task_manager.update_task(task_id,
-                        status="complete",
-                        completed_at=datetime.now()
-                    )
-                    return
-
-        except Exception as e:
             task_manager.update_task(task_id,
-                status="error",
-                error=str(e),
-                completed_at=datetime.now()
+                current=progress.get('current', 0),
+                total=progress.get('total', 0),
+                current_item=progress.get('title', ''),
+                found=progress.get('found', 0),
+                not_found=progress.get('not_found', [])
             )
 
-    thread = threading.Thread(target=do_fetch, daemon=True)
-    thread.start()
+            if progress.get('status') == 'complete':
+                task_manager.update_task(task_id,
+                    status="complete",
+                    completed_at=datetime.now()
+                )
+                return
 
+    _run_daemon(task_id, do_fetch)
     return True, "Fetch started"
 
 
@@ -177,8 +182,8 @@ def run_enrichment_background(budget: int, *, db_factory=None) -> tuple[bool, st
     task.started_at = datetime.now()
 
     def do_run():
+        conn = db_factory()
         try:
-            conn = db_factory()
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             state = enrichment.get_enrichment_state(conn)
             already = state["last_run_count"] if state["last_run_date"] == today else 0
@@ -194,13 +199,10 @@ def run_enrichment_background(budget: int, *, db_factory=None) -> tuple[bool, st
                 ENRICH_TASK_ID, status="complete", completed_at=datetime.now(),
                 found=result["found"], queued=result["queued"], no_match=result["no_match"],
                 current=result["calls_used"], total=result["total"])
-            conn.close()
-        except Exception as exc:  # daemon must never crash the app; logged + isolated
-            log.exception("UPC enrichment batch failed")
-            task_manager.update_task(ENRICH_TASK_ID, status="error", error=str(exc),
-                                     completed_at=datetime.now())
+        finally:
+            conn.close()  # always release the connection, even on failure
 
-    threading.Thread(target=do_run, daemon=True).start()
+    _run_daemon(ENRICH_TASK_ID, do_run)
     return True, "Enrichment started"
 
 
