@@ -799,3 +799,26 @@ def test_add_platform_marks_both_when_format_differs(client):
                        ).fetchone()[0]
     conn.close()
     assert fmt == "both"
+
+
+def test_add_platform_keeps_both_when_readding_single_format(client):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1,'A','a')")
+    conn.execute("INSERT OR IGNORE INTO platforms (name, short_name, category) "
+                 "VALUES ('Nintendo Switch','Switch','modern_console')")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='Switch'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, ?, 'both')", (pid,))
+    conn.commit()
+    conn.close()
+    # Re-add the physical copy when you already own it in both formats.
+    r = client.put("/api/games/1", json={
+        "add_platform": {"short_name": "Switch", "format": "physical"}})
+    assert r.status_code == 200
+    conn = models.get_db()
+    fmt = conn.execute("SELECT gp.format FROM game_platforms gp JOIN platforms p "
+                       "ON p.id=gp.platform_id WHERE gp.game_id=1 AND p.short_name='Switch'"
+                       ).fetchone()[0]
+    conn.close()
+    assert fmt == "both"   # not downgraded to 'physical'

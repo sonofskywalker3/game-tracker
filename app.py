@@ -964,10 +964,14 @@ def api_update_game(game_id):
                     "SELECT format FROM game_platforms WHERE game_id = ? AND platform_id = ?",
                     (game_id, prow['id'])).fetchone()
                 new_fmt = add.get('format')
-                cur_fmt = existing['format'] if existing else None
-                # Collector owns both: if a different format already exists, mark 'both'.
-                final_fmt = ('both' if cur_fmt and new_fmt and cur_fmt != new_fmt
-                             and cur_fmt != 'both' else (new_fmt or cur_fmt))
+                cur_fmt = existing['format']
+                # 'both' is sticky (already own physical+digital); owning a different
+                # single format than before upgrades to 'both'; otherwise take the new
+                # format (or keep the current when no new one was given).
+                if cur_fmt == 'both' or (cur_fmt and new_fmt and cur_fmt != new_fmt):
+                    final_fmt = 'both'
+                else:
+                    final_fmt = new_fmt or cur_fmt
                 conn.execute(
                     "UPDATE game_platforms SET format = ? WHERE game_id = ? AND platform_id = ?",
                     (final_fmt, game_id, prow['id']))
