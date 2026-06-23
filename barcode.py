@@ -22,6 +22,14 @@ UPCITEMDB_SEARCH_URL = "https://api.upcitemdb.com/prod/trial/search"
 UPC_LOOKUP_TIMEOUT = 8  # seconds
 MAX_CANDIDATES = 5
 
+# Wikidata SPARQL: free, keyless, no rate limit. GTIN property P3962; video game Q7889.
+WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
+WIKIDATA_GTIN_PROPERTY = "P3962"
+WIKIDATA_VIDEO_GAME_CLASS = "Q7889"
+# Wikidata stores GTIN-13/14 (zero-padded); a 12-digit UPC needs padded variants tried.
+_GTIN_PAD_WIDTHS = (0, 1, 2)
+_WIKIDATA_USER_AGENT = "GameTracker/1.0 (UPC enrichment; contact via app)"
+
 # Last X-RateLimit-Remaining seen from a UPCitemdb call (shared trial quota), or None.
 _last_rate_remaining: int | None = None
 
@@ -116,6 +124,36 @@ def lookup_product_title(upc: str, *, url: str = UPCITEMDB_TRIAL_URL,
     if not items:
         return None
     return (items[0].get("title") or "").strip() or None
+
+
+def lookup_wikidata_gtin(upc: str, *, url: str = WIKIDATA_SPARQL_URL,
+                         timeout: int = UPC_LOOKUP_TIMEOUT) -> str | None:
+    """Return the English label of a video game whose GTIN equals the UPC, or None.
+
+    Wikidata zero-pads GTINs, so the raw UPC plus 1-2 leading zeros are all tried.
+    Free + keyless; degrades to None on any failure (never raises)."""
+    variants = {("0" * w) + upc for w in _GTIN_PAD_WIDTHS}
+    values = " ".join(f'"{v}"' for v in sorted(variants))
+    query = (
+        "SELECT ?item ?itemLabel WHERE { "
+        f"VALUES ?gtin {{ {values} }} "
+        f"?item wdt:{WIKIDATA_GTIN_PROPERTY} ?gtin . "
+        f"?item wdt:P31/wdt:P279* wd:{WIKIDATA_VIDEO_GAME_CLASS} . "
+        'SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 1')
+    try:
+        resp = requests.get(url, params={"query": query, "format": "json"},
+                            headers={"Accept": "application/sparql-results+json",
+                                     "User-Agent": _WIKIDATA_USER_AGENT},
+                            timeout=timeout)
+        resp.raise_for_status()
+        bindings = (resp.json().get("results") or {}).get("bindings") or []
+    except (requests.RequestException, ValueError) as exc:
+        log.warning("Wikidata GTIN lookup failed for %s: %s", upc, exc)
+        return None
+    if not bindings:
+        return None
+    label = ((bindings[0].get("itemLabel") or {}).get("value") or "").strip()
+    return label or None
 
 
 def last_rate_remaining() -> int | None:
