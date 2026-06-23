@@ -444,7 +444,7 @@
         return Array.from(document.querySelectorAll('#prof-meals .meal-row')).map(row => ({
             start_min: hhmmToMin(row.querySelector('input[data-f="start"]').value),
             end_min: hhmmToMin(row.querySelector('input[data-f="end"]').value),
-        }));
+        })).filter(m => m.start_min != null && m.end_min != null);
     }
 
     async function loadProfile() {
@@ -466,7 +466,7 @@
         };
         const res = await api.put('/api/profile', payload);
         const status = document.getElementById('prof-status');
-        status.textContent = res.ok ? 'Saved.' : ('Error: ' + (res.data.error || res.status));
+        status.textContent = res.ok ? 'Saved.' : ('Error: ' + (res.data?.error || res.status));
         status.className = 'ml-3 text-sm ' + (res.ok ? 'text-green-400' : 'text-red-400');
     }
 
