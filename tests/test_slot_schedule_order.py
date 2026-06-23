@@ -38,10 +38,10 @@ def test_order_active_excludes_inactive():
 
 
 def test_order_active_tie_breaks_on_sort_order():
+    # Both active Mon 00:30 — same score (1 day × 60 min = 60 each)
     a = {"id": 1, "sort_order": 9, "windows": [w(1 << MON, 0, 60)]}
-    b = {"id": 2, "sort_order": 2, "windows": [w(1 << MON, 600, 660)]}  # same score (60 min)
-    out = ss.order_active([a, b], MON, 30)  # only 'a' active at 00:30
-    assert [s["id"] for s in out] == [1]
-    out2 = ss.order_active([a, b], MON, 30)
-    # sanity: ranks reset each call
-    assert out2[0]["restrictiveness_rank"] == 0
+    b = {"id": 2, "sort_order": 2, "windows": [w(1 << MON, 0, 60)]}  # same window = same score
+    out = ss.order_active([a, b], MON, 30)
+    # b sorts before a because sort_order 2 < 9
+    assert [s["id"] for s in out] == [2, 1]
+    assert [s["restrictiveness_rank"] for s in out] == [0, 1]
