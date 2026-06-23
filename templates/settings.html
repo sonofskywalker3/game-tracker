@@ -143,6 +143,29 @@
         </div>
     </div>
 
+    <!-- Daily rhythm Section -->
+    <div class="bg-surface-light rounded-xl p-6 mt-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🕑</span> Daily rhythm
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">Optional. Used only to suggest window times when you schedule a slot — it does not change which picks show.</p>
+        <div class="grid grid-cols-2 gap-3 max-w-md">
+            <label class="text-sm text-gray-300">Work start
+                <input type="time" id="prof-work-start" class="mt-1 w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none"></label>
+            <label class="text-sm text-gray-300">Work end
+                <input type="time" id="prof-work-end" class="mt-1 w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none"></label>
+            <label class="text-sm text-gray-300">Bedtime
+                <input type="time" id="prof-bed" class="mt-1 w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none"></label>
+        </div>
+        <div class="mt-4">
+            <div class="text-sm text-gray-300 mb-1">Meal / break windows</div>
+            <div id="prof-meals"></div>
+            <button onclick="addMealRow()" class="mt-1 px-2 py-1 bg-gray-700 hover:bg-accent rounded text-white text-xs transition-colors">+ Add break</button>
+        </div>
+        <button onclick="saveProfile()" class="mt-4 px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">Save profile</button>
+        <span id="prof-status" class="ml-3 text-sm text-gray-400"></span>
+    </div>
+
     <!-- Instructions -->
     <div class="bg-surface-light/50 rounded-xl p-6 border border-gray-700/50">
         <h2 class="text-lg font-medium text-white mb-4">Setup Instructions</h2>
@@ -198,6 +221,7 @@
         loadCoverStatus();
         checkFetchStatus(); // Check if a fetch is already running
         loadEnrichment();
+        loadProfile();
     }
 
     async function loadCoverStatus() {
@@ -388,6 +412,62 @@
         } else {
             notFoundList.innerHTML = '';
         }
+    }
+
+    // --- Daily rhythm helpers ---
+    function minToHHMM(min) {
+        const h = Math.floor(min / 60).toString().padStart(2, '0');
+        const m = (min % 60).toString().padStart(2, '0');
+        return `${h}:${m}`;
+    }
+
+    function hhmmToMin(hhmm) {
+        if (!hhmm) return null;
+        const [h, m] = hhmm.split(':').map(Number);
+        return h * 60 + m;
+    }
+
+    function addMealRow(start, end) {
+        const wrap = document.getElementById('prof-meals');
+        const row = document.createElement('div');
+        row.className = 'meal-row flex items-center gap-2 mb-1';
+        row.innerHTML = `<input type="time" data-f="start" value="${start != null ? minToHHMM(start) : '12:00'}"
+                class="bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none">
+            <span class="text-gray-400 text-sm">to</span>
+            <input type="time" data-f="end" value="${end != null ? minToHHMM(end) : '13:00'}"
+                class="bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none">
+            <button onclick="this.parentElement.remove()" class="px-2 py-1 bg-gray-700 hover:bg-red-700 rounded text-white text-xs transition-colors">×</button>`;
+        wrap.appendChild(row);
+    }
+
+    function collectMeals() {
+        return Array.from(document.querySelectorAll('#prof-meals .meal-row')).map(row => ({
+            start_min: hhmmToMin(row.querySelector('input[data-f="start"]').value),
+            end_min: hhmmToMin(row.querySelector('input[data-f="end"]').value),
+        }));
+    }
+
+    async function loadProfile() {
+        const p = await api.get('/api/profile');
+        if (p.work_start_min != null) document.getElementById('prof-work-start').value = minToHHMM(p.work_start_min);
+        if (p.work_end_min != null) document.getElementById('prof-work-end').value = minToHHMM(p.work_end_min);
+        if (p.bed_time_min != null) document.getElementById('prof-bed').value = minToHHMM(p.bed_time_min);
+        document.getElementById('prof-meals').innerHTML = '';
+        (p.meal_windows || []).forEach(m => addMealRow(m.start_min, m.end_min));
+    }
+
+    async function saveProfile() {
+        const valOrNull = id => { const v = document.getElementById(id).value; return v ? hhmmToMin(v) : null; };
+        const payload = {
+            work_start_min: valOrNull('prof-work-start'),
+            work_end_min: valOrNull('prof-work-end'),
+            bed_time_min: valOrNull('prof-bed'),
+            meal_windows: collectMeals(),
+        };
+        const res = await api.put('/api/profile', payload);
+        const status = document.getElementById('prof-status');
+        status.textContent = res.ok ? 'Saved.' : ('Error: ' + (res.data.error || res.status));
+        status.className = 'ml-3 text-sm ' + (res.ok ? 'text-green-400' : 'text-red-400');
     }
 
     // Initialize
