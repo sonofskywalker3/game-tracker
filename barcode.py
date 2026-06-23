@@ -17,8 +17,13 @@ log = logging.getLogger(__name__)
 
 # Free UPCitemdb trial endpoint: ~100 lookups/day, no API key required.
 UPCITEMDB_TRIAL_URL = "https://api.upcitemdb.com/prod/trial/lookup"
+# Free UPCitemdb trial name-search: shares the ~100/day per-IP quota with /lookup.
+UPCITEMDB_SEARCH_URL = "https://api.upcitemdb.com/prod/trial/search"
 UPC_LOOKUP_TIMEOUT = 8  # seconds
 MAX_CANDIDATES = 5
+
+# Last X-RateLimit-Remaining seen from a UPCitemdb call (shared trial quota), or None.
+_last_rate_remaining: int | None = None
 
 # ── Retail-title cleanup ──────────────────────────────────────────────────────
 # UPCitemdb titles wrap the real game name in platform names, packaging, region,
@@ -111,6 +116,41 @@ def lookup_product_title(upc: str, *, url: str = UPCITEMDB_TRIAL_URL,
     if not items:
         return None
     return (items[0].get("title") or "").strip() or None
+
+
+def last_rate_remaining() -> int | None:
+    """Last-seen UPCitemdb trial quota remaining (X-RateLimit-Remaining), or None."""
+    return _last_rate_remaining
+
+
+def search_products_by_name(query: str, *, url: str = UPCITEMDB_SEARCH_URL,
+                            timeout: int = UPC_LOOKUP_TIMEOUT) -> list[dict]:
+    """Return [{title, upc}, ...] for a UPCitemdb name-search, or [] on failure.
+
+    Counts against the shared trial quota; captures X-RateLimit-Remaining into
+    the module global. Network/parse failures log and degrade to [] (never raise).
+    """
+    global _last_rate_remaining
+    try:
+        resp = requests.get(url, params={"s": query}, timeout=timeout)
+        resp.raise_for_status()
+        remaining = resp.headers.get("X-RateLimit-Remaining")
+        if remaining is not None:
+            try:
+                _last_rate_remaining = int(remaining)
+            except (TypeError, ValueError):
+                _last_rate_remaining = None
+        items = resp.json().get("items") or []
+    except (requests.RequestException, ValueError) as exc:
+        log.warning("UPC name-search failed for %r: %s", query, exc)
+        return []
+    out: list[dict] = []
+    for it in items:
+        upc = (it.get("upc") or "").strip()
+        title = (it.get("title") or "").strip()
+        if upc and title:
+            out.append({"title": title, "upc": upc})
+    return out
 
 
 def registry_get(conn: sqlite3.Connection, upc: str) -> dict | None:
