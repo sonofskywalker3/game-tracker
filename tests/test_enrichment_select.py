@@ -70,6 +70,23 @@ def test_excludes_mobile_and_subscription_platforms(temp_db):
     conn.close()
 
 
+def test_other_platform_still_eligible_when_one_is_excluded(temp_db):
+    """Exclusion is per (game, platform) pair, not per game: a game owned on two
+    platforms with a registry link on ONE platform leaves the OTHER eligible."""
+    import barcode
+    conn = models.get_db()
+    sw = _platform(conn, "Switch", "Switch")
+    ps = _platform(conn, "PS5", "PS5")
+    g = _game(conn, "Hades", igdb_id=7)
+    _own(conn, g, sw)
+    _own(conn, g, ps)
+    barcode.registry_put(conn, "111", game_id=g, platform="Switch", title="Hades")
+    conn.commit()
+    pairs = enrichment.select_eligible_pairs(conn)
+    assert [r["short_name"] for r in pairs] == ["PS5"]
+    conn.close()
+
+
 def test_limit_caps_rows(temp_db):
     conn = models.get_db()
     sw = _platform(conn, "Switch", "Switch")

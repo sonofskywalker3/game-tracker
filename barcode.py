@@ -7,6 +7,7 @@ scan flow never 500s.
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 
 import requests
 
@@ -158,7 +159,8 @@ def lookup_wikidata_gtin(upc: str, *, url: str = WIKIDATA_SPARQL_URL,
 
 # Ordered product-title sources tried by resolve(); first non-empty hit wins.
 # Append new free sources here — the chain is the extensibility seam.
-PRODUCT_SOURCES: tuple = (lookup_product_title, lookup_wikidata_gtin)
+PRODUCT_SOURCES: tuple[Callable[[str], str | None], ...] = (
+    lookup_product_title, lookup_wikidata_gtin)
 
 
 def _product_via_sources(upc: str) -> str | None:
