@@ -7,6 +7,7 @@ import logging
 import os
 import sqlite3
 from collections import Counter
+from datetime import datetime, timezone
 import requests
 import dedup
 import hltb
@@ -2274,7 +2275,6 @@ def api_fetch_covers_status():
 @app.route('/api/enrichment/run', methods=['POST'])
 def api_enrichment_run():
     """Trigger one enrichment batch now (respects the shared daily quota cap)."""
-    from datetime import datetime, timezone
     conn = get_db()
     state = enrichment.get_enrichment_state(conn)
     conn.close()
@@ -2292,7 +2292,6 @@ def api_enrichment_run():
 @app.route('/api/enrichment/status')
 def api_enrichment_status():
     """Enrichment task status + eligible-remaining + today's remaining quota."""
-    from datetime import datetime, timezone
     status = get_enrichment_status()
     conn = get_db()
     state = enrichment.get_enrichment_state(conn)

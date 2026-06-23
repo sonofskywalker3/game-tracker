@@ -62,14 +62,15 @@ def classify_match(normalized_title: str, short_name: str,
 
 # Platform categories that can never have a physical retail UPC.
 _NON_RETAIL_CATEGORIES = ("mobile", "subscription")
+_NON_RETAIL_IN_LIST = ", ".join(f"'{c}'" for c in _NON_RETAIL_CATEGORIES)
 
-_ELIGIBLE_SQL = """
+_ELIGIBLE_SQL = f"""
     SELECT g.id, g.title, g.normalized_title, g.igdb_id, g.cover_url, p.short_name
     FROM games g
     JOIN game_platforms gp ON gp.game_id = g.id
     JOIN platforms p ON p.id = gp.platform_id
     WHERE gp.owned = 1
-      AND p.category NOT IN ('mobile', 'subscription')
+      AND p.category NOT IN ({_NON_RETAIL_IN_LIST})
       AND NOT EXISTS (SELECT 1 FROM barcode_registry br
                       WHERE br.game_id = g.id AND br.platform = p.short_name)
       AND NOT EXISTS (SELECT 1 FROM upc_review ur
