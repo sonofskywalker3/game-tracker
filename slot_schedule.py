@@ -11,13 +11,13 @@ the two in lockstep.
 import datetime
 
 DAY_MINUTES = 1440
+WEEK_MINUTES = 7 * DAY_MINUTES
 
 
 def now_weekday_minute(dt: "datetime.datetime | None" = None) -> tuple[int, int]:
     """(weekday 0=Mon..6=Sun, minute-of-day) for dt, or local now() if dt is None."""
     dt = dt or datetime.datetime.now()
     return dt.weekday(), dt.hour * 60 + dt.minute
-WEEK_MINUTES = 7 * DAY_MINUTES
 
 
 def _day_set(days: int, weekday: int) -> bool:
