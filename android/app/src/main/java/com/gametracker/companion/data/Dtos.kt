@@ -74,13 +74,16 @@ data class RecentlyFinished(
 
 @Serializable
 data class Slot(
-    val id: Int,
+    override val id: Int,
     val label: String,
     val goal: String? = null,
-    @SerialName("sort_order") val sortOrder: Int = 0,
+    @SerialName("sort_order") override val sortOrder: Int = 0,
     @SerialName("current_game") val currentGame: SlotCandidate? = null,
     val candidates: List<RankedCandidate> = emptyList(),
-)
+    override val windows: List<com.gametracker.companion.schedule.ScheduleWindow> = emptyList(),
+    @SerialName("active_now") val activeNow: Boolean = false,
+    @SerialName("restrictiveness_rank") val restrictivenessRank: Int? = null,
+) : com.gametracker.companion.schedule.ScheduleSlot
 
 @Serializable
 data class SlotsResponse(
