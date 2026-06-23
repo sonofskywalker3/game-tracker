@@ -8,8 +8,15 @@ start_min is degenerate (never active). A slot with zero windows is 'anytime'.
 This module is the canonical reference for the Kotlin matcher in Plan C — keep
 the two in lockstep.
 """
+import datetime
 
 DAY_MINUTES = 1440
+
+
+def now_weekday_minute(dt: "datetime.datetime | None" = None) -> tuple[int, int]:
+    """(weekday 0=Mon..6=Sun, minute-of-day) for dt, or local now() if dt is None."""
+    dt = dt or datetime.datetime.now()
+    return dt.weekday(), dt.hour * 60 + dt.minute
 WEEK_MINUTES = 7 * DAY_MINUTES
 
 

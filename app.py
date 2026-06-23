@@ -15,6 +15,7 @@ import import_scraped
 import decider
 import igdb_match
 import slots
+import slot_schedule
 import barcode
 from flask import Flask, render_template, request, jsonify
 from models import (
@@ -1847,6 +1848,12 @@ def api_slots():
     state = slots.get_slots_state(conn)
     recent = slots.recently_finished(conn)
     conn.close()
+    weekday, minute = slot_schedule.now_weekday_minute()
+    active = slot_schedule.order_active(state, weekday, minute)  # mutates active slots' rank
+    active_ids = {s["id"] for s in active}
+    for s in state:
+        s["active_now"] = s["id"] in active_ids
+        s["restrictiveness_rank"] = s.get("restrictiveness_rank") if s["id"] in active_ids else None
     return jsonify({'slots': state, 'recently_finished': recent})
 
 

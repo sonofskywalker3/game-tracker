@@ -310,5 +310,10 @@ def get_slots_state(conn: sqlite3.Connection, candidate_limit: int = 8) -> list[
             current_game = dict(g) if g else None
         slot["current_game"] = current_game
         slot["candidates"] = rank_candidates(conn, slot, limit=candidate_limit)
+        slot["windows"] = [
+            dict(wr) for wr in conn.execute(
+                "SELECT id, days, start_min, end_min FROM slot_schedule_window "
+                "WHERE slot_id = ? ORDER BY id", (slot["id"],)).fetchall()
+        ]
         state.append(slot)
     return state
