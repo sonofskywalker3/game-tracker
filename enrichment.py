@@ -20,6 +20,9 @@ NO_MATCH = "no_match"
 # Minimum normalized-title length for the containment heuristic (avoids "go"/"a").
 _MIN_CONTAIN_LEN = 4
 
+UPC_ENRICH_DAILY_BUDGET = 90          # < 100/day trial cap (shared per-IP bucket)
+UPC_ENRICH_QUOTA_SAFETY_MARGIN = 5    # stop if live remaining drops to/below this
+
 
 def classify_match(normalized_title: str, short_name: str,
                    products: list[dict]) -> dict:
@@ -113,3 +116,51 @@ def set_enrichment_state(conn: sqlite3.Connection, *, last_run_date: str,
         "UPDATE upc_enrichment_state SET last_run_date = ?, last_run_count = ? WHERE id = 1",
         (last_run_date, last_run_count))
     conn.commit()
+
+
+def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET,
+              search_fn=barcode.search_products_by_name,
+              remaining_fn=barcode.last_rate_remaining, progress=None) -> dict:
+    """Run one throttled enrichment batch. Idempotent + resumable.
+
+    Selects up to `budget` eligible pairs, name-searches each, and writes a
+    confident registry link / pending review / no_match row. Stops early if the
+    live trial quota (remaining_fn) drops to the safety margin. Commits per write.
+    """
+    pairs = select_eligible_pairs(conn, limit=budget)
+    total = len(pairs)
+    found = queued = no_match = calls_used = 0
+    for row in pairs:
+        if calls_used >= budget:
+            break
+        products = search_fn(row["title"])
+        calls_used += 1
+        verdict = classify_match(row["normalized_title"], row["short_name"], products)
+        status = verdict["status"]
+        if status == CONFIDENT:
+            barcode.registry_put(conn, verdict["upc"], igdb_id=row["igdb_id"],
+                                 title=row["title"], platform=row["short_name"],
+                                 game_id=row["id"], cover_url=row["cover_url"])
+            found += 1
+        elif status == UNCERTAIN:
+            conn.execute(
+                "INSERT INTO upc_review (game_id, platform, upc, product_title, "
+                "cover_url, status, reason) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                (row["id"], row["short_name"], verdict["upc"], verdict["product_title"],
+                 row["cover_url"], verdict["reason"]))
+            queued += 1
+        else:
+            conn.execute(
+                "INSERT INTO upc_review (game_id, platform, upc, product_title, "
+                "cover_url, status, reason) VALUES (?, ?, NULL, NULL, ?, 'no_match', ?)",
+                (row["id"], row["short_name"], row["cover_url"], verdict["reason"]))
+            no_match += 1
+        conn.commit()
+        if progress is not None:
+            progress(calls_used, total, found, queued, no_match)
+        live = remaining_fn()
+        if live is not None and live <= UPC_ENRICH_QUOTA_SAFETY_MARGIN:
+            log.warning("UPC enrichment stopping: trial quota remaining=%s", live)
+            break
+    return {"found": found, "queued": queued, "no_match": no_match,
+            "calls_used": calls_used, "total": total}
