@@ -176,26 +176,26 @@ def last_rate_remaining() -> int | None:
 
 
 def search_products_by_name(query: str, *, url: str = UPCITEMDB_SEARCH_URL,
-                            timeout: int = UPC_LOOKUP_TIMEOUT) -> list[dict]:
-    """Return [{title, upc}, ...] for a UPCitemdb name-search, or [] on failure.
-
-    Counts against the shared trial quota; captures X-RateLimit-Remaining into
-    the module global. Network/parse failures log and degrade to [] (never raise).
-    """
+                            timeout: int = UPC_LOOKUP_TIMEOUT) -> list[dict] | None:
+    """Return [{title, upc}, ...] for a UPCitemdb name-search, [] if the search
+    succeeded with no products, or None if the call FAILED (network/HTTP/parse).
+    Distinguishing None (failed) from [] (empty) lets the worker avoid recording a
+    transient failure as a permanent no_match. Captures X-RateLimit-Remaining even
+    on a 429 (header read before raise_for_status)."""
     global _last_rate_remaining
     try:
         resp = requests.get(url, params={"s": query}, timeout=timeout)
-        resp.raise_for_status()
         remaining = resp.headers.get("X-RateLimit-Remaining")
         if remaining is not None:
             try:
                 _last_rate_remaining = int(remaining)
             except (TypeError, ValueError):
                 _last_rate_remaining = None
+        resp.raise_for_status()
         items = resp.json().get("items") or []
     except (requests.RequestException, ValueError) as exc:
         log.warning("UPC name-search failed for %r: %s", query, exc)
-        return []
+        return None
     out: list[dict] = []
     for it in items:
         upc = (it.get("upc") or "").strip()
