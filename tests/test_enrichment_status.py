@@ -40,6 +40,44 @@ def test_run_enrichment_background_runs_and_reports(temp_db, monkeypatch):
     assert st["found"] == 1
 
 
+def test_enrichment_conn_closed_even_on_error(temp_db, monkeypatch):
+    """A failure inside the batch must still close the DB connection (no leak)
+    and mark the task errored."""
+    class _ConnSpy:
+        def __init__(self, real):
+            self._real = real
+            self.closed = False
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        def close(self):
+            self.closed = True
+            self._real.close()
+
+    spies = []
+
+    def factory():  # built inside the daemon thread (sqlite is thread-bound)
+        spy = _ConnSpy(models.get_db())
+        spies.append(spy)
+        return spy
+
+    def boom(*a, **k):
+        raise RuntimeError("batch exploded")
+    monkeypatch.setattr(enrichment, "run_batch", boom)
+    background_tasks.task_manager._tasks.pop(background_tasks.ENRICH_TASK_ID, None)
+
+    ok, _ = background_tasks.run_enrichment_background(90, db_factory=factory)
+    assert ok is True
+    for _ in range(50):
+        if background_tasks.get_enrichment_status()["status"] in ("complete", "error"):
+            break
+        time.sleep(0.02)
+    st = background_tasks.get_enrichment_status()
+    assert st["status"] == "error"
+    assert spies and spies[0].closed is True, "connection leaked on the error path"
+
+
 def test_double_start_guarded(monkeypatch):
     background_tasks.task_manager._tasks.pop(background_tasks.ENRICH_TASK_ID, None)
     task = background_tasks.task_manager.create_task(background_tasks.ENRICH_TASK_ID)
