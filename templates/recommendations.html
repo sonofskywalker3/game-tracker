@@ -339,6 +339,60 @@
         grid.innerHTML = games.map(gameCardHtml).join('');
     }
 
+    // --- schedule-window helpers ---
+    const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];  // bit 0..6
+
+    function minToHHMM(min) {
+        const m = Math.max(0, Math.min(1439, parseInt(min, 10) || 0));
+        return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    }
+
+    function hhmmToMin(str) {
+        const parts = String(str || '').split(':');
+        const h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        return Math.max(0, Math.min(1439, h * 60 + m));
+    }
+
+    function dayChecksHtml(windowId, days) {
+        return DAY_LABELS.map((label, bit) => {
+            const checked = (days & (1 << bit)) ? 'checked' : '';
+            return `<label class="inline-flex items-center mr-1 text-xs text-gray-300">
+            <input type="checkbox" data-win="${windowId}" data-bit="${bit}" ${checked}
+                   class="mr-0.5 accent-accent"> ${label}</label>`;
+        }).join('');
+    }
+
+    function windowRowHtml(slotId, win) {
+        return `<div class="schedule-window mb-2 p-2 bg-surface rounded border border-gray-700" data-window="${win.id}">
+        <div class="mb-1">${dayChecksHtml(win.id, win.days)}</div>
+        <div class="flex items-center gap-2 text-xs text-gray-300">
+            <input type="time" data-win="${win.id}" data-f="start" value="${minToHHMM(win.start_min)}"
+                   class="bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none">
+            <span>to</span>
+            <input type="time" data-win="${win.id}" data-f="end" value="${minToHHMM(win.end_min)}"
+                   class="bg-surface rounded border border-gray-600 px-2 py-1 text-white focus:border-accent focus:outline-none">
+            <button onclick="saveSlotWindow(${slotId}, ${win.id})"
+                    class="ml-auto px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs transition-colors">Save</button>
+            <button onclick="deleteSlotWindow(${slotId}, ${win.id})"
+                    class="px-2 py-1 bg-gray-700 hover:bg-red-700 rounded text-white text-xs transition-colors">Remove</button>
+        </div>
+    </div>`;
+    }
+
+    function scheduleEditorHtml(slot) {
+        const windows = slot.windows || [];
+        const rows = windows.length
+            ? windows.map(w => windowRowHtml(slot.id, w)).join('')
+            : '<p class="text-xs text-gray-500 mb-2">No windows — this slot is <span class="text-gray-300">Anytime</span> (always active).</p>';
+        return `<div class="mt-3 border-t border-gray-700 pt-2">
+        <div class="text-xs text-gray-400 mb-1">Schedule windows (when this slot is active)</div>
+        ${rows}
+        <button onclick="addSlotWindow(${slot.id})"
+                class="mt-1 px-2 py-1 bg-gray-700 hover:bg-accent rounded text-white text-xs transition-colors">+ Add window</button>
+    </div>`;
+    }
+
     const SLOT_PLATFORMS = ['Switch', 'PS', 'Xbox', 'Steam', 'PC'];
 
     function toggleSlotSettings(slotId) {
@@ -378,6 +432,7 @@
                     <button onclick="saveSlot(${slotId})" class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs">Save</button>
                     <button onclick="deleteSlot(${slotId})" class="px-2 py-1 bg-surface rounded text-red-300 hover:text-red-200 text-xs">Delete</button>
                 </div>
+                ${scheduleEditorHtml(slot)}
             </div>`;
         el.classList.remove('hidden');
     }
@@ -413,6 +468,39 @@
     async function addSlot() {
         await api.post('/api/slots', { label: 'New slot', platforms: [] });
         loadSlate();
+    }
+
+    function collectWindowPayload(slotId, windowId) {
+        const panel = document.getElementById('slot-settings-' + slotId);
+        const row = panel.querySelector(`.schedule-window[data-window="${windowId}"]`);
+        let days = 0;
+        row.querySelectorAll(`input[type="checkbox"][data-win="${windowId}"]`).forEach(cb => {
+            if (cb.checked) days |= (1 << parseInt(cb.dataset.bit, 10));
+        });
+        const start = hhmmToMin(row.querySelector(`input[data-win="${windowId}"][data-f="start"]`).value);
+        const end = hhmmToMin(row.querySelector(`input[data-win="${windowId}"][data-f="end"]`).value);
+        return { days, start_min: start, end_min: end };
+    }
+
+    async function addSlotWindow(slotId) {
+        // sensible default: weekdays 19:00-21:00
+        const res = await api.post(`/api/slots/${slotId}/windows`,
+            { days: 0b0011111, start_min: 1140, end_min: 1260 });
+        if (!res.ok) { alert('Could not add window: ' + (res.data.error || res.status)); return; }
+        await loadSlate();
+    }
+
+    async function saveSlotWindow(slotId, windowId) {
+        const payload = collectWindowPayload(slotId, windowId);
+        if (payload.start_min === payload.end_min) { alert('Start and end times must differ.'); return; }
+        const res = await api.put(`/api/slots/${slotId}/windows/${windowId}`, payload);
+        if (!res.ok) { alert('Could not save window: ' + (res.data.error || res.status)); return; }
+        await loadSlate();
+    }
+
+    async function deleteSlotWindow(slotId, windowId) {
+        await api.delete(`/api/slots/${slotId}/windows/${windowId}`);
+        await loadSlate();
     }
 
     // ---- Decider chat ----
