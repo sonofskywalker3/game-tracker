@@ -86,8 +86,9 @@ def test_stops_when_remaining_quota_low(temp_db):
     for t in ("A", "B", "C"):
         _setup(conn, t, "Switch")
     calls = []
-    # remaining drops to the safety margin after the first call -> stop before the 2nd
-    seq = iter([enrichment.UPC_ENRICH_QUOTA_SAFETY_MARGIN])
+    # remaining is healthy before the 1st call, then at the safety margin before the 2nd.
+    # A correct before-the-call check makes exactly 1 call; an after-the-call check would make 2.
+    seq = iter([50, enrichment.UPC_ENRICH_QUOTA_SAFETY_MARGIN])
 
     def fn(q):
         calls.append(q)

@@ -133,6 +133,10 @@ def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET
     for row in pairs:
         if calls_used >= budget:
             break
+        live = remaining_fn()
+        if live is not None and live <= UPC_ENRICH_QUOTA_SAFETY_MARGIN:
+            log.warning("UPC enrichment stopping: trial quota remaining=%s", live)
+            break
         products = search_fn(row["title"])
         calls_used += 1
         verdict = classify_match(row["normalized_title"], row["short_name"], products)
@@ -158,9 +162,5 @@ def run_batch(conn: sqlite3.Connection, *, budget: int = UPC_ENRICH_DAILY_BUDGET
         conn.commit()
         if progress is not None:
             progress(calls_used, total, found, queued, no_match)
-        live = remaining_fn()
-        if live is not None and live <= UPC_ENRICH_QUOTA_SAFETY_MARGIN:
-            log.warning("UPC enrichment stopping: trial quota remaining=%s", live)
-            break
     return {"found": found, "queued": queued, "no_match": no_match,
             "calls_used": calls_used, "total": total}
