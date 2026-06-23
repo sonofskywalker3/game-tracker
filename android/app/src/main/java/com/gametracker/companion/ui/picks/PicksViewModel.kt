@@ -5,12 +5,26 @@ import androidx.lifecycle.viewModelScope
 import com.gametracker.companion.data.GameSummary
 import com.gametracker.companion.data.Repository
 import com.gametracker.companion.data.SlotsResponse
+import com.gametracker.companion.schedule.scheduleAwareOrder
 import com.gametracker.companion.ui.common.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
-class PicksViewModel(private val repository: Repository) : ViewModel() {
+/** (weekday 0=Mon..6=Sun, minute-of-day) from the device clock. */
+fun deviceNowWeekdayMinute(): Pair<Int, Int> {
+    val c = Calendar.getInstance()
+    // Calendar.DAY_OF_WEEK: Sunday=1..Saturday=7 -> convert to Mon=0..Sun=6
+    val weekday = ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7)
+    val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+    return weekday to minute
+}
+
+class PicksViewModel(
+    private val repository: Repository,
+    private val nowProvider: () -> Pair<Int, Int> = ::deviceNowWeekdayMinute,
+) : ViewModel() {
 
     private val _state = MutableStateFlow<UiState<SlotsResponse>>(UiState.Loading)
     val state: StateFlow<UiState<SlotsResponse>> = _state
@@ -18,10 +32,20 @@ class PicksViewModel(private val repository: Repository) : ViewModel() {
     private val _picker = MutableStateFlow<List<GameSummary>>(emptyList())
     val picker: StateFlow<List<GameSummary>> = _picker
 
+    /** Re-order the slots schedule-aware (active most-restrictive-first) off the clock. */
+    private fun ordered(resp: SlotsResponse): SlotsResponse {
+        val (weekday, minute) = nowProvider()
+        return resp.copy(slots = scheduleAwareOrder(resp.slots, weekday, minute))
+    }
+
+    private fun emit(resp: SlotsResponse) {
+        _state.value = if (resp.slots.isEmpty()) UiState.Empty else UiState.Success(ordered(resp))
+    }
+
     fun load() = viewModelScope.launch {
         _state.value = UiState.Loading
         repository.slots().fold(
-            onSuccess = { _state.value = if (it.slots.isEmpty()) UiState.Empty else UiState.Success(it) },
+            onSuccess = { emit(it) },
             onFailure = { _state.value = UiState.Error(it.message ?: "Can't reach Game Tracker") },
         )
     }
@@ -42,13 +66,9 @@ class PicksViewModel(private val repository: Repository) : ViewModel() {
         if (repository.reorderSlots(slotIds).isSuccess) refresh()
     }
 
-    /** Reload after a mutation WITHOUT going through Loading — keeps PicksContent
-     *  (and its HorizontalPager) composed so the view stays on the current slot
-     *  instead of snapping back to the first. */
+    /** Reload after a mutation WITHOUT going through Loading. */
     private suspend fun refresh() {
-        repository.slots().onSuccess {
-            _state.value = if (it.slots.isEmpty()) UiState.Empty else UiState.Success(it)
-        }
+        repository.slots().onSuccess { emit(it) }
     }
 
     fun searchLibrary(q: String) = viewModelScope.launch {
