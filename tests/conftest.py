@@ -30,6 +30,8 @@ def temp_db(tmp_path, monkeypatch):
     models.migrate_seed_extra_platforms(conn)
     models.migrate_platform_digital_market(conn)
     models.migrate_game_platform_format(conn)
+    models.migrate_upc_review(conn)
+    models.migrate_upc_enrichment_state(conn)
     models.seed_default_slots(conn)
     conn.close()
     return db_path
