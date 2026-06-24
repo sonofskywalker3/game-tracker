@@ -194,6 +194,33 @@ def test_quota_exhausted_skips_retry(temp_db):
     conn.close()
 
 
+def test_throttle_and_backoff_sleep_durations(temp_db):
+    """run_batch throttles between calls by UPC_ENRICH_CALL_DELAY_SECONDS and backs
+    off by UPC_ENRICH_BACKOFF_BASE_SECONDS * 2**attempt on a transient failure.
+    Value-agnostic: asserts the wiring uses the configured constants, so it stays
+    green across retunes while guarding that the knobs are actually applied."""
+    conn = models.get_db()
+    _setup(conn, "Hades", "Switch", igdb_id=1)
+    _setup(conn, "Celeste", "Switch", igdb_id=2)
+    sleeps = []
+    state = {"n": 0}
+
+    def fn(q):
+        state["n"] += 1
+        # call1 (pair 1) -> confident hit; call2 (pair 2) -> None (transient);
+        # call3 (pair 2 retry) -> confident hit.
+        if state["n"] == 2:
+            return None
+        return [{"title": f"{q} (Nintendo Switch)", "upc": str(state["n"])}]
+
+    enrichment.run_batch(conn, search_fn=fn, remaining_fn=lambda: None,
+                         sleep_fn=lambda s: sleeps.append(s))
+    # First sleep = inter-call throttle before pair 2's call; second = first backoff (base * 2**0).
+    assert sleeps[0] == enrichment.UPC_ENRICH_CALL_DELAY_SECONDS
+    assert sleeps[1] == enrichment.UPC_ENRICH_BACKOFF_BASE_SECONDS
+    conn.close()
+
+
 def test_empty_search_records_no_match(temp_db):
     """search_fn returning [] (genuine empty result) must write a no_match row."""
     conn = models.get_db()
