@@ -16,6 +16,25 @@ data class WidgetCard(
     val deepLinkGameId: Int?,
 )
 
+/** Short weekday names indexed Mon=0 .. Sun=6 (matches the schedule weekday convention). */
+private val DAY_NAMES = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+/**
+ * Day qualifier for a future activation: "" today, "tomorrow " one day out, else the
+ * weekday name (e.g. "Wed "). Includes a trailing space so callers can splice it inline.
+ */
+private fun dayQualifier(weekday: Int, minute: Int, minutesUntil: Int): String {
+    val daysAhead = (minute + minutesUntil) / DAY_MINUTES
+    return when (daysAhead) {
+        0 -> ""
+        1 -> "tomorrow "
+        else -> {
+            val targetWeekday = ((weekday * DAY_MINUTES + minute + minutesUntil) / DAY_MINUTES) % 7
+            "${DAY_NAMES[targetWeekday]} "
+        }
+    }
+}
+
 /** 12-hour clock label, e.g. 0 -> "12:00am", 1380 -> "11:00pm". */
 fun formatMinute(minute: Int): String {
     val m = ((minute % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES
@@ -56,10 +75,11 @@ fun buildWidgetCard(snapshot: SlotsResponse, weekday: Int, minute: Int): WidgetC
     if (upcoming != null) {
         val g = upcoming.slot.currentGame!!
         val startMinute = (minute + upcoming.minutesUntil) % DAY_MINUTES
+        val day = dayQualifier(weekday, minute, upcoming.minutesUntil)
         return WidgetCard(
             title = g.title,
             slotLabel = upcoming.slot.label,
-            hint = "Next: ${upcoming.slot.label} at ${formatMinute(startMinute)}",
+            hint = "Next: ${upcoming.slot.label} ${day}at ${formatMinute(startMinute)}",
             goal = upcoming.slot.goal,
             coverUrl = g.coverUrl,
             deepLinkGameId = g.id,
