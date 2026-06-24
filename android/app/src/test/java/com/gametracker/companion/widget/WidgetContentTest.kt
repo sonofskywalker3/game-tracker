@@ -50,6 +50,31 @@ class WidgetContentTest {
         assertEquals(7, card.deepLinkGameId)
     }
 
+    @Test fun nextUpcoming_today_hasNoDayQualifier() {
+        // now Mon 18:00, activates 20:00 same day -> "at 8:00pm" with no day word.
+        val evening = slot(2, "Evening", game = SlotCandidate(7, "Celeste"),
+            windows = listOf(win(allDays, 1200, 1380)))
+        val card = buildWidgetCard(SlotsResponse(slots = listOf(evening)), weekday = 0, minute = 1080)
+        assertEquals("Next: Evening at 8:00pm", card.hint)
+    }
+
+    @Test fun nextUpcoming_tomorrow_qualifier() {
+        // now Mon 22:00 (1320); window 09:00-10:00 next fires Tue 09:00.
+        val morning = slot(3, "Morning", game = SlotCandidate(8, "Tunic"),
+            windows = listOf(win(allDays, 540, 600)))
+        val card = buildWidgetCard(SlotsResponse(slots = listOf(morning)), weekday = 0, minute = 1320)
+        assertEquals("Next: Morning tomorrow at 9:00am", card.hint)
+    }
+
+    @Test fun nextUpcoming_namedWeekday_qualifier() {
+        // now Mon 12:00; Wed-only window 18:00 fires two days out -> weekday name.
+        val wedBit = 1 shl 2  // Mon=0 -> Wed=2
+        val wed = slot(4, "Co-op", game = SlotCandidate(9, "It Takes Two"),
+            windows = listOf(win(wedBit, 1080, 1200)))
+        val card = buildWidgetCard(SlotsResponse(slots = listOf(wed)), weekday = 0, minute = 720)
+        assertEquals("Next: Co-op Wed at 6:00pm", card.hint)
+    }
+
     @Test fun empty_whenNothingScheduledWithAGame() {
         val card = buildWidgetCard(SlotsResponse(slots = emptyList()), weekday = 0, minute = 1080)
         assertNull(card.deepLinkGameId)

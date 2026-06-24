@@ -1,7 +1,6 @@
 package com.gametracker.companion.widget
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.Composable
@@ -11,10 +10,11 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
-import androidx.glance.LocalContext
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
+import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.provideContent
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
@@ -35,6 +35,13 @@ import com.gametracker.companion.ui.picks.deviceNowWeekdayMinute
 
 /** Intent extra key used by MainActivity to open the Picks tab on launch (consumed by Task 8). */
 const val EXTRA_OPEN_TAB = "open_tab"
+
+/**
+ * Glance action parameter delivered as the [EXTRA_OPEN_TAB] launch-Intent extra. Using a
+ * stable parameter key (instead of building a fresh Intent in the composable) keeps the tap
+ * action identity stable across recompositions.
+ */
+private val OpenTabParam = ActionParameters.Key<String>(EXTRA_OPEN_TAB)
 
 class PicksWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -67,15 +74,13 @@ class PicksWidget : GlanceAppWidget() {
 
 @Composable
 private fun WidgetBody(card: WidgetCard?, cover: Bitmap?) {
-    val context = LocalContext.current
-    val launchIntent = Intent(context, MainActivity::class.java).apply {
-        putExtra(EXTRA_OPEN_TAB, "picks")
-    }
     Row(
         modifier = GlanceModifier
             .fillMaxSize()
             .padding(12.dp)
-            .clickable(actionStartActivity(launchIntent)),
+            .clickable(
+                actionStartActivity<MainActivity>(actionParametersOf(OpenTabParam to "picks")),
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (cover != null) {
