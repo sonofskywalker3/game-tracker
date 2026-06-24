@@ -23,9 +23,13 @@ _MIN_CONTAIN_LEN = 4
 
 UPC_ENRICH_DAILY_BUDGET = 90          # < 100/day trial cap (shared per-IP bucket)
 UPC_ENRICH_QUOTA_SAFETY_MARGIN = 5    # stop if live remaining drops to/below this
-UPC_ENRICH_CALL_DELAY_SECONDS = 2     # inter-call throttle to avoid burst rate-limit
+# Throttle/backoff retuned 2026-06-24 after a fresh-quota observation: the keyless
+# UPCitemdb trial burst-limited (429) after ~1 call at a 2s spacing and stayed 429
+# through 5/10/20s backoff. Spacing calls ~20s apart (and waiting longer per retry)
+# aims to stay under the burst bucket. ~90 calls * 20s = ~30min/run, fine for the 3h drip.
+UPC_ENRICH_CALL_DELAY_SECONDS = 20    # inter-call throttle to avoid burst rate-limit
 UPC_ENRICH_MAX_RETRIES = 3            # transient-429 burst retries before giving up
-UPC_ENRICH_BACKOFF_BASE_SECONDS = 5   # exponential: 5, 10, 20s
+UPC_ENRICH_BACKOFF_BASE_SECONDS = 20  # exponential: 20, 40, 80s
 
 
 def classify_match(normalized_title: str, short_name: str,
