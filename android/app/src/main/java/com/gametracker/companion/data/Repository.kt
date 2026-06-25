@@ -39,4 +39,8 @@ class Repository(private val api: GameTrackerApi) {
 
     suspend fun addPlatform(id: Int, shortName: String, format: String?, upc: String?): Result<Unit> =
         runCatching { api.addPlatform(id, AddPlatformBody(AddPlatformPayload(shortName, format, upc))) }
+
+    suspend fun link(upc: String, igdbId: Int?, title: String?, coverUrl: String?,
+                     platform: String, gameId: Int?): Result<Unit> =
+        runCatching { api.linkBarcode(BarcodeLinkBody(upc, igdbId, title, coverUrl, platform, gameId)) }
 }
