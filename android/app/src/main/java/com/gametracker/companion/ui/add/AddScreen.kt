@@ -33,9 +33,14 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, infoMode: Boolean, onO
         scope.launch {
             if (infoMode) {
                 val platform = platforms.firstOrNull() ?: result.platforms.firstOrNull() ?: ""
-                vm.linkInfo(result, platform, pendingUpc ?: "")
+                if (platform.isBlank()) {
+                    snackbar.showSnackbar("Pick a platform to link this barcode")
+                    return@launch
+                }
+                val res = vm.linkInfo(result, platform, pendingUpc ?: "")
                 pendingAdd = null
-                onLinked()
+                if (res.isSuccess) onLinked()
+                else snackbar.showSnackbar("Couldn't link — try again")
             } else {
                 val gid = vm.add(result, platforms = platforms, physical = physical, upc = pendingUpc)
                 pendingAdd = null

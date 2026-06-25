@@ -57,7 +57,6 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
 
     val state = vm.state.collectAsState().value
     val infoMode = vm.infoMode.collectAsState().value
-    var barcodePresent by remember { mutableStateOf(false) }
     val reArmGate = remember { PresenceReArmGate() }
     fun rescan() { reArmGate.reset(); fired = false; vm.reset() }
 
@@ -65,11 +64,14 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
     LaunchedEffect(state, infoMode) {
         if (!infoMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
     }
-    // Info mode: re-arm once the item has left the frame (presence gate).
-    LaunchedEffect(state, barcodePresent, infoMode) {
-        val terminal = state is ScanState.Linked || state is ScanState.Info ||
+
+    // Mirror latest values so the once-created analyzer closure reads live state.
+    val infoModeLatest = remember { mutableStateOf(false) }
+    val terminalLatest = remember { mutableStateOf(false) }
+    SideEffect {
+        infoModeLatest.value = infoMode
+        terminalLatest.value = state is ScanState.Linked || state is ScanState.Info ||
             state is ScanState.NoMatch || state is ScanState.Added
-        if (infoMode && terminal && reArmGate.onFrame(barcodePresent)) { reArmGate.reset(); rescan() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -88,10 +90,17 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                         scanner.process(img)
                             .addOnSuccessListener { codes ->
                                 val hit = codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
-                                barcodePresent = hit != null
-                                if (hit != null && !fired) { fired = true; vm.onBarcode(hit) }
+                                if (!fired) {
+                                    if (hit != null) { fired = true; vm.onBarcode(hit) }
+                                } else if (infoModeLatest.value && terminalLatest.value) {
+                                    if (reArmGate.onFrame(hit != null)) rescan()
+                                }
                             }
-                            .addOnFailureListener { barcodePresent = false }
+                            .addOnFailureListener {
+                                if (fired && infoModeLatest.value && terminalLatest.value) {
+                                    if (reArmGate.onFrame(false)) rescan()
+                                }
+                            }
                             .addOnCompleteListener { proxy.close() }
                     } else proxy.close()
                 }
