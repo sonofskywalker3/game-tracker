@@ -2300,6 +2300,26 @@ def api_barcode_resolve():
     return jsonify(result)
 
 
+@app.route('/api/barcode/link', methods=['POST'])
+def api_barcode_link():
+    """Record a confirmed UPC -> game mapping in the registry (no library write).
+
+    The single scan-side registry writer; resolve() is read-only. Idempotent
+    upsert on UPC. game_id is optional (knowledge without ownership)."""
+    data = request.get_json(silent=True) or {}
+    upc = (data.get('upc') or '').strip()
+    platform = (data.get('platform') or '').strip() or None
+    if not upc or not platform:
+        return jsonify({'error': 'upc and platform required'}), 400
+    conn = get_db()
+    barcode.registry_put(conn, upc, igdb_id=data.get('igdb_id'),
+                         title=data.get('title'), platform=platform,
+                         cover_url=data.get('cover_url'), game_id=data.get('game_id'))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @app.route('/api/igdb/search')
 def api_igdb_search():
     """Search IGDB for games matching a query."""
