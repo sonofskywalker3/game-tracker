@@ -1521,108 +1521,77 @@ def api_series_igdb_suggest():
         return jsonify({'suggestion': None})
 
 
+# Sort key for series entries with no pinned igdb_id or no IGDB release date —
+# sorts them last (chronological order is unknowable), then stable by title.
+_UNKNOWN_RELEASE_SORT = 9999999999
+
+
+def igdb_release_dates_by_id(igdb_ids, client_id, client_secret):
+    """Map {igdb_id: first_release_date (unix ts)} for the given ids in ONE IGDB
+    call. Ids with no stored date are omitted; empty/blank input returns {} without
+    a network call. Looking dates up by the game's pinned igdb_id is exact — it
+    replaces the old fuzzy title re-search that cross-matched same-franchise
+    entries (e.g. every numbered Final Fantasy is a substring of the next)."""
+    from fetch_covers import get_access_token
+    ids = sorted({i for i in igdb_ids if i})
+    if not ids:
+        return {}
+    token = get_access_token(client_id, client_secret)
+    headers = {
+        'Client-ID': client_id,
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'text/plain',
+    }
+    query = (f"fields id, first_release_date; "
+             f"where id = ({','.join(str(i) for i in ids)}); limit {len(ids)};")
+    response = requests.post('https://api.igdb.com/v4/games', headers=headers, data=query)
+    response.raise_for_status()
+    return {row['id']: row['first_release_date'] for row in response.json()
+            if row.get('first_release_date')}
+
+
 @app.route('/api/series/<int:series_id>/sort-by-release', methods=['POST'])
 def api_sort_series_by_release(series_id):
-    """Sort games in a series by their original release date using IGDB."""
-    from fetch_covers import get_access_token
-    import requests
-
+    """Sort a series chronologically by each game's IGDB first_release_date, looked
+    up by the game's pinned igdb_id (exact). Games with no igdb_id or no IGDB date
+    sort last, stable by title."""
     conn = get_db()
 
-    # Get games in this series
     games = conn.execute("""
-        SELECT g.id, g.title
+        SELECT g.id, g.title, g.igdb_id
         FROM games g
         JOIN user_ratings ur ON g.id = ur.game_id
         WHERE ur.series_id = ?
     """, (series_id,)).fetchall()
-
     if not games:
         conn.close()
         return jsonify({'error': 'No games in series'}), 400
 
-    # Get IGDB credentials
     client_id, client_secret = get_twitch_credentials()
     if not client_id or not client_secret:
         conn.close()
         return jsonify({'error': 'IGDB not configured'}), 400
 
     try:
-        access_token = get_access_token(client_id, client_secret)
-
-        headers = {
-            'Client-ID': client_id,
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'text/plain'
-        }
-
-        # Fetch release dates for all games
-        game_dates = []
-        for game in games:
-            # Get original title (strip remaster/remake suffixes)
-            original_title = get_original_title(game['title'])
-            search_title = original_title.replace('"', '')
-
-            # Search for the original game
-            igdb_query = f'''
-                search "{search_title}";
-                fields name, first_release_date;
-                limit 5;
-            '''
-
-            response = requests.post(
-                'https://api.igdb.com/v4/games',
-                headers=headers,
-                data=igdb_query
-            )
-
-            release_date = None
-            if response.ok:
-                results = response.json()
-                # Try to find exact or close match
-                for result in results:
-                    if result.get('first_release_date'):
-                        result_name = result.get('name', '').lower()
-                        search_lower = search_title.lower()
-                        # Prefer exact match or close match
-                        if result_name == search_lower or search_lower in result_name or result_name in search_lower:
-                            release_date = result['first_release_date']
-                            break
-                # Fallback to first result with a date
-                if not release_date and results:
-                    for result in results:
-                        if result.get('first_release_date'):
-                            release_date = result['first_release_date']
-                            break
-
-            game_dates.append({
-                'id': game['id'],
-                'title': game['title'],
-                'release_date': release_date or 9999999999  # Put unknown dates at end
-            })
-
-        # Sort by release date
-        game_dates.sort(key=lambda g: g['release_date'])
-
-        # Update series order
-        for index, game in enumerate(game_dates):
-            conn.execute("""
-                UPDATE user_ratings
-                SET series_order = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE game_id = ? AND series_id = ?
-            """, (index, game['id'], series_id))
-
-        conn.commit()
+        dates = igdb_release_dates_by_id(
+            [g['igdb_id'] for g in games], client_id, client_secret)
+    except requests.RequestException as exc:
         conn.close()
+        log.warning("sort-by-release IGDB fetch failed for series %s: %s", series_id, exc)
+        return jsonify({'error': 'Failed to reach IGDB'}), 502
 
-        return jsonify({
-            'success': True,
-            'order': [g['id'] for g in game_dates]
-        })
-
-    except Exception as e:
-        conn.close()
-        return jsonify({'error': str(e)}), 500
+    ordered = sorted(games, key=lambda g: (
+        dates.get(g['igdb_id'], _UNKNOWN_RELEASE_SORT) if g['igdb_id'] else _UNKNOWN_RELEASE_SORT,
+        (g['title'] or '').lower()))
+    for index, game in enumerate(ordered):
+        conn.execute("""
+            UPDATE user_ratings
+            SET series_order = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE game_id = ? AND series_id = ?
+        """, (index, game['id'], series_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'order': [g['id'] for g in ordered]})
 
 
 @app.route('/api/series/<int:series_id>/missing')
