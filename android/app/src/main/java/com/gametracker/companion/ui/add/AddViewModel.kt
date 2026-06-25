@@ -31,4 +31,10 @@ class AddViewModel(private val repository: Repository) : ViewModel() {
             title = result.name, coverUrl = result.coverUrl,
             platforms = platforms, physical = physical, upc = upc,
         ).getOrNull()?.gameId
+
+    /** Info mode: record UPC -> chosen IGDB game in the registry, no library add.
+     *  Search results carry no numeric igdb_id, so we link by title/cover/platform. */
+    suspend fun linkInfo(result: IgdbResult, platform: String, upc: String): Result<Unit> =
+        repository.link(upc, igdbId = null, title = result.name,
+                        coverUrl = result.coverUrl, platform = platform, gameId = null)
 }

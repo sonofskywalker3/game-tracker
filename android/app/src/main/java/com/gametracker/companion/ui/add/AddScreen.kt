@@ -20,7 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> Unit) {
+fun AddScreen(initialQuery: String?, pendingUpc: String?, infoMode: Boolean, onOpenGame: (Int) -> Unit, onLinked: () -> Unit) {
     val vm: AddViewModel = viewModel(factory = rememberAppFactory())
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -31,10 +31,17 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, onOpenGame: (Int) -> U
     // Commit an add with chosen platforms and format, then open the new game's detail.
     fun commit(result: IgdbResult, platforms: List<String>, physical: Boolean) {
         scope.launch {
-            val gid = vm.add(result, platforms = platforms, physical = physical, upc = pendingUpc)
-            pendingAdd = null
-            if (gid != null) onOpenGame(gid)
-            else snackbar.showSnackbar("Couldn't add — it may already be in your library")
+            if (infoMode) {
+                val platform = platforms.firstOrNull() ?: result.platforms.firstOrNull() ?: ""
+                vm.linkInfo(result, platform, pendingUpc ?: "")
+                pendingAdd = null
+                onLinked()
+            } else {
+                val gid = vm.add(result, platforms = platforms, physical = physical, upc = pendingUpc)
+                pendingAdd = null
+                if (gid != null) onOpenGame(gid)
+                else snackbar.showSnackbar("Couldn't add — it may already be in your library")
+            }
         }
     }
 

@@ -73,16 +73,19 @@ fun AppNav(initialTab: String? = null) {
                 com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
             }
             composable(
-                "add?prefill={prefill}&upc={upc}",
+                "add?prefill={prefill}&upc={upc}&info={info}",
                 arguments = listOf(
                     androidx.navigation.navArgument("prefill") { nullable = true; defaultValue = null },
                     androidx.navigation.navArgument("upc") { nullable = true; defaultValue = null },
+                    androidx.navigation.navArgument("info") { defaultValue = "false" },
                 ),
             ) { entry ->
                 com.gametracker.companion.ui.add.AddScreen(
                     initialQuery = entry.arguments?.getString("prefill"),
                     pendingUpc = entry.arguments?.getString("upc"),
+                    infoMode = entry.arguments?.getString("info") == "true",
                     onOpenGame = { id -> nav.navigate("detail/$id?added=true") },
+                    onLinked = { nav.popBackStack() },
                 )
             }
             composable("settings") { backStackEntry ->
@@ -108,9 +111,9 @@ fun AppNav(initialTab: String? = null) {
             composable("scan") {
                 com.gametracker.companion.ui.scan.ScanScreen(
                     onOpenGame = { id -> nav.navigate("detail/$id") },
-                    onManualSearch = { productTitle, upc ->
+                    onManualSearch = { productTitle, upc, info ->
                         val q = productTitle?.let { java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-                        nav.navigate("add?prefill=$q&upc=$upc") {
+                        nav.navigate("add?prefill=$q&upc=$upc&info=$info") {
                             popUpTo("scan") { inclusive = true }
                         }
                     },

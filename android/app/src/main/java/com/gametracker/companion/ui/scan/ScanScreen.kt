@@ -39,7 +39,7 @@ private val COMMON_PLATFORMS = listOf("Switch", "PS5", "PS4", "Xbox", "PC", "3DS
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> Unit) {
+fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Boolean) -> Unit) {
     val vm: ScanViewModel = viewModel(factory = rememberAppFactory())
     val context = LocalContext.current
     var granted by remember { mutableStateOf(false) }
@@ -124,7 +124,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
             }
             is ScanState.NoMatch -> ResultCard(onDismiss = ::rescan) {
                 Text("Couldn't identify that barcode.")
-                Button(onClick = { onManualSearch(s.productTitle, s.upc) }) { Text("Search manually") }
+                Button(onClick = { onManualSearch(s.productTitle, s.upc, infoMode) }) { Text("Search manually") }
             }
             is ScanState.Added -> ResultCard(onDismiss = ::rescan) {
                 Text("Added ✓")

@@ -54,4 +54,15 @@ class AddViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("PC"), repo.created.single().platforms)
     }
+
+    @Test fun linkInfo_records_registry_without_creating_game() = kotlinx.coroutines.test.runTest {
+        val repo = FakeRepo()
+        val vm = com.gametracker.companion.ui.add.AddViewModel(repo.asRepository())
+        vm.linkInfo(com.gametracker.companion.data.IgdbResult(name = "Tunic", coverUrl = "c"),
+            platform = "Switch", upc = "U9")
+        org.junit.Assert.assertTrue(repo.created.isEmpty())          // no library write
+        val body = repo.linked.single()
+        org.junit.Assert.assertEquals("Tunic", body.title)
+        org.junit.Assert.assertEquals("Switch", body.platform)
+    }
 }
