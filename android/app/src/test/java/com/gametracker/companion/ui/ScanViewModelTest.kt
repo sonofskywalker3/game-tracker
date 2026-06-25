@@ -20,7 +20,7 @@ class ScanViewModelTest {
     @Test fun resolve_with_candidate_becomes_info() = runTest {
         val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
             scannedPlatform = "Switch",
-            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo", platform = "Switch"))))
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo", platform = "Switch", coverUrl = "u"))))
         val vm = ScanViewModel(repo.asRepository())
         vm.onBarcode("711"); advanceUntilIdle()
         val s = vm.state.value
@@ -71,7 +71,7 @@ class ScanViewModelTest {
             scannedPlatform = "Switch",
             candidates = listOf(BarcodeCandidate(
                 igdbId = 500, title = "Mega Man X Legacy Collection", platform = "Switch",
-                gameType = 3,
+                gameType = 3, coverUrl = "u",
                 constituents = listOf(
                     BarcodeConstituent(title = "Mega Man X", ownedGameId = 10,
                         ownedPlatforms = listOf(OwnedPlatform("SNES", "physical", 0))),
@@ -94,5 +94,78 @@ class ScanViewModelTest {
         vm.onBarcode("0"); advanceUntilIdle()
         vm.reset()
         assertTrue(vm.state.value is ScanState.Scanning)
+    }
+
+    @Test fun multiple_candidates_becomes_picker() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = "Switch", candidates = listOf(
+                BarcodeCandidate(igdbId = 1, title = "NieR", platform = "Switch", coverUrl = "a"),
+                BarcodeCandidate(igdbId = 2, title = "NieR Replicant", platform = "Switch", coverUrl = "b"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.onBarcode("711"); advanceUntilIdle()
+        val s = vm.state.value
+        assertTrue(s is ScanState.Picker)
+        assertEquals(2, (s as ScanState.Picker).candidates.size)
+    }
+
+    @Test fun confident_single_in_info_mode_links_and_shows_linked() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = "Switch", coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.setInfoMode(true)
+        vm.onBarcode("711"); advanceUntilIdle()
+        assertTrue(vm.state.value is ScanState.Linked)
+        val body = repo.linked.single()
+        assertEquals("711", body.upc); assertEquals("Switch", body.platform)
+    }
+
+    @Test fun confident_single_in_normal_mode_shows_info_and_records() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = "Switch", coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.onBarcode("711"); advanceUntilIdle()
+        assertTrue(vm.state.value is ScanState.Info)
+        assertEquals(1, repo.linked.size)   // knowledge still recorded
+    }
+
+    @Test fun coverless_single_does_not_autosave() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo", platform = "Switch"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.setInfoMode(true)
+        vm.onBarcode("711"); advanceUntilIdle()
+        assertTrue(vm.state.value is ScanState.Picker)   // forced to confirm
+        assertTrue(repo.linked.isEmpty())
+    }
+
+    @Test fun unknown_platform_prompts_then_links() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = null,
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = null, coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.setInfoMode(true)
+        vm.onBarcode("711"); advanceUntilIdle()
+        val s = vm.state.value
+        assertTrue(s is ScanState.NeedsPlatform)
+        vm.choosePlatform((s as ScanState.NeedsPlatform).candidate, "PS5", s.upc); advanceUntilIdle()
+        assertTrue(vm.state.value is ScanState.Linked)
+        assertEquals("PS5", repo.linked.single().platform)
+    }
+
+    @Test fun cache_hit_does_not_relink() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "cache",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = "Switch", coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.onBarcode("711"); advanceUntilIdle()
+        assertTrue(vm.state.value is ScanState.Info)
+        assertTrue(repo.linked.isEmpty())   // already cached, no re-link
     }
 }

@@ -107,6 +107,20 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
                 s.gameId?.let { Button(onClick = { onOpenGame(it) }) { Text("View") } }
             }
             is ScanState.Error -> ResultCard(onDismiss = ::rescan) { Text(s.message) }
+            is ScanState.Picker -> ResultCard(onDismiss = ::rescan) {
+                Text("Multiple matches — pick one")
+                s.candidates.forEach { c ->
+                    Button(onClick = { vm.pick(c, s.upc, s.scannedPlatform) }) {
+                        Text(c.title ?: "Unknown")
+                    }
+                }
+            }
+            is ScanState.NeedsPlatform -> ResultCard(onDismiss = ::rescan) {
+                Text("Select platform for ${s.candidate.title}")
+            }
+            is ScanState.Linked -> ResultCard(onDismiss = ::rescan) {
+                Text("Linked: ${s.title} (${s.platform})")
+            }
         }
     }
 }
