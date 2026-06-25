@@ -1192,13 +1192,6 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-400 mb-1">Tags</label>
                             <div class="flex flex-wrap gap-2 items-center">
-                                <label class="flex items-center gap-1 cursor-pointer text-sm text-gray-300">
-                                    <input type="checkbox" ${(game.tags || []).some(t => t.name === 'Physical') ? 'checked' : ''}
-                                           onchange="toggleTag(${game.id}, 'Physical', this.checked)"
-                                           class="accent-accent w-4 h-4">
-                                    Physical
-                                </label>
-                                <span class="text-gray-600">|</span>
                                 ${(game.tags || []).filter(t => t.name !== 'Physical').map(t =>
                                     `<span class="px-2 py-0.5 bg-surface rounded text-sm group cursor-pointer" onclick="removeTag(${game.id}, '${t.name}')">${t.name} <span class="text-gray-500 group-hover:text-red-400">×</span></span>`
                                 ).join('')}
