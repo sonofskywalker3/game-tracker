@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 import requests
 
+import dedup
 import igdb_match
 import models
 
@@ -335,6 +336,23 @@ def _scan_candidates(search_title: str, fallback_title: str, platform_ids: set[i
     return [], True
 
 
+def _drop_edition_duplicates(raw: list[dict]) -> list[dict]:
+    """Drop edition-SKU candidates (Deluxe / Limited / Digital Deluxe / Master /
+    Collector's / ... Edition) when the plain base game is also a candidate, so a
+    physical scan resolves to the base game instead of offering edition noise. An
+    edition with no base sibling in the list is the only match and is kept. Reuses
+    dedup's curated EDITION_QUALIFIERS so the two stay in sync."""
+    keys = {models.normalize_title(c.get("name") or "") for c in raw}
+    out = []
+    for c in raw:
+        key = models.normalize_title(c.get("name") or "")
+        base = dedup.strip_edition_key(key)
+        if base != key and base in keys:   # an edition whose base is also present
+            continue
+        out.append(c)
+    return out
+
+
 def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
             token: str | None = None) -> dict:
     """Resolve a UPC to candidate games: cache -> UPC API -> IGDB match.
@@ -378,6 +396,7 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
     if client_id and token:
         raw, used_hint = _scan_candidates(search_title, cleaned, platform_ids,
                                           client_id, token)
+        raw = _drop_edition_duplicates(raw)
         if not used_hint:
             result_platform = None
         for c in raw[:MAX_CANDIDATES]:

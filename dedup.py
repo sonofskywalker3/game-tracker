@@ -32,6 +32,7 @@ EDITION_QUALIFIERS = (
     "Console Edition", "Definitive Edition", "Complete Edition", "Deluxe Edition",
     "Ultimate Edition", "Special Edition", "Legendary Edition", "Anniversary Edition",
     "Enhanced Edition", "Gold Edition", "Royal Edition", "Collection Edition",
+    "Limited Edition", "Master Edition", "Collector's Edition", "Premium Edition",
     "GOTY Edition", "The Final Cut", "Remastered", "Remaster", "Redux",
 )
 

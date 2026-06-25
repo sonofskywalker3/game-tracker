@@ -16,6 +16,15 @@ def test_base_key_normalizes_via_clean_title():
 
 def test_strip_edition_key_removes_known_qualifier():
     assert strip_edition_key("the outer worlds spacers choice edition") == "the outer worlds"
+
+
+def test_strip_edition_key_handles_limited_master_collectors():
+    n = normalize_title
+    assert strip_edition_key(n("Theatrhythm Curtain Call - Limited Edition")) == \
+        n("Theatrhythm Curtain Call")
+    assert strip_edition_key(n("Dragon Quest Monsters - Master Edition")) == \
+        n("Dragon Quest Monsters")
+    assert strip_edition_key(n("Some Game - Collector's Edition")) == n("Some Game")
     assert strip_edition_key("disco elysium the final cut") == "disco elysium"
     assert strip_edition_key("dont starve console edition") == "dont starve"
 
