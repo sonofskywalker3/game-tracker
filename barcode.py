@@ -100,6 +100,29 @@ def parse_retail_platform(raw: str | None) -> str | None:
     return None
 
 
+# Some 3DS retail UPC titles append the platform as a bare "3D"/"3DS" suffix
+# (e.g. "Theatrhythm Final Fantasy: Curtain Call 3D"), un-bracketed, which both
+# hides the 3DS platform and poisons the IGDB title search. Matched ONLY as a
+# trailing token so a mid-name "3D" (Super Mario 3D World) is left alone. A
+# trailing "3D" can still be a real name (Ballz 3D, a Genesis game), so callers
+# treat the 3DS read as a hint and fall back to the un-stripped title when the
+# stripped search finds nothing.
+_TRAILING_3DS_RE = re.compile(r"\s+3ds?\b\.?\s*$", re.IGNORECASE)
+
+
+def split_trailing_platform(title: str | None) -> tuple[str | None, str]:
+    """Split a bare trailing platform suffix the bracket-cleaner misses off a UPC
+    title. Returns (short_name, title_without_suffix) — currently only the 3DS
+    "3D"/"3DS" suffix — or (None, title) when there is none. Extend the lookup
+    here (not at call sites) if another platform shows the same bare-suffix habit."""
+    if not title:
+        return None, title or ""
+    m = _TRAILING_3DS_RE.search(title)
+    if m:
+        return "3DS", title[:m.start()].rstrip(" :-–—")
+    return None, title
+
+
 # Separator dashes only (space on both sides) — leaves intra-word hyphens like
 # "Spider-Man" untouched.
 _SEP_DASH_RE = re.compile(r"\s+[-–—]+\s+")
@@ -282,6 +305,36 @@ def owned_platforms_for(conn: sqlite3.Connection, game_id: int) -> list[dict]:
              "has_digital_market": r["has_digital_market"]} for r in rows]
 
 
+def _scan_candidates(search_title: str, fallback_title: str, platform_ids: set[int],
+                     client_id: str, token: str) -> tuple[list[dict], bool]:
+    """IGDB candidate ladder for a scan. Tries, in order, until one is non-empty:
+      1. search_title restricted to the scanned platform (when one is known),
+      2. search_title unrestricted (some valid IGDB entries have empty platform
+         lists, so a platform-restricted search alone can drop the real game),
+      3. fallback_title unrestricted — only when it differs from search_title
+         (i.e. a trailing platform token was stripped) so a name that genuinely
+         ends in a platform-like token (e.g. "Ballz 3D") still resolves.
+    All steps drop fan/mod types. Returns (raw_candidates, used_platform_hint):
+    used_platform_hint is False only when the match came from step 3, signalling
+    the stripped-suffix platform guess was wrong."""
+    if platform_ids:
+        raw = igdb_match.candidates_for(search_title, platform_ids, None, client_id,
+                                        token, drop_fan_types=True,
+                                        restrict_to_platform=True)
+        if raw:
+            return raw, True
+    raw = igdb_match.candidates_for(search_title, platform_ids, None, client_id, token,
+                                    drop_fan_types=True, restrict_to_platform=False)
+    if raw:
+        return raw, True
+    if fallback_title != search_title:
+        raw = igdb_match.candidates_for(fallback_title, set(), None, client_id, token,
+                                        drop_fan_types=True, restrict_to_platform=False)
+        if raw:
+            return raw, False
+    return [], True
+
+
 def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
             token: str | None = None) -> dict:
     """Resolve a UPC to candidate games: cache -> UPC API -> IGDB match.
@@ -306,32 +359,34 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
     if not product:
         return {"upc": upc, "source": "none", "candidates": [], "scanned_platform": None}
 
-    scanned_platform = parse_retail_platform(product)
+    explicit_platform = parse_retail_platform(product)
     # Retail titles carry platform/packaging noise that defeats IGDB's title search;
     # match on (and prefill) the cleaned name. Fall back to raw if cleaning empties it.
-    search_title = clean_product_title(product) or product
+    cleaned = clean_product_title(product) or product
+    # A bare trailing platform suffix the bracket-cleaner can't see (3DS "...3D").
+    hint_platform, stripped = split_trailing_platform(cleaned)
+    scanned_platform = explicit_platform or hint_platform
+    # Search the stripped name when the only platform read came from that suffix.
+    search_title = stripped if (hint_platform and not explicit_platform) else cleaned
     platform_ids = igdb_match.platform_ids_for([scanned_platform]) if scanned_platform else set()
 
+    # The platform reported with the result. When a match only comes from the
+    # un-stripped fallback below, the trailing-token guess was wrong, so it is
+    # cleared and each candidate keeps its own platform.
+    result_platform = scanned_platform
     candidates: list[dict] = []
     if client_id and token:
-        raw = igdb_match.candidates_for(
-            search_title, platform_ids, None, client_id, token,
-            drop_fan_types=True, restrict_to_platform=bool(platform_ids))
-        # Some valid IGDB entries have empty/incomplete platform lists, so a
-        # platform-restricted search can drop the real game entirely. If the
-        # restricted search found nothing, retry once unrestricted (still dropping
-        # fan/mod types) so a known scanned platform never zeroes out a valid scan.
-        if not raw and platform_ids:
-            raw = igdb_match.candidates_for(
-                search_title, platform_ids, None, client_id, token,
-                drop_fan_types=True, restrict_to_platform=False)
+        raw, used_hint = _scan_candidates(search_title, cleaned, platform_ids,
+                                          client_id, token)
+        if not used_hint:
+            result_platform = None
         for c in raw[:MAX_CANDIDATES]:
             owned_id = _owned_game_id(conn, c.get("name") or "")
             shorts = igdb_match.short_names_for(c.get("platforms") or [])
             candidates.append({
                 "igdb_id": c.get("igdb_id"),
                 "title": c.get("name"),
-                "platform": scanned_platform or (shorts[0] if shorts else None),
+                "platform": result_platform or (shorts[0] if shorts else None),
                 "cover_url": c.get("cover_url"),
                 "game_type": c.get("game_type"),
                 "owned_game_id": owned_id,
@@ -358,4 +413,4 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
         return {"upc": upc, "source": "upc_api", "candidates": [],
                 "product_title": search_title, "scanned_platform": scanned_platform}
     return {"upc": upc, "source": "upc_api", "candidates": candidates,
-            "scanned_platform": scanned_platform}
+            "scanned_platform": result_platform}
