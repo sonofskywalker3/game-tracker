@@ -24,7 +24,11 @@ def test_create_game_marks_physical(client):
     gid = resp.get_json()["game_id"]
 
     game = client.get(f"/api/games/{gid}").get_json()
-    assert any(t["name"] == "Physical" for t in game["tags"])
+    # Format is the source of truth now: 3DS is recorded physical...
+    by_short = {p["short_name"]: p for p in game["platforms"]}
+    assert by_short["3DS"]["format"] == "physical"
+    # ...and no legacy 'Physical' tag is created.
+    assert not any(t["name"] == "Physical" for t in game.get("tags", []))
 
 
 def test_create_game_not_physical_by_default(client):
