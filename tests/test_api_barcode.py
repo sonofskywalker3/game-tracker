@@ -189,20 +189,35 @@ def test_owned_platforms_for_includes_format_and_market(temp_db):
     assert got == [{"short_name": "PS5", "format": "physical", "has_digital_market": 1}]
 
 
-def test_resolve_records_unmatched_scan(client, monkeypatch):
+def test_resolve_records_nothing_for_unmatched_scan(client, monkeypatch):
     import models
     monkeypatch.setattr(barcode, "lookup_product_title",
                         lambda upc: "Totally Unknown Game (Nintendo Switch)")
-    # Pin the chain to the mocked source so no real network call falls through.
     monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
     monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [])
     resp = client.get("/api/barcode/resolve?upc=NEW123")
-    body = resp.get_json()
-    assert body["scanned_platform"] == "Switch"
+    assert resp.get_json()["scanned_platform"] == "Switch"
     conn = models.get_db()
     row = barcode.registry_get(conn, "NEW123")
+    count = conn.execute("SELECT COUNT(*) FROM barcode_registry").fetchone()[0]
     conn.close()
-    assert row is not None and row["game_id"] is None   # recorded, not owned
+    assert row is None        # resolve must not poison the registry
+    assert count == 0
+
+
+def test_resolve_single_match_writes_nothing(client, monkeypatch):
+    import models
+    monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: "Celeste (PS5)")
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
+    monkeypatch.setattr(barcode.igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 1, "name": "Celeste", "platforms": [167], "cover_url": "c",
+         "source": "search", "score": 99, "game_type": 0}])
+    monkeypatch.setattr(barcode.igdb_match, "short_names_for", lambda ids: ["PS5"])
+    client.get("/api/barcode/resolve?upc=NOWRITE1")
+    conn = models.get_db()
+    count = conn.execute("SELECT COUNT(*) FROM barcode_registry").fetchone()[0]
+    conn.close()
+    assert count == 0
 
 
 def test_resolve_cache_hit_includes_owned_platforms(client):

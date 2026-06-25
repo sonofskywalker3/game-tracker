@@ -352,17 +352,6 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
                 })
             cand["constituents"] = cons
 
-    # Record EVERY scan (knowledge, not ownership): upc -> best-guess title/igdb,
-    # game_id stays NULL until a confirmed add links it.
-    top = candidates[0] if candidates else None
-    registry_put(conn, upc,
-                 igdb_id=top["igdb_id"] if top else None,
-                 title=top["title"] if top else search_title,
-                 platform=scanned_platform,
-                 cover_url=top["cover_url"] if top else None,
-                 game_id=None)
-    conn.commit()
-
     if not candidates:
         # Found a product name but no IGDB match: hand the cleaned title back so the
         # app can prefill manual search without the retail boilerplate.
