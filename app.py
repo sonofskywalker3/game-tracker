@@ -81,6 +81,29 @@ def series_page(series_id=None):
 # API Routes
 # ============================================================================
 
+# --- Physical-media badge lookup -------------------------------------------
+# Single source of truth for which physical medium a platform's games ship on.
+# Module-scope lookup table (CLAUDE.md). Platforms not listed here
+# (mobile / subscription / unknown) carry no physical-media badge.
+MEDIA_CARTRIDGE = "cartridge"
+MEDIA_DISC = "disc"
+
+# A game counts as "physical" when it is owned physical OR both on some platform.
+PHYSICAL_FORMATS = ("physical", "both")
+
+_CARTRIDGE_PLATFORMS = frozenset({
+    "Switch", "Switch2", "3DS", "NDS", "N64", "SNES", "NES",
+    "GB", "GBC", "GBA", "Genesis", "Vita",
+})
+_DISC_PLATFORMS = frozenset({
+    "PS1", "PS2", "PS3", "PS4", "PS5", "OGXbox", "X360", "Xbox",
+    "GC", "Wii", "WiiU", "Dreamcast", "Saturn", "PSP", "PC",
+})
+PLATFORM_MEDIA: dict[str, str] = {
+    **{short: MEDIA_CARTRIDGE for short in _CARTRIDGE_PLATFORMS},
+    **{short: MEDIA_DISC for short in _DISC_PLATFORMS},
+}
+
 @app.route('/api/games')
 def api_games():
     """Get all games with filters."""
