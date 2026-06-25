@@ -15,6 +15,7 @@ series_catalog.json
 excluded_games.json
 games.db
 games.db.bak*
+games.db.*
 *.bak
 *.db
 *.db-journal
@@ -62,3 +63,6 @@ popular_seed_pilot.json
 # local dev server logs (from assistant-launched runs)
 _flask.out.log
 _flask.err.log
+_live_server*.log
+# gradle scratch logs from assistant test runs
+test_*.log
