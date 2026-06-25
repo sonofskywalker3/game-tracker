@@ -9,6 +9,22 @@ def _cand(name, plats, *, cover=True, rating=0, year=2000, igdb_id=1):
             "total_rating_count": rating, "first_release_date": year}
 
 
+def test_title_score_tolerates_missing_interior_article():
+    # A UPC product title drops the leading "A" that IGDB keeps; the scan must
+    # still match. (Real case: "...Link Between Worlds" vs "...A Link Between Worlds".)
+    s = igdb_match._title_score
+    assert s("The Legend of Zelda: A Link Between Worlds",
+             "The Legend of Zelda: Link Between Worlds") == igdb_match._TITLE_CONTAINS
+    # exact stays exact; genuinely different titles stay unmatched
+    assert s("Halo", "Halo") == igdb_match._TITLE_EXACT
+    assert s("Mario Party", "Mario Tennis") is None
+    # a single shared word is NOT enough (avoids spurious matches)
+    assert s("Mario Kart 8", "Mario Tennis Aces") is None
+    # the article rule must NOT degrade into token-subset: a numbered game must
+    # not match a different collection that merely contains all its words.
+    assert s("Mega Man Legacy Collection 2", "Mega Man 2") is None
+
+
 def test_score_prefers_console_over_mobile_for_retro_constituent():
     # game is a Switch bundle constituent; IGDB has the canonical NES entry (no
     # Switch) and a mobile-only port. NES must win because mobile is penalized.
