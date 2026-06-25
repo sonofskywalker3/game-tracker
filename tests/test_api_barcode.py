@@ -333,3 +333,36 @@ def test_cache_hit_returns_platform_and_cover(client, monkeypatch):
     assert body["scanned_platform"] == "Switch"
     assert body["candidates"][0]["cover_url"] == "http://x/cc.jpg"
     assert body["candidates"][0]["platform"] == "Switch"
+
+
+def test_link_writes_registry_row(client):
+    import models
+    resp = client.post("/api/barcode/link", json={
+        "upc": "L1", "igdb_id": 7, "title": "Celeste",
+        "cover_url": "http://x/c.jpg", "platform": "Switch"})
+    assert resp.status_code == 200 and resp.get_json()["ok"] is True
+    conn = models.get_db()
+    row = barcode.registry_get(conn, "L1")
+    conn.close()
+    assert row["game_id"] is None and row["igdb_id"] == 7
+    assert row["platform"] == "Switch" and row["cover_url"] == "http://x/c.jpg"
+
+
+def test_link_requires_upc_and_platform(client):
+    assert client.post("/api/barcode/link", json={"platform": "Switch"}).status_code == 400
+    assert client.post("/api/barcode/link", json={"upc": "X"}).status_code == 400
+
+
+def test_link_idempotent_and_multi_upc_per_game(client):
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (4,'G','g')")
+    conn.commit()
+    conn.close()
+    client.post("/api/barcode/link", json={"upc": "A", "platform": "Switch", "game_id": 4})
+    client.post("/api/barcode/link", json={"upc": "A", "platform": "Switch", "game_id": 4})
+    client.post("/api/barcode/link", json={"upc": "B", "platform": "PS5", "game_id": 4})
+    conn = models.get_db()
+    upcs = {r["upc"] for r in barcode.registry_upcs_for_game(conn, 4)}
+    conn.close()
+    assert upcs == {"A", "B"}
