@@ -20,7 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun AddScreen(initialQuery: String?, pendingUpc: String?, infoMode: Boolean, onOpenGame: (Int) -> Unit, onLinked: () -> Unit) {
+fun AddScreen(initialQuery: String?, pendingUpc: String?, databaseMode: Boolean, onOpenGame: (Int) -> Unit, onLinked: () -> Unit) {
     val vm: AddViewModel = viewModel(factory = rememberAppFactory())
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -31,7 +31,7 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, infoMode: Boolean, onO
     // Commit an add with chosen platforms and format, then open the new game's detail.
     fun commit(result: IgdbResult, platforms: List<String>, physical: Boolean) {
         scope.launch {
-            if (infoMode) {
+            if (databaseMode) {
                 val platform = platforms.firstOrNull() ?: result.platforms.firstOrNull() ?: ""
                 if (platform.isBlank()) {
                     snackbar.showSnackbar("Pick a platform to link this barcode")

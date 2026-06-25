@@ -56,23 +56,20 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
     }
 
     val state = vm.state.collectAsState().value
-    val infoMode = vm.infoMode.collectAsState().value
-    val reArmGate = remember { PresenceReArmGate() }
+    val databaseMode = vm.databaseMode.collectAsState().value
+    val handsFreeGate = remember { HandsFreeScanGate() }
     val confirmGate = remember { ScanConfirmGate() }
-    fun rescan() { confirmGate.reset(); reArmGate.reset(); fired = false; vm.reset() }
+    fun rescan() { confirmGate.reset(); handsFreeGate.reset(); fired = false; vm.reset() }
 
     // Normal mode: timed re-arm after an add (independent of frame presence).
-    LaunchedEffect(state, infoMode) {
-        if (!infoMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
+    LaunchedEffect(state, databaseMode) {
+        if (!databaseMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
     }
 
     // Mirror latest values so the once-created analyzer closure reads live state.
-    val infoModeLatest = remember { mutableStateOf(false) }
-    val terminalLatest = remember { mutableStateOf(false) }
+    val databaseModeLatest = remember { mutableStateOf(false) }
     SideEffect {
-        infoModeLatest.value = infoMode
-        terminalLatest.value = state is ScanState.Linked || state is ScanState.Info ||
-            state is ScanState.NoMatch || state is ScanState.Added
+        databaseModeLatest.value = databaseMode
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -91,17 +88,22 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                         scanner.process(img)
                             .addOnSuccessListener { codes ->
                                 val hit = codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
-                                if (!fired) {
-                                    val confirmed = confirmGate.onScan(hit)
-                                    if (confirmed != null) { fired = true; vm.onBarcode(confirmed) }
-                                } else if (infoModeLatest.value && terminalLatest.value) {
-                                    if (reArmGate.onFrame(hit != null)) rescan()
+                                if (databaseModeLatest.value) {
+                                    when (val a = handsFreeGate.onFrame(hit)) {
+                                        is HandsFreeScanGate.Action.Fire -> vm.onBarcode(a.value)
+                                        HandsFreeScanGate.Action.Clear -> vm.reset()
+                                        HandsFreeScanGate.Action.None -> {}
+                                    }
+                                } else {
+                                    if (!fired) {
+                                        val confirmed = confirmGate.onScan(hit)
+                                        if (confirmed != null) { fired = true; vm.onBarcode(confirmed) }
+                                    }
                                 }
                             }
                             .addOnFailureListener {
-                                if (fired && infoModeLatest.value && terminalLatest.value) {
-                                    if (reArmGate.onFrame(false)) rescan()
-                                }
+                                if (databaseModeLatest.value &&
+                                    handsFreeGate.onFrame(null) is HandsFreeScanGate.Action.Clear) vm.reset()
                             }
                             .addOnCompleteListener { proxy.close() }
                     } else proxy.close()
@@ -115,9 +117,9 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
 
         Row(Modifier.fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            Text("Info mode", style = MaterialTheme.typography.labelLarge)
+            Text("Database mode", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.width(8.dp))
-            Switch(checked = infoMode, onCheckedChange = { vm.setInfoMode(it) })
+            Switch(checked = databaseMode, onCheckedChange = { vm.setDatabaseMode(it) })
         }
 
         when (val s = state) {
@@ -129,13 +131,13 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                 }
             }
             is ScanState.Info -> ResultCard(onDismiss = ::rescan) {
-                ScanInfo(s, infoMode = infoMode, onOpenGame = onOpenGame,
+                ScanInfo(s, databaseMode = databaseMode, onOpenGame = onOpenGame,
                     onAdd = { vm.addToLibrary(s.candidate, s.scannedPlatform, s.upc) },
                     onAddCopy = { p -> vm.addPlatformCopy(s.candidate, p, s.upc) })
             }
             is ScanState.NoMatch -> ResultCard(onDismiss = ::rescan) {
                 Text("Couldn't identify that barcode.")
-                Button(onClick = { onManualSearch(s.productTitle, s.upc, infoMode) }) { Text("Search manually") }
+                Button(onClick = { onManualSearch(s.productTitle, s.upc, databaseMode) }) { Text("Search manually") }
             }
             is ScanState.Added -> ResultCard(onDismiss = ::rescan) {
                 Text("Added ✓")
@@ -165,14 +167,22 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                 }
             }
             is ScanState.Linked -> ResultCard(onDismiss = ::rescan) {
-                Text("Saved ✓  ${s.title ?: ""} (${s.platform})")
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CoverImage(s.coverUrl, s.title ?: "", Modifier.width(48.dp))
+                    Column {
+                        Text("Saved ✓", style = MaterialTheme.typography.labelMedium)
+                        Text(s.title ?: "Unknown", style = MaterialTheme.typography.titleMedium)
+                        Text(s.platform, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ScanInfo(s: ScanState.Info, infoMode: Boolean, onOpenGame: (Int) -> Unit,
+private fun ScanInfo(s: ScanState.Info, databaseMode: Boolean, onOpenGame: (Int) -> Unit,
                      onAdd: () -> Unit, onAddCopy: (String) -> Unit) {
     val c = s.candidate
     Row(verticalAlignment = Alignment.CenterVertically,
@@ -182,7 +192,7 @@ private fun ScanInfo(s: ScanState.Info, infoMode: Boolean, onOpenGame: (Int) -> 
     }
     when (ownershipOf(c, s.scannedPlatform)) {
         Ownership.NOT_OWNED -> {
-            if (!infoMode) {
+            if (!databaseMode) {
                 Button(onClick = onAdd) {
                     Text("Add to library" + (s.scannedPlatform?.let { " ($it)" } ?: ""))
                 }
@@ -190,7 +200,7 @@ private fun ScanInfo(s: ScanState.Info, infoMode: Boolean, onOpenGame: (Int) -> 
         }
         Ownership.SAME_PLATFORM, Ownership.OTHER_PLATFORM -> {
             Text("You already own this on ${ownedLabels(c.ownedPlatforms)}")
-            if (!infoMode) {
+            if (!databaseMode) {
                 s.scannedPlatform?.let { p ->
                     Button(onClick = { onAddCopy(p) }) { Text("Add the $p copy") }
                 }

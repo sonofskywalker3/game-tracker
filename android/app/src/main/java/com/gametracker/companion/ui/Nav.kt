@@ -73,17 +73,17 @@ fun AppNav(initialTab: String? = null) {
                 com.gametracker.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
             }
             composable(
-                "add?prefill={prefill}&upc={upc}&info={info}",
+                "add?prefill={prefill}&upc={upc}&database={database}",
                 arguments = listOf(
                     androidx.navigation.navArgument("prefill") { nullable = true; defaultValue = null },
                     androidx.navigation.navArgument("upc") { nullable = true; defaultValue = null },
-                    androidx.navigation.navArgument("info") { defaultValue = "false" },
+                    androidx.navigation.navArgument("database") { defaultValue = "false" },
                 ),
             ) { entry ->
                 com.gametracker.companion.ui.add.AddScreen(
                     initialQuery = entry.arguments?.getString("prefill"),
                     pendingUpc = entry.arguments?.getString("upc"),
-                    infoMode = entry.arguments?.getString("info") == "true",
+                    databaseMode = entry.arguments?.getString("database") == "true",
                     onOpenGame = { id -> nav.navigate("detail/$id?added=true") },
                     onLinked = { nav.popBackStack() },
                 )
@@ -111,9 +111,9 @@ fun AppNav(initialTab: String? = null) {
             composable("scan") {
                 com.gametracker.companion.ui.scan.ScanScreen(
                     onOpenGame = { id -> nav.navigate("detail/$id") },
-                    onManualSearch = { productTitle, upc, info ->
+                    onManualSearch = { productTitle, upc, database ->
                         val q = productTitle?.let { java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-                        nav.navigate("add?prefill=$q&upc=$upc&info=$info") {
+                        nav.navigate("add?prefill=$q&upc=$upc&database=$database") {
                             popUpTo("scan") { inclusive = true }
                         }
                     },
