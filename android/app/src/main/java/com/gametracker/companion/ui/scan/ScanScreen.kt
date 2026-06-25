@@ -58,7 +58,8 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
     val state = vm.state.collectAsState().value
     val infoMode = vm.infoMode.collectAsState().value
     val reArmGate = remember { PresenceReArmGate() }
-    fun rescan() { reArmGate.reset(); fired = false; vm.reset() }
+    val confirmGate = remember { ScanConfirmGate() }
+    fun rescan() { confirmGate.reset(); reArmGate.reset(); fired = false; vm.reset() }
 
     // Normal mode: timed re-arm after an add (independent of frame presence).
     LaunchedEffect(state, infoMode) {
@@ -91,7 +92,8 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                             .addOnSuccessListener { codes ->
                                 val hit = codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
                                 if (!fired) {
-                                    if (hit != null) { fired = true; vm.onBarcode(hit) }
+                                    val confirmed = confirmGate.onScan(hit)
+                                    if (confirmed != null) { fired = true; vm.onBarcode(confirmed) }
                                 } else if (infoModeLatest.value && terminalLatest.value) {
                                     if (reArmGate.onFrame(hit != null)) rescan()
                                 }
