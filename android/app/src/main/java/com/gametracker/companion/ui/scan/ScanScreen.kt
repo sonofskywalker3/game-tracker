@@ -68,8 +68,11 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
 
     // Mirror latest values so the once-created analyzer closure reads live state.
     val databaseModeLatest = remember { mutableStateOf(false) }
+    val awaitingUserLatest = remember { mutableStateOf(false) }
     SideEffect {
         databaseModeLatest.value = databaseMode
+        awaitingUserLatest.value = state is ScanState.Picker || state is ScanState.NeedsPlatform ||
+            state is ScanState.NoMatch || state is ScanState.Error
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -89,10 +92,12 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                             .addOnSuccessListener { codes ->
                                 val hit = codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
                                 if (databaseModeLatest.value) {
-                                    when (val a = handsFreeGate.onFrame(hit)) {
-                                        is HandsFreeScanGate.Action.Fire -> vm.onBarcode(a.value)
-                                        HandsFreeScanGate.Action.Clear -> vm.reset()
-                                        HandsFreeScanGate.Action.None -> {}
+                                    if (!awaitingUserLatest.value) {
+                                        when (val a = handsFreeGate.onFrame(hit)) {
+                                            is HandsFreeScanGate.Action.Fire -> vm.onBarcode(a.value)
+                                            HandsFreeScanGate.Action.Clear -> vm.reset()
+                                            HandsFreeScanGate.Action.None -> {}
+                                        }
                                     }
                                 } else {
                                     if (!fired) {
@@ -102,7 +107,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                                 }
                             }
                             .addOnFailureListener {
-                                if (databaseModeLatest.value &&
+                                if (databaseModeLatest.value && !awaitingUserLatest.value &&
                                     handsFreeGate.onFrame(null) is HandsFreeScanGate.Action.Clear) vm.reset()
                             }
                             .addOnCompleteListener { proxy.close() }
@@ -171,7 +176,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String, Bool
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CoverImage(s.coverUrl, s.title ?: "", Modifier.width(48.dp))
                     Column {
-                        Text("Saved ✓", style = MaterialTheme.typography.labelMedium)
+                        Text(if (s.isNew) "Saved ✓" else "Already saved ✓", style = MaterialTheme.typography.labelMedium)
                         Text(s.title ?: "Unknown", style = MaterialTheme.typography.titleMedium)
                         Text(s.platform, style = MaterialTheme.typography.bodySmall)
                     }
@@ -198,8 +203,14 @@ private fun ScanInfo(s: ScanState.Info, databaseMode: Boolean, onOpenGame: (Int)
                 }
             }
         }
-        Ownership.SAME_PLATFORM, Ownership.OTHER_PLATFORM -> {
-            Text("You already own this on ${ownedLabels(c.ownedPlatforms)}")
+        Ownership.SAME_PLATFORM -> {
+            Text("✓ You already own this on ${ownedLabels(c.ownedPlatforms)}")
+            if (!databaseMode) {
+                c.ownedGameId?.let { TextButton(onClick = { onOpenGame(it) }) { Text("View") } }
+            }
+        }
+        Ownership.OTHER_PLATFORM -> {
+            Text("You own this on ${ownedLabels(c.ownedPlatforms)}")
             if (!databaseMode) {
                 s.scannedPlatform?.let { p ->
                     Button(onClick = { onAddCopy(p) }) { Text("Add the $p copy") }

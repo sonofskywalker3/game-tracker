@@ -53,6 +53,7 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, databaseMode: Boolean,
         GameDetailPickDialog(
             result = result,
             defaultPhysical = pendingUpc != null,   // barcode→physical default, search→digital
+            databaseMode = databaseMode,
             onConfirm = { chosen, physical -> commit(result, chosen, physical) },
             onDismiss = { pendingAdd = null },
         )
@@ -87,6 +88,7 @@ when (val st = vm.results.collectAsState().value) {
 private fun GameDetailPickDialog(
     result: IgdbResult,
     defaultPhysical: Boolean,
+    databaseMode: Boolean,
     onConfirm: (List<String>, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -113,7 +115,7 @@ private fun GameDetailPickDialog(
                 }
                 if (result.platforms.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("Which platform(s) do you own?", style = MaterialTheme.typography.bodyMedium)
+                    Text(if (databaseMode) "Which platform is this copy?" else "Which platform(s) do you own?", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(4.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         result.platforms.forEach { p ->
@@ -123,16 +125,18 @@ private fun GameDetailPickDialog(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text("Format", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(4.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = physical, onClick = { physical = true }, label = { Text("Physical") })
-                    FilterChip(selected = !physical, onClick = { physical = false }, label = { Text("Digital") })
+                if (!databaseMode) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Format", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = physical, onClick = { physical = true }, label = { Text("Physical") })
+                        FilterChip(selected = !physical, onClick = { physical = false }, label = { Text("Digital") })
+                    }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected.toList(), physical) }) { Text("Add") } },
+        confirmButton = { TextButton(onClick = { onConfirm(selected.toList(), physical) }) { Text(if (databaseMode) "Add to database" else "Add") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

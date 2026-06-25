@@ -159,6 +159,30 @@ class ScanViewModelTest {
         assertEquals("PS5", repo.linked.single().platform)
     }
 
+    @Test fun database_mode_cache_hit_is_not_marked_new() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "cache",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = "Switch", coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.setDatabaseMode(true)
+        vm.onBarcode("711"); advanceUntilIdle()
+        val s = vm.state.value
+        assertTrue(s is ScanState.Linked)
+        assertEquals(false, (s as ScanState.Linked).isNew)
+    }
+
+    @Test fun database_mode_fresh_match_is_marked_new() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
+            scannedPlatform = "Switch",
+            candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
+                platform = "Switch", coverUrl = "u"))))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.setDatabaseMode(true)
+        vm.onBarcode("711"); advanceUntilIdle()
+        assertEquals(true, (vm.state.value as ScanState.Linked).isNew)
+    }
+
     @Test fun cache_hit_does_not_relink() = runTest {
         val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "cache",
             scannedPlatform = "Switch",
