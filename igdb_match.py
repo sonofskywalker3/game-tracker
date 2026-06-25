@@ -69,6 +69,9 @@ _PLATFORM_LABELS: tuple[tuple[str, frozenset[int]], ...] = (
 
 _TITLE_EXACT = 100
 _TITLE_CONTAINS = 40
+# Articles ignored when a UPC title and the IGDB title differ only by one
+# (e.g. "Link Between Worlds" vs "A Link Between Worlds").
+_ARTICLE_WORDS = frozenset({"a", "an", "the"})
 _PLATFORM_OVERLAP = 50
 _MOBILE_PENALTY = -80
 _HAS_COVER = 10
@@ -110,6 +113,14 @@ def _title_score(cand_name: str, search: str) -> int | None:
     if a == b:
         return _TITLE_EXACT
     if b in a or a in b:
+        return _TITLE_CONTAINS
+    # Tolerate a differing leading/interior article (e.g. a UPC title dropping the
+    # "A" in "A Link Between Worlds") by re-checking with a/an/the removed. Kept
+    # article-specific on purpose: a broader token-subset rule would wrongly match
+    # "Mega Man 2" to "Mega Man Legacy Collection 2".
+    ax = " ".join(w for w in a.split() if w not in _ARTICLE_WORDS)
+    bx = " ".join(w for w in b.split() if w not in _ARTICLE_WORDS)
+    if ax and bx and (ax == bx or bx in ax or ax in bx):
         return _TITLE_CONTAINS
     return None
 
