@@ -54,14 +54,25 @@ _RETAIL_NOISE_WORDS: tuple[str, ...] = (
     "north america", "region free", "brand new", "factory sealed", "sealed",
     "physical", "digital", "import", "ntsc", "pal",
 )
+# Standalone publisher/vendor words that UPC titles tack on ("... Nintendo 0454...").
+# Stripped as whole words; extensible — add new publishers here.
+_PUBLISHER_NOISE_WORDS: tuple[str, ...] = (
+    "nintendo", "sony", "microsoft", "sega", "capcom", "square enix",
+    "bandai namco", "ubisoft", "electronic arts", "activision", "konami", "atlus",
+)
+# Platform/packaging noise first (longest-first), then publishers.
+_ALL_NOISE_WORDS: tuple[str, ...] = _RETAIL_NOISE_WORDS + _PUBLISHER_NOISE_WORDS
 # Drops bracketed/parenthesised chunks: "(Nintendo Switch)", "[Physical]".
 _BRACKETS_RE = re.compile(r"[\(\[\{][^\)\]\}]*[\)\]\}]")
 # Drops "video game" plus an optional preceding genre word ("racing video game").
 _VIDEO_GAME_RE = re.compile(r"\b(?:\w+\s+)?video game\b", re.IGNORECASE)
 _NOISE_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(w) for w in _RETAIL_NOISE_WORDS) + r")\b",
+    r"\b(?:" + "|".join(re.escape(w) for w in _ALL_NOISE_WORDS) + r")\b",
     re.IGNORECASE,
 )
+# Standalone catalog numbers / embedded UPCs (5+ digits). The floor preserves
+# real title numbers like "1942" or "FIFA 23".
+_CATALOG_NUM_RE = re.compile(r"\b\d{5,}\b")
 # Retail platform phrase (as it appears in UPC titles) -> app short_name. Longest
 # phrases first so "nintendo switch" wins over "switch". Extensible.
 RETAIL_PLATFORM_TO_SHORT: tuple[tuple[str, str], ...] = (
@@ -105,6 +116,7 @@ def clean_product_title(raw: str | None) -> str:
     t = _BRACKETS_RE.sub(" ", raw)
     t = _VIDEO_GAME_RE.sub(" ", t)
     t = _NOISE_RE.sub(" ", t)
+    t = _CATALOG_NUM_RE.sub(" ", t)
     t = _SEP_DASH_RE.sub(" ", t)                 # collapse separator dashes
     t = re.sub(r"\s{2,}", " ", t).strip()
     return t.strip(" -–—:").strip()    # trim stray leading/trailing seps
