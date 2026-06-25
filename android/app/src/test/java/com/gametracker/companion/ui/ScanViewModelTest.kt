@@ -52,6 +52,27 @@ class ScanViewModelTest {
         assertTrue(vm.state.value is ScanState.Added)
     }
 
+    @Test fun addToLibrary_bundle_adds_unowned_constituents_not_wrapper() = runTest {
+        val repo = FakeRepo(resolveResp = BarcodeResolveResponse("MMX", "upc_api"))
+        val vm = ScanViewModel(repo.asRepository())
+        vm.addToLibrary(BarcodeCandidate(
+            igdbId = 500, title = "Mega Man X Legacy Collection", platform = "Switch", gameType = 3,
+            constituents = listOf(
+                BarcodeConstituent(title = "Mega Man X", ownedGameId = 10),    // already owned
+                BarcodeConstituent(title = "Mega Man X2", ownedGameId = null), // not owned
+                BarcodeConstituent(title = "Mega Man X3", ownedGameId = null))),
+            scannedPlatform = "Switch", upc = "MMX"); advanceUntilIdle()
+        val titles = repo.created.map { it.title }
+        assertEquals(listOf("Mega Man X2", "Mega Man X3"), titles)        // constituents only
+        assertFalse(titles.contains("Mega Man X Legacy Collection"))     // wrapper never added
+        repo.created.forEach {
+            assertEquals(listOf("Switch"), it.platforms)
+            assertEquals(true, it.physical)
+            assertEquals(null, it.upc)   // bundle UPC maps to no single game
+        }
+        assertTrue(vm.state.value is ScanState.Added)
+    }
+
     @Test fun addPlatformCopy_calls_add_platform_for_owned_game() = runTest {
         val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api"))
         val vm = ScanViewModel(repo.asRepository())
