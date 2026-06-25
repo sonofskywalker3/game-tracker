@@ -164,4 +164,19 @@ class RepositoryTest {
         assertEquals(42, state.slots[0].candidates[0].game.id)
         assertEquals(7, state.recentlyFinished[0].gameId)
     }
+
+    @Test fun link_posts_barcode_link_body() = runTest {
+        server.enqueue(MockResponse().setBody("""{"success":true}"""))
+        val result = repo.link("U1", 7, "Celeste", "cov", "Switch", null)
+        assertTrue(result.isSuccess)
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/api/barcode/link", recorded.path)
+        val sent = recorded.body.readUtf8()
+        assertTrue(sent.contains("\"upc\":\"U1\""))
+        assertTrue(sent.contains("\"igdb_id\":7"))
+        assertTrue(sent.contains("\"title\":\"Celeste\""))
+        assertTrue(sent.contains("\"cover_url\":\"cov\""))
+        assertTrue(sent.contains("\"platform\":\"Switch\""))
+    }
 }

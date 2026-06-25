@@ -1,5 +1,6 @@
 package com.gametracker.companion.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -21,6 +22,14 @@ import retrofit2.http.Query
 @Serializable data class AddPlatformPayload(val short_name: String, val format: String? = null,
                                             val upc: String? = null)
 @Serializable data class AddPlatformBody(val add_platform: AddPlatformPayload)
+@Serializable data class BarcodeLinkBody(
+    val upc: String,
+    @SerialName("igdb_id") val igdbId: Int? = null,
+    val title: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val platform: String,
+    @SerialName("game_id") val gameId: Int? = null,
+)
 
 interface GameTrackerApi {
     @GET("api/games")
@@ -48,6 +57,9 @@ interface GameTrackerApi {
 
     @POST("api/games")
     suspend fun createGame(@Body body: CreateGameBody): CreateGameResponse
+
+    @POST("api/barcode/link")
+    suspend fun linkBarcode(@Body body: BarcodeLinkBody)
 
     @GET("api/slots")
     suspend fun slots(): SlotsResponse

@@ -18,6 +18,7 @@ class FakeRepo(
     val reorders = mutableListOf<List<Int>>()
     val created = mutableListOf<CreateGameBody>()
     val addedPlatforms = mutableListOf<Pair<Int, AddPlatformPayload>>()
+    val linked = mutableListOf<BarcodeLinkBody>()
 
     private val api = object : GameTrackerApi {
         override suspend fun games(status: String?, platform: String?, search: String?, sort: String?) =
@@ -38,6 +39,10 @@ class FakeRepo(
         }
         override suspend fun resolveBarcode(upc: String): BarcodeResolveResponse =
             if (reachable) resolveResp else throw RuntimeException("unreachable")
+        override suspend fun linkBarcode(body: BarcodeLinkBody) {
+            linked += body
+            if (!reachable) throw RuntimeException("unreachable")
+        }
         override suspend fun slots() =
             if (reachable) slotsResp else throw RuntimeException("unreachable")
         override suspend fun pin(id: Int, body: PinBody) { pinned += Triple(id, body.game_id, body.goal) }
