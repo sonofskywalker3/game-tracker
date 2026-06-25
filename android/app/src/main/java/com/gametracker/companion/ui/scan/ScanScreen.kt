@@ -34,6 +34,10 @@ private val PRODUCT_FORMATS = setOf(
 )
 private const val REARM_MS = 5000L
 
+// Offered when a scan can't determine the platform (extensible).
+private val COMMON_PLATFORMS = listOf("Switch", "PS5", "PS4", "Xbox", "PC", "3DS", "WiiU", "Wii")
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> Unit) {
     val vm: ScanViewModel = viewModel(factory = rememberAppFactory())
@@ -52,10 +56,19 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
     }
 
     val state = vm.state.collectAsState().value
+    val infoMode = vm.infoMode.collectAsState().value
+    var barcodePresent by remember { mutableStateOf(false) }
+    val reArmGate = remember { PresenceReArmGate() }
     fun rescan() { fired = false; vm.reset() }
 
-    // Hands-free: after an add, show the confirmation briefly then re-arm the scanner.
-    LaunchedEffect(state) { if (state is ScanState.Added) { delay(REARM_MS); rescan() } }
+    // Re-arm: Info mode waits until the item leaves the frame (presence gate);
+    // normal mode keeps the timed re-arm after an add.
+    LaunchedEffect(state, barcodePresent, infoMode) {
+        val terminal = state is ScanState.Linked || state is ScanState.Info ||
+            state is ScanState.NoMatch || state is ScanState.Added
+        if (infoMode && terminal && reArmGate.onFrame(barcodePresent)) { reArmGate.reset(); rescan() }
+        else if (!infoMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
+    }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx ->
@@ -72,8 +85,9 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
                         val img = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                         scanner.process(img)
                             .addOnSuccessListener { codes ->
-                                codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
-                                    ?.let { if (!fired) { fired = true; vm.onBarcode(it) } }
+                                val hit = codes.firstOrNull { it.format in PRODUCT_FORMATS }?.rawValue
+                                barcodePresent = hit != null
+                                if (hit != null && !fired) { fired = true; vm.onBarcode(hit) }
                             }
                             .addOnCompleteListener { proxy.close() }
                     } else proxy.close()
@@ -85,6 +99,13 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
             previewView
         })
 
+        Row(Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Text("Info mode", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(8.dp))
+            Switch(checked = infoMode, onCheckedChange = { vm.setInfoMode(it) })
+        }
+
         when (val s = state) {
             ScanState.Scanning -> {}
             is ScanState.Resolving -> ResultCard(onDismiss = null) {
@@ -94,7 +115,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
                 }
             }
             is ScanState.Info -> ResultCard(onDismiss = ::rescan) {
-                ScanInfo(s, onOpenGame = onOpenGame,
+                ScanInfo(s, infoMode = infoMode, onOpenGame = onOpenGame,
                     onAdd = { vm.addToLibrary(s.candidate, s.scannedPlatform, s.upc) },
                     onAddCopy = { p -> vm.addPlatformCopy(s.candidate, p, s.upc) })
             }
@@ -108,25 +129,36 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
             }
             is ScanState.Error -> ResultCard(onDismiss = ::rescan) { Text(s.message) }
             is ScanState.Picker -> ResultCard(onDismiss = ::rescan) {
-                Text("Multiple matches — pick one")
+                Text("Which one?", style = MaterialTheme.typography.titleSmall)
                 s.candidates.forEach { c ->
-                    Button(onClick = { vm.pick(c, s.upc, s.scannedPlatform) }) {
-                        Text(c.title ?: "Unknown")
+                    Row(Modifier.fillMaxWidth().clickable {
+                        vm.pick(c, s.upc, s.scannedPlatform)
+                    }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CoverImage(c.coverUrl, c.title ?: "", Modifier.width(40.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(c.title ?: "Unknown", Modifier.weight(1f))
                     }
                 }
             }
             is ScanState.NeedsPlatform -> ResultCard(onDismiss = ::rescan) {
-                Text("Select platform for ${s.candidate.title}")
+                Text("${s.candidate.title ?: "This game"} — which platform?",
+                    style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    COMMON_PLATFORMS.forEach { p ->
+                        AssistChip(onClick = { vm.choosePlatform(s.candidate, p, s.upc) },
+                            label = { Text(p) })
+                    }
+                }
             }
             is ScanState.Linked -> ResultCard(onDismiss = ::rescan) {
-                Text("Linked: ${s.title} (${s.platform})")
+                Text("Saved ✓  ${s.title ?: ""} (${s.platform})")
             }
         }
     }
 }
 
 @Composable
-private fun ScanInfo(s: ScanState.Info, onOpenGame: (Int) -> Unit,
+private fun ScanInfo(s: ScanState.Info, infoMode: Boolean, onOpenGame: (Int) -> Unit,
                      onAdd: () -> Unit, onAddCopy: (String) -> Unit) {
     val c = s.candidate
     Row(verticalAlignment = Alignment.CenterVertically,
@@ -136,16 +168,20 @@ private fun ScanInfo(s: ScanState.Info, onOpenGame: (Int) -> Unit,
     }
     when (ownershipOf(c, s.scannedPlatform)) {
         Ownership.NOT_OWNED -> {
-            Button(onClick = onAdd) {
-                Text("Add to library" + (s.scannedPlatform?.let { " ($it)" } ?: ""))
+            if (!infoMode) {
+                Button(onClick = onAdd) {
+                    Text("Add to library" + (s.scannedPlatform?.let { " ($it)" } ?: ""))
+                }
             }
         }
         Ownership.SAME_PLATFORM, Ownership.OTHER_PLATFORM -> {
             Text("You already own this on ${ownedLabels(c.ownedPlatforms)}")
-            s.scannedPlatform?.let { p ->
-                Button(onClick = { onAddCopy(p) }) { Text("Add the $p copy") }
+            if (!infoMode) {
+                s.scannedPlatform?.let { p ->
+                    Button(onClick = { onAddCopy(p) }) { Text("Add the $p copy") }
+                }
+                c.ownedGameId?.let { TextButton(onClick = { onOpenGame(it) }) { Text("View") } }
             }
-            c.ownedGameId?.let { TextButton(onClick = { onOpenGame(it) }) { Text("View") } }
         }
     }
     // Multi-pack: report which constituents you already own.
