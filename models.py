@@ -1010,6 +1010,26 @@ def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_tagged_games_to_physical(conn: sqlite3.Connection) -> None:
+    """One-time conservative reconcile of the legacy 'Physical' tag into the
+    per-platform format source of truth. For every game carrying the 'Physical'
+    tag, set format='physical' on each owned platform whose current format is
+    'digital' or NULL. Never downgrades 'both' or an existing 'physical', and
+    never touches untagged games. Idempotent: only digital/NULL rows of tagged
+    games move, so re-running is a no-op.
+
+    Must run AFTER migrate_game_platform_format (which creates the column)."""
+    conn.execute("""
+        UPDATE game_platforms SET format = 'physical'
+        WHERE (format IS NULL OR format = 'digital')
+          AND EXISTS (
+              SELECT 1 FROM game_tags gt JOIN tags t ON t.id = gt.tag_id
+              WHERE gt.game_id = game_platforms.game_id AND t.name = 'Physical'
+          )
+    """)
+    conn.commit()
+
+
 def migrate_upc_review(conn: sqlite3.Connection) -> None:
     """Create the upc_review table if missing. Idempotent.
 
@@ -1181,6 +1201,7 @@ def migrate_db():
     migrate_barcode_registry(conn)
     migrate_barcode_registry_cover(conn)
     migrate_game_platform_format(conn)
+    migrate_tagged_games_to_physical(conn)
     migrate_decider_chats(conn)
     migrate_upc_review(conn)
     migrate_upc_enrichment_state(conn)

@@ -84,3 +84,60 @@ def test_platform_category_migration_idempotent_for_extra(temp_db):
     assert cats["Android"] == "mobile"
     assert cats["GamePass"] == "subscription"
     assert cats["PSPlus"] == "subscription"
+
+
+def _tag_physical(conn, game_id):
+    conn.execute("INSERT OR IGNORE INTO tags (name, category) VALUES ('Physical','custom')")
+    tid = conn.execute("SELECT id FROM tags WHERE name='Physical'").fetchone()[0]
+    conn.execute("INSERT INTO game_tags (game_id, tag_id) VALUES (?, ?)", (game_id, tid))
+
+
+def test_tagged_games_to_physical_flips_digital_and_null_for_tagged_only(temp_db):
+    conn = models.get_db()
+    _add_platform(conn, "Nintendo Switch", "Switch", "modern_console")
+    _add_platform(conn, "PlayStation 5", "PS5", "modern_console")
+    sid = conn.execute("SELECT id FROM platforms WHERE short_name='Switch'").fetchone()[0]
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+
+    # game 1: tagged Physical, owned digital on Switch + NULL on PS5 -> both flip
+    conn.execute("INSERT INTO games (id,title,normalized_title) VALUES (1,'Kirby','kirby')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (1, ?, 'digital')", (sid,))
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (1, ?, NULL)", (pid,))
+    _tag_physical(conn, 1)
+
+    # game 2: tagged Physical, already 'both' on Switch -> must NOT downgrade
+    conn.execute("INSERT INTO games (id,title,normalized_title) VALUES (2,'Both','both')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (2, ?, 'both')", (sid,))
+    _tag_physical(conn, 2)
+
+    # game 3: NOT tagged, owned digital -> untouched (most of the library)
+    conn.execute("INSERT INTO games (id,title,normalized_title) VALUES (3,'Digital','digital')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (3, ?, 'digital')", (sid,))
+    conn.commit()
+
+    models.migrate_tagged_games_to_physical(conn)
+
+    fmts = {(r[0], r[1]): r[2] for r in conn.execute(
+        "SELECT gp.game_id, p.short_name, gp.format FROM game_platforms gp "
+        "JOIN platforms p ON p.id = gp.platform_id").fetchall()}
+    conn.close()
+    assert fmts[(1, "Switch")] == "physical"   # digital -> physical
+    assert fmts[(1, "PS5")] == "physical"       # NULL -> physical (all owned platforms)
+    assert fmts[(2, "Switch")] == "both"        # never downgraded
+    assert fmts[(3, "Switch")] == "digital"     # untagged, untouched
+
+
+def test_tagged_games_to_physical_is_idempotent(temp_db):
+    conn = models.get_db()
+    _add_platform(conn, "Nintendo Switch", "Switch", "modern_console")
+    sid = conn.execute("SELECT id FROM platforms WHERE short_name='Switch'").fetchone()[0]
+    conn.execute("INSERT INTO games (id,title,normalized_title) VALUES (1,'K','k')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (1, ?, 'digital')", (sid,))
+    _tag_physical(conn, 1)
+    conn.commit()
+
+    models.migrate_tagged_games_to_physical(conn)
+    models.migrate_tagged_games_to_physical(conn)  # second run = no-op
+    fmt = conn.execute("SELECT format FROM game_platforms WHERE game_id=1").fetchone()[0]
+    conn.close()
+    assert fmt == "physical"
