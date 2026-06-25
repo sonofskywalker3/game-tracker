@@ -106,6 +106,7 @@ class ScanViewModelTest {
         val s = vm.state.value
         assertTrue(s is ScanState.Picker)
         assertEquals(2, (s as ScanState.Picker).candidates.size)
+        assertTrue(repo.linked.isEmpty())
     }
 
     @Test fun confident_single_in_info_mode_links_and_shows_linked() = runTest {
