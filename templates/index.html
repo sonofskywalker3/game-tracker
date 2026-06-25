@@ -322,7 +322,7 @@
         loading.classList.add('hidden');
         grid.innerHTML = games.length ? games.map(game => {
             const coverUrl = game.cover_url || '';
-            const isPhysical = (game.tags || []).some(t => t.name === 'Physical');
+            const physicalMedia = game.physical_media || [];
             const sortName = game.series_name || game.title;
 
             return `
@@ -340,13 +340,24 @@
                                 <span class="text-4xl">🎮</span>
                             </div>
                         `}
-                        <!-- Physical disc icon -->
-                        ${isPhysical ? `
-                            <div class="absolute top-2 right-2 bg-black/50 rounded-full w-6 h-6 flex items-center justify-center" title="Physical Copy">
-                                <svg class="w-4 h-4 text-white/80" viewBox="0 0 24 24" fill="currentColor">
-                                    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                                    <circle cx="12" cy="12" r="3" fill="currentColor"/>
-                                </svg>
+                        <!-- Physical media badges (cartridge / disc), one per media type -->
+                        ${physicalMedia.length ? `
+                            <div class="absolute top-2 right-2 flex flex-col gap-1">
+                                ${physicalMedia.map(media => media === 'cartridge' ? `
+                                    <div class="bg-black/50 rounded-full w-6 h-6 flex items-center justify-center" title="Cartridge">
+                                        <svg class="w-4 h-4 text-white/80" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M6 3 H18 a1 1 0 0 1 1 1 V18 a1 1 0 0 1 -1 1 H16 V16 H8 V19 H6 a1 1 0 0 1 -1 -1 V4 a1 1 0 0 1 1 -1 Z"/>
+                                            <rect x="8" y="6" width="8" height="5" rx="1" fill="#000" opacity="0.35"/>
+                                        </svg>
+                                    </div>
+                                ` : `
+                                    <div class="bg-black/50 rounded-full w-6 h-6 flex items-center justify-center" title="Disc">
+                                        <svg class="w-4 h-4 text-white/80" viewBox="0 0 24 24" fill="currentColor">
+                                            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                                        </svg>
+                                    </div>
+                                `).join('')}
                             </div>
                         ` : ''}
                         ${game.collection_name ? `
