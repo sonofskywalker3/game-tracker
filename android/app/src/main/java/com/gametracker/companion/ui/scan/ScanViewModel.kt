@@ -17,7 +17,7 @@ sealed interface ScanState {
     data class Picker(val candidates: List<BarcodeCandidate>, val upc: String,
                       val scannedPlatform: String?) : ScanState
     data class NeedsPlatform(val candidate: BarcodeCandidate, val upc: String) : ScanState
-    data class Linked(val title: String?, val platform: String, val coverUrl: String? = null) : ScanState
+    data class Linked(val title: String?, val platform: String, val coverUrl: String? = null, val isNew: Boolean = true) : ScanState
     data class NoMatch(val upc: String, val productTitle: String?) : ScanState
     data class Error(val message: String) : ScanState
     data class Added(val gameId: Int?) : ScanState
@@ -77,7 +77,7 @@ class ScanViewModel(private val repository: Repository) : ViewModel() {
         if (link) viewModelScope.launch {
             repository.link(upc, c.igdbId, c.title, c.coverUrl, platform, c.ownedGameId)
         }
-        _state.value = if (_databaseMode.value) ScanState.Linked(c.title, platform, c.coverUrl)
+        _state.value = if (_databaseMode.value) ScanState.Linked(c.title, platform, c.coverUrl, isNew = link)
                        else ScanState.Info(c, platform, upc)
     }
 
