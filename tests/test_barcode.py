@@ -169,6 +169,41 @@ def test_resolve_3ds_trailing_token_strips_title_and_detects_platform(temp_db, m
     assert all("3d" not in t.lower() for t in seen_titles)
 
 
+def test_resolve_drops_edition_variants_when_base_present(temp_db, monkeypatch):
+    # A physical scan should resolve to the base game, not its edition SKUs.
+    monkeypatch.setattr(barcode, "lookup_product_title",
+                        lambda upc: "Dragon Quest Monsters: The Dark Prince")
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 1, "name": "Dragon Quest Monsters: The Dark Prince",
+         "platforms": [], "game_type": 0},
+        {"igdb_id": 2, "name": "Dragon Quest Monsters: The Dark Prince - Digital Deluxe Edition",
+         "platforms": [], "game_type": 0},
+        {"igdb_id": 3, "name": "Dragon Quest Monsters: The Dark Prince - Master Edition",
+         "platforms": [], "game_type": 0},
+    ])
+    monkeypatch.setattr(igdb_match, "short_names_for", lambda ids: [])
+    conn = models.get_db()
+    result = barcode.resolve(conn, "111", client_id="cid", token="tok")
+    conn.close()
+    names = [c["title"] for c in result["candidates"]]
+    assert names == ["Dragon Quest Monsters: The Dark Prince"]
+
+
+def test_resolve_keeps_edition_when_no_base_sibling(temp_db, monkeypatch):
+    # An edition with no plain-base sibling is the only match -> keep it.
+    monkeypatch.setattr(barcode, "lookup_product_title", lambda upc: "Some Game Deluxe Edition")
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (barcode.lookup_product_title,))
+    monkeypatch.setattr(igdb_match, "candidates_for", lambda *a, **k: [
+        {"igdb_id": 9, "name": "Some Game - Deluxe Edition", "platforms": [], "game_type": 0},
+    ])
+    monkeypatch.setattr(igdb_match, "short_names_for", lambda ids: [])
+    conn = models.get_db()
+    result = barcode.resolve(conn, "222", client_id="cid", token="tok")
+    conn.close()
+    assert [c["title"] for c in result["candidates"]] == ["Some Game - Deluxe Edition"]
+
+
 def test_resolve_trailing_3d_falls_back_to_unstripped_for_other_platform(temp_db, monkeypatch):
     # "Ballz 3D" is a real Genesis game where "3D" is the NAME, not the platform.
     # Stripping finds nothing as 3DS, so resolve must retry the un-stripped title and
