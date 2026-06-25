@@ -59,15 +59,17 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
     val infoMode = vm.infoMode.collectAsState().value
     var barcodePresent by remember { mutableStateOf(false) }
     val reArmGate = remember { PresenceReArmGate() }
-    fun rescan() { fired = false; vm.reset() }
+    fun rescan() { reArmGate.reset(); fired = false; vm.reset() }
 
-    // Re-arm: Info mode waits until the item leaves the frame (presence gate);
-    // normal mode keeps the timed re-arm after an add.
+    // Normal mode: timed re-arm after an add (independent of frame presence).
+    LaunchedEffect(state, infoMode) {
+        if (!infoMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
+    }
+    // Info mode: re-arm once the item has left the frame (presence gate).
     LaunchedEffect(state, barcodePresent, infoMode) {
         val terminal = state is ScanState.Linked || state is ScanState.Info ||
             state is ScanState.NoMatch || state is ScanState.Added
         if (infoMode && terminal && reArmGate.onFrame(barcodePresent)) { reArmGate.reset(); rescan() }
-        else if (!infoMode && state is ScanState.Added) { delay(REARM_MS); rescan() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -89,6 +91,7 @@ fun ScanScreen(onOpenGame: (Int) -> Unit, onManualSearch: (String?, String) -> U
                                 barcodePresent = hit != null
                                 if (hit != null && !fired) { fired = true; vm.onBarcode(hit) }
                             }
+                            .addOnFailureListener { barcodePresent = false }
                             .addOnCompleteListener { proxy.close() }
                     } else proxy.close()
                 }
