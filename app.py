@@ -198,9 +198,9 @@ def api_games():
     for row in rows:
         game = dict(row)
 
-        # Get platforms (+ era category) for this game
+        # Get platforms (+ era category + per-platform format) for this game
         platforms = conn.execute("""
-            SELECT p.short_name, p.category
+            SELECT p.short_name, p.category, gp.format
             FROM platforms p
             JOIN game_platforms gp ON gp.platform_id = p.id
             WHERE gp.game_id = ?
@@ -216,7 +216,15 @@ def api_games():
             WHERE gt.game_id = ?
         """, (row['id'],)).fetchall()
         game['tags'] = [{'name': t['name'], 'category': t['category']} for t in tags]
-        game['physical'] = any(t['name'] == 'Physical' for t in game['tags'])
+        # physical/digital is per-platform format now (single source of truth),
+        # not the legacy 'Physical' tag. Physical iff owned physical/both somewhere.
+        physical_rows = [p for p in platforms if p['format'] in PHYSICAL_FORMATS]
+        game['physical'] = bool(physical_rows)
+        game['physical_media'] = sorted({
+            PLATFORM_MEDIA[p['short_name']]
+            for p in physical_rows
+            if p['short_name'] in PLATFORM_MEDIA
+        })
         game['needs_igdb_review'] = bool(game.get('needs_igdb_review'))
         game['igdb_review_reason'] = game.get('igdb_review_reason')
 
