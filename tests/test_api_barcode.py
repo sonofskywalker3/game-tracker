@@ -1,6 +1,21 @@
 import barcode
 
 
+def test_clean_product_title_strips_publisher_and_catalog_numbers():
+    cases = {
+        "Super Mario 3D All-Stars Nintendo 045496596743": "Super Mario 3D All-Stars",
+        "The Legend of Zelda: Link's Awakening 110249": "The Legend of Zelda: Link's Awakening",
+        "Bravely Default II 045496596842": "Bravely Default II",
+    }
+    for raw, expected in cases.items():
+        assert barcode.clean_product_title(raw) == expected
+
+
+def test_clean_product_title_preserves_short_title_numbers():
+    assert barcode.clean_product_title("1942") == "1942"
+    assert barcode.clean_product_title("FIFA 23 (PS5)") == "FIFA 23"
+
+
 def test_clean_product_title_strips_retail_noise():
     cases = {
         "Mario Kart 8 Deluxe racing video game (Nintendo Switch)": "Mario Kart 8 Deluxe",
