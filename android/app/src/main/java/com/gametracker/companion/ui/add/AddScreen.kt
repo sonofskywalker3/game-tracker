@@ -38,8 +38,7 @@ fun AddScreen(initialQuery: String?, pendingUpc: String?, infoMode: Boolean, onO
                     return@launch
                 }
                 val res = vm.linkInfo(result, platform, pendingUpc ?: "")
-                pendingAdd = null
-                if (res.isSuccess) onLinked()
+                if (res.isSuccess) { pendingAdd = null; onLinked() }
                 else snackbar.showSnackbar("Couldn't link — try again")
             } else {
                 val gid = vm.add(result, platforms = platforms, physical = physical, upc = pendingUpc)
