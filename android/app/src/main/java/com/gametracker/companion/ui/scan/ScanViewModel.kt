@@ -81,10 +81,23 @@ class ScanViewModel(private val repository: Repository) : ViewModel() {
                        else ScanState.Info(c, platform, upc)
     }
 
-    /** Add a not-owned game, defaulting to the scanned platform + physical format. */
+    /** Add a not-owned game, defaulting to the scanned platform + physical format.
+     *  For a bundle/collection, owning it means owning its games: add the
+     *  not-yet-owned constituents and never the bundle wrapper. The bundle UPC maps
+     *  to no single game, so it is not registered against any constituent. */
     fun addToLibrary(c: BarcodeCandidate, scannedPlatform: String?, upc: String) =
         viewModelScope.launch {
             val platforms = listOfNotNull(scannedPlatform ?: c.platform)
+            if (c.constituents.isNotEmpty()) {
+                var lastGid: Int? = null
+                c.constituents.filter { it.ownedGameId == null }.forEach { k ->
+                    lastGid = repository.createGame(
+                        title = k.title ?: "", platforms = platforms, physical = true,
+                    ).getOrNull()?.gameId
+                }
+                _state.value = ScanState.Added(lastGid)
+                return@launch
+            }
             val gid = repository.createGame(
                 title = c.title ?: "", coverUrl = c.coverUrl,
                 platforms = platforms, physical = true, upc = upc,
