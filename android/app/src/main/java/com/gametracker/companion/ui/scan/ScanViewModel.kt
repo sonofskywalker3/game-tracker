@@ -17,7 +17,7 @@ sealed interface ScanState {
     data class Picker(val candidates: List<BarcodeCandidate>, val upc: String,
                       val scannedPlatform: String?) : ScanState
     data class NeedsPlatform(val candidate: BarcodeCandidate, val upc: String) : ScanState
-    data class Linked(val title: String?, val platform: String) : ScanState
+    data class Linked(val title: String?, val platform: String, val coverUrl: String? = null) : ScanState
     data class NoMatch(val upc: String, val productTitle: String?) : ScanState
     data class Error(val message: String) : ScanState
     data class Added(val gameId: Int?) : ScanState
@@ -28,9 +28,9 @@ class ScanViewModel(private val repository: Repository) : ViewModel() {
     private val _state = MutableStateFlow<ScanState>(ScanState.Scanning)
     val state: StateFlow<ScanState> = _state
 
-    private val _infoMode = MutableStateFlow(false)
-    val infoMode: StateFlow<Boolean> = _infoMode
-    fun setInfoMode(on: Boolean) { _infoMode.value = on }
+    private val _databaseMode = MutableStateFlow(false)
+    val databaseMode: StateFlow<Boolean> = _databaseMode
+    fun setDatabaseMode(on: Boolean) { _databaseMode.value = on }
 
     fun onBarcode(upc: String) = viewModelScope.launch {
         _state.value = ScanState.Resolving
@@ -77,7 +77,7 @@ class ScanViewModel(private val repository: Repository) : ViewModel() {
         if (link) viewModelScope.launch {
             repository.link(upc, c.igdbId, c.title, c.coverUrl, platform, c.ownedGameId)
         }
-        _state.value = if (_infoMode.value) ScanState.Linked(c.title, platform)
+        _state.value = if (_databaseMode.value) ScanState.Linked(c.title, platform, c.coverUrl)
                        else ScanState.Info(c, platform, upc)
     }
 

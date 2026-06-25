@@ -109,13 +109,13 @@ class ScanViewModelTest {
         assertTrue(repo.linked.isEmpty())
     }
 
-    @Test fun confident_single_in_info_mode_links_and_shows_linked() = runTest {
+    @Test fun confident_single_in_database_mode_links_and_shows_linked() = runTest {
         val repo = FakeRepo(resolveResp = BarcodeResolveResponse("711", "upc_api",
             scannedPlatform = "Switch",
             candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
                 platform = "Switch", coverUrl = "u"))))
         val vm = ScanViewModel(repo.asRepository())
-        vm.setInfoMode(true)
+        vm.setDatabaseMode(true)
         vm.onBarcode("711"); advanceUntilIdle()
         assertTrue(vm.state.value is ScanState.Linked)
         val body = repo.linked.single()
@@ -138,7 +138,7 @@ class ScanViewModelTest {
             scannedPlatform = "Switch",
             candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo", platform = "Switch"))))
         val vm = ScanViewModel(repo.asRepository())
-        vm.setInfoMode(true)
+        vm.setDatabaseMode(true)
         vm.onBarcode("711"); advanceUntilIdle()
         assertTrue(vm.state.value is ScanState.Picker)   // forced to confirm
         assertTrue(repo.linked.isEmpty())
@@ -150,7 +150,7 @@ class ScanViewModelTest {
             candidates = listOf(BarcodeCandidate(igdbId = 1, title = "Halo",
                 platform = null, coverUrl = "u"))))
         val vm = ScanViewModel(repo.asRepository())
-        vm.setInfoMode(true)
+        vm.setDatabaseMode(true)
         vm.onBarcode("711"); advanceUntilIdle()
         val s = vm.state.value
         assertTrue(s is ScanState.NeedsPlatform)
