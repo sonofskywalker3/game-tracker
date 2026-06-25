@@ -21,14 +21,12 @@ def _insert_game(title, short_name, physical=False):
     pid = conn.execute(
         "SELECT id FROM platforms WHERE short_name = ?", (short_name,)
     ).fetchone()[0]
+    fmt = "physical" if physical else "digital"
     conn.execute(
-        "INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)", (gid, pid)
+        "INSERT INTO game_platforms (game_id, platform_id, format) VALUES (?, ?, ?)",
+        (gid, pid, fmt),
     )
     conn.execute("INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (gid,))
-    if physical:
-        conn.execute("INSERT OR IGNORE INTO tags (name, category) VALUES ('Physical', 'custom')")
-        tid = conn.execute("SELECT id FROM tags WHERE name = 'Physical'").fetchone()[0]
-        conn.execute("INSERT INTO game_tags (game_id, tag_id) VALUES (?, ?)", (gid, tid))
     conn.commit()
     conn.close()
     return gid
@@ -77,8 +75,10 @@ def test_api_games_exposes_categories_and_physical(client):
 
     assert by_title["Modern Disc Game"]["categories"] == ["modern_console"]
     assert by_title["Modern Disc Game"]["physical"] is True
+    assert by_title["Modern Disc Game"]["physical_media"] == ["disc"]   # PS4 -> disc
     assert by_title["Retro Game"]["categories"] == ["legacy_console"]
     assert by_title["Retro Game"]["physical"] is False
+    assert by_title["Retro Game"]["physical_media"] == []              # digital -> no media
     assert by_title["Desktop Game"]["categories"] == ["pc"]
 
 
@@ -822,3 +822,40 @@ def test_add_platform_keeps_both_when_readding_single_format(client):
                        ).fetchone()[0]
     conn.close()
     assert fmt == "both"   # not downgraded to 'physical'
+
+
+def test_physical_media_derived_from_format_not_tag(client):
+    """physical/physical_media come from game_platforms.format, never the tag."""
+    _ensure_platform("Nintendo Switch", "Switch", "modern_console")
+    _ensure_platform("PlayStation 5", "PS5", "modern_console")
+
+    conn = models.get_db()
+    # A) cartridge-only physical (Switch)
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (1,'Cart','cart')")
+    sid = conn.execute("SELECT id FROM platforms WHERE short_name='Switch'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, ?, 'physical')", (sid,))
+    # B) owned on Switch (physical) AND PS5 (disc) -> both media, deduped + sorted
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (2,'Mixed','mixed')")
+    pid = conn.execute("SELECT id FROM platforms WHERE short_name='PS5'").fetchone()[0]
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (2, ?, 'both')", (sid,))   # Switch 'both' counts as physical
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (2, ?, 'physical')", (pid,))
+    # C) has the legacy 'Physical' TAG but every platform is digital -> NOT physical
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (3,'Tagged','tagged')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (3, ?, 'digital')", (sid,))
+    conn.execute("INSERT OR IGNORE INTO tags (name, category) VALUES ('Physical','custom')")
+    tid = conn.execute("SELECT id FROM tags WHERE name='Physical'").fetchone()[0]
+    conn.execute("INSERT INTO game_tags (game_id, tag_id) VALUES (3, ?)", (tid,))
+    conn.commit()
+    conn.close()
+
+    by_id = {g["id"]: g for g in client.get("/api/games").get_json()}
+    assert by_id[1]["physical"] is True
+    assert by_id[1]["physical_media"] == ["cartridge"]
+    assert by_id[2]["physical"] is True
+    assert by_id[2]["physical_media"] == ["cartridge", "disc"]   # sorted, deduped
+    assert by_id[3]["physical"] is False        # tag ignored; format is digital
+    assert by_id[3]["physical_media"] == []
