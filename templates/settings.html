@@ -37,6 +37,37 @@
         </div>
     </div>
 
+    <!-- Steam Credentials Section -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🎮</span>
+            Steam API Credentials
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            Used by the Steam library scrape. Get a Web API key from
+            <a href="https://steamcommunity.com/dev/apikey" target="_blank" class="text-accent hover:underline">steamcommunity.com/dev/apikey</a>;
+            find your SteamID64 at
+            <a href="https://steamid.io/" target="_blank" class="text-accent hover:underline">steamid.io</a>.
+        </p>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Web API Key</label>
+                <input type="password" id="steam-api-key" placeholder="Enter your Steam Web API key"
+                       class="w-full bg-surface rounded-lg border border-gray-600 px-4 py-2 text-white placeholder-gray-500 focus:border-accent focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">SteamID64</label>
+                <input type="text" id="steam-id" placeholder="7656119…"
+                       class="w-full bg-surface rounded-lg border border-gray-600 px-4 py-2 text-white placeholder-gray-500 focus:border-accent focus:outline-none">
+            </div>
+            <button onclick="saveSteamCredentials()"
+                    class="px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
+                Save Steam Credentials
+            </button>
+            <span id="steam-status" class="ml-3 text-sm"></span>
+        </div>
+    </div>
+
     <!-- Anthropic / Decider Section -->
     <div class="bg-surface-light rounded-xl p-6">
         <h2 class="text-lg font-medium text-white mb-4 flex items-center">
@@ -103,6 +134,41 @@
             <h3 class="font-medium text-white mb-2">Results</h3>
             <div id="results-summary" class="text-sm text-gray-400"></div>
             <div id="not-found-list" class="mt-2 max-h-40 overflow-y-auto text-sm text-gray-500"></div>
+        </div>
+    </div>
+
+    <!-- Data Management Section -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">📦</span>
+            Data Management
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            Export your library as CSV, or bulk-import games from a CSV file.
+            Import needs a <code class="bg-surface px-1 rounded">title</code> column;
+            optional: <code class="bg-surface px-1 rounded">status</code>,
+            <code class="bg-surface px-1 rounded">rating</code>,
+            <code class="bg-surface px-1 rounded">priority</code>,
+            <code class="bg-surface px-1 rounded">platforms</code> (comma-separated),
+            <code class="bg-surface px-1 rounded">notes</code>.
+            Games already in your library are skipped, never modified.
+        </p>
+        <div class="flex flex-wrap items-center gap-3">
+            <a href="/api/data/export" download
+               class="px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
+                Export Library
+            </a>
+            <input type="file" id="import-file" accept=".csv,text/csv" class="hidden"
+                   onchange="importCsv(this.files[0])">
+            <button onclick="document.getElementById('import-file').click()" id="import-button"
+                    class="px-4 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                Import from CSV
+            </button>
+            <span id="import-status" class="text-sm text-gray-400"></span>
+        </div>
+        <div id="import-results" class="hidden mt-4 p-4 bg-surface rounded-lg">
+            <div id="import-summary" class="text-sm text-gray-400"></div>
+            <div id="import-errors" class="mt-2 max-h-40 overflow-y-auto text-sm text-yellow-400/80"></div>
         </div>
     </div>
 
@@ -206,6 +272,11 @@
             document.getElementById('anthropic-api-key').value = settings.anthropic_api_key;
         }
 
+        if (settings.steam_api_key) {
+            document.getElementById('steam-api-key').value = settings.steam_api_key;
+        }
+        document.getElementById('steam-id').value = settings.steam_id || '';
+
         const modelSelect = document.getElementById('decider-model');
         const currentModel = settings.decider_model || 'claude-sonnet-4-6';
         const modelOptions = (settings.decider_models || []).slice();
@@ -264,6 +335,25 @@
 
             loadCoverStatus();
 
+            setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        } catch (e) {
+            statusEl.textContent = 'Error saving';
+            statusEl.className = 'ml-3 text-sm text-red-400';
+        }
+    }
+
+    async function saveSteamCredentials() {
+        const statusEl = document.getElementById('steam-status');
+        statusEl.textContent = 'Saving...';
+        statusEl.className = 'ml-3 text-sm text-gray-400';
+        try {
+            const res = await api.put('/api/settings', {
+                steam_api_key: document.getElementById('steam-api-key').value,
+                steam_id: document.getElementById('steam-id').value
+            });
+            if (res.ok === false) throw new Error(res.data?.error || res.status);
+            statusEl.textContent = 'Saved!';
+            statusEl.className = 'ml-3 text-sm text-green-400';
             setTimeout(() => { statusEl.textContent = ''; }, 3000);
         } catch (e) {
             statusEl.textContent = 'Error saving';
@@ -575,6 +665,39 @@
         const r = await api.post(`/api/enrichment/review/${id}/reject`, {});
         if (!r.ok) { alert(r.data?.error || 'Could not reject'); return; }
         await loadEnrichReview(); await loadEnrichStatus();
+    }
+
+    // --- CSV import (Data Management) ---
+    async function importCsv(file) {
+        if (!file) return;
+        const btn = document.getElementById('import-button');
+        const status = document.getElementById('import-status');
+        const results = document.getElementById('import-results');
+        btn.disabled = true;
+        status.textContent = `Importing ${file.name}…`;
+        status.className = 'text-sm text-gray-400';
+        results.classList.add('hidden');
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const resp = await fetch('/api/data/import', { method: 'POST', body: form });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+            status.textContent = 'Done.';
+            status.className = 'text-sm text-green-400';
+            results.classList.remove('hidden');
+            document.getElementById('import-summary').innerHTML =
+                `Imported <strong class="text-green-400">${data.imported}</strong> games` +
+                (data.skipped ? `, skipped <strong class="text-white">${data.skipped}</strong> already in your library` : '') + '.';
+            document.getElementById('import-errors').innerHTML =
+                (data.errors || []).map(e => `<div class="truncate">${escapeHtml(e)}</div>`).join('');
+        } catch (e) {
+            status.textContent = 'Import failed: ' + e.message;
+            status.className = 'text-sm text-red-400';
+        } finally {
+            btn.disabled = false;
+            document.getElementById('import-file').value = '';
+        }
     }
 </script>
 {% endblock %}
