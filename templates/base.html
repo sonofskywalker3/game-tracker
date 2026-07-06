@@ -968,7 +968,7 @@
                 <div class="relative">
                     ${coverUrl ? `
                         <div class="h-48 overflow-hidden rounded-t-xl">
-                            <img src="${coverUrl}" alt="${game.title}" class="w-full h-full object-cover opacity-30">
+                            <img src="${coverUrl}" alt="${escapeHtml(game.title)}" class="w-full h-full object-cover opacity-30">
                         </div>
                     ` : '<div class="h-24 bg-surface-lighter rounded-t-xl flex items-center justify-center"><span class="text-yellow-400 text-sm">No cover art</span></div>'}
                     <button onclick="closeModal()" class="absolute top-4 right-4 text-white/70 hover:text-white text-2xl">&times;</button>
@@ -976,7 +976,7 @@
                 <div class="p-6 ${coverUrl ? '-mt-16 relative' : ''}">
                     <div class="flex items-end space-x-4">
                         ${coverUrl ? `
-                            <img src="${coverUrl}" alt="${game.title}"
+                            <img src="${coverUrl}" alt="${escapeHtml(game.title)}"
                                  class="w-24 h-24 object-cover rounded-lg shadow-lg flex-shrink-0">
                         ` : `
                             <div class="w-24 h-24 cover-placeholder rounded-lg flex items-center justify-center flex-shrink-0 border-2 border-dashed border-gray-600">
@@ -1021,7 +1021,7 @@
                         <!-- Title (editable) -->
                         <div>
                             <label class="block text-sm font-medium text-gray-400 mb-1">Title</label>
-                            <input type="text" value="${game.title.replace(/"/g, '&quot;')}"
+                            <input type="text" value="${escapeHtml(game.title)}"
                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white focus:border-accent focus:outline-none"
                                    onblur="renameGame(${game.id}, this.value)">
                         </div>
@@ -1206,7 +1206,7 @@
                             <label class="block text-sm font-medium text-gray-400 mb-1">Notes</label>
                             <textarea rows="2" placeholder="Your notes..."
                                       class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none resize-none"
-                                      onblur="saveNotes(${game.id}, this.value)">${game.notes || ''}</textarea>
+                                      onblur="saveNotes(${game.id}, this.value)">${escapeHtml(game.notes || '')}</textarea>
                         </div>
 
                         <!-- Decider history (lazy-filled from saved chats) -->

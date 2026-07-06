@@ -270,7 +270,7 @@
                     : `<div class="flex items-center justify-center w-8 h-10 rounded bg-surface text-gray-400 font-medium text-sm flex-shrink-0">${index + 1}</div>`
                 }
                 <div class="flex-1 min-w-0">
-                    <span class="game-title text-white font-medium truncate block cursor-pointer hover:text-accent transition-colors" data-game-id="${game.id}">${game.title}</span>
+                    <span class="game-title text-white font-medium truncate block cursor-pointer hover:text-accent transition-colors" data-game-id="${game.id}">${escapeHtml(game.title)}</span>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
                     <button onclick="openModal(${game.id})" class="text-gray-400 hover:text-white text-sm px-2 py-1">
@@ -583,7 +583,7 @@
             } else {
                 resultsDiv.innerHTML = matches.map(g => `
                     <div class="px-4 py-2 hover:bg-surface cursor-pointer text-white" onclick="addGameToSeries(${g.id})">
-                        ${g.title}
+                        ${escapeHtml(g.title)}
                     </div>
                 `).join('');
             }
@@ -621,7 +621,7 @@
             suggestionsList.innerHTML = suggestions.map(g => `
                 <button onclick="addGameToSeries(${g.id})"
                         class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-700 rounded-lg text-sm text-white transition-colors">
-                    + ${g.title}
+                    + ${escapeHtml(g.title)}
                 </button>
             `).join('');
             suggestionsSection.classList.remove('hidden');

@@ -232,8 +232,12 @@ def free_slots_for_game(conn: sqlite3.Connection, game_id: int) -> int:
 
     Used when a game becomes finished outside the slate's own outcome buttons
     (e.g. status set to completed/100/dropped from the game modal) so it stops
-    occupying a Pick. Caller owns the commit.
+    occupying a Pick. The slot's game is changing, so its dismissals clear here
+    exactly like the pin/outcome paths. Caller owns the commit.
     """
+    conn.execute(
+        "DELETE FROM slot_dismissals WHERE slot_id IN "
+        "(SELECT id FROM slots WHERE current_game_id = ?)", (game_id,))
     cur = conn.execute(
         "UPDATE slots SET current_game_id = NULL, goal = NULL WHERE current_game_id = ?",
         (game_id,))

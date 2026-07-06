@@ -332,7 +332,7 @@
                      onclick="openModal(${game.id})">
                     <div class="aspect-[3/4] relative overflow-hidden">
                         ${coverUrl ? `
-                            <img src="${coverUrl}" alt="${game.title}"
+                            <img src="${coverUrl}" alt="${escapeHtml(game.title)}"
                                  class="w-full h-full object-cover"
                                  onerror="this.parentElement.innerHTML='<div class=\\'cover-placeholder w-full h-full flex items-center justify-center\\'><span class=\\'text-4xl\\'>🎮</span></div>'">
                         ` : `
@@ -370,7 +370,7 @@
                             </span>` : ''}
                     </div>
                     <div class="p-3 relative">
-                        <h3 class="font-medium text-sm text-white leading-tight line-clamp-2 min-h-[2.5rem]" title="${game.title}">${game.title}</h3>
+                        <h3 class="font-medium text-sm text-white leading-tight line-clamp-2 min-h-[2.5rem]" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</h3>
                         <!-- Rating emoji -->
                         ${game.rating ? `
                             <div class="absolute bottom-2 right-2 text-base" title="${game.rating === 1 ? 'Hated it' : game.rating === 2 ? 'Meh' : game.rating === 3 ? 'Liked it' : 'Loved it'}">

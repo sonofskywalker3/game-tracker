@@ -23,6 +23,25 @@ def test_snapshot_includes_every_game_with_id_and_fields(temp_db):
     conn.close()
 
 
+def test_snapshot_platforms_alphabetical_with_dash_fallback(temp_db):
+    """Locks the exact platform formatting so the single-query rewrite stays
+    byte-identical (the snapshot is a cached prompt prefix)."""
+    conn = models.get_db()
+    gid = _add(conn, "Multiplat")
+    for sn in ("Switch", "PS3"):
+        pid = conn.execute("SELECT id FROM platforms WHERE short_name=?", (sn,)).fetchone()[0]
+        conn.execute("INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
+                     (gid, pid))
+    _add(conn, "No Platform Game")
+    conn.commit()
+    snap = decider.build_library_snapshot(conn)
+    multi = next(ln for ln in snap.splitlines() if "Multiplat" in ln)
+    assert "plat:PS3/Switch" in multi
+    bare_line = next(ln for ln in snap.splitlines() if "No Platform Game" in ln)
+    assert "plat:- " in bare_line or "plat:- |" in bare_line
+    conn.close()
+
+
 def test_snapshot_is_deterministic(temp_db):
     conn = models.get_db()
     _add(conn, "Hades")

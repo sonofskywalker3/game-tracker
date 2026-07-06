@@ -12,6 +12,10 @@ from datetime import datetime
 
 from models import get_db
 
+# Effective time-to-beat (override, else HLTB main) at or under this counts as a
+# "quick session" pick.
+QUICK_SESSION_MAX_MINUTES = 600
+
 
 def calculate_tag_affinity(conn):
     """
@@ -163,7 +167,10 @@ def get_quick_picks(conn, count=3):
     """
     picks = {}
 
-    # "Something short" - games with low estimated playtime or tagged as short
+    # "Something short" — actually-short games: the session_length trait, the
+    # effective time-to-beat (user override beats HLTB), or a short-leaning genre.
+    # (Formerly keyed on ur.hours_played, which defaults to 0 and made every
+    # unstarted 100-hour JRPG a "quick session".)
     picks['quick_session'] = conn.execute("""
         SELECT g.id, g.title, g.cover_url, ur.priority
         FROM games g
@@ -171,11 +178,13 @@ def get_quick_picks(conn, count=3):
         LEFT JOIN game_tags gt ON gt.game_id = g.id
         LEFT JOIN tags t ON t.id = gt.tag_id
         WHERE ur.status = 'backlog'
-        AND (t.name IN ('Indie', 'Puzzle', 'Platformer') OR ur.hours_played < 2)
+        AND (g.session_length = 'short'
+             OR COALESCE(g.time_to_beat_override_minutes, g.hltb_main_minutes) <= ?
+             OR t.name IN ('Indie', 'Puzzle', 'Platformer'))
         GROUP BY g.id
         ORDER BY ur.priority DESC, RANDOM()
         LIMIT ?
-    """, (count,)).fetchall()
+    """, (QUICK_SESSION_MAX_MINUTES, count)).fetchall()
 
     # "Highly rated" - best critic scores
     picks['critically_acclaimed'] = conn.execute("""
