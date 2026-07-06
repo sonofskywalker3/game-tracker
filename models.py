@@ -77,6 +77,22 @@ def add_series_pattern(prefix: str, name: str) -> bool:
     return True
 
 
+def add_game_traits_entries(entries: dict) -> None:
+    """Merge {normalized_title: {"session_length": ...}} entries into the
+    per-user game_traits.json (seeding it from the effective catalog on first
+    write). This is the AI classifier's local cache — once a title is
+    classified it rides the normal catalog path forever, so it is never sent
+    to the API again. Empty input writes nothing. Stable format (sorted keys,
+    2-space indent, trailing newline) keeps diffs minimal.
+    """
+    if not entries:
+        return
+    catalog = dict(load_game_traits())
+    catalog.update(entries)
+    with open(GAME_TRAITS_PATH, "w", encoding="utf-8") as f:
+        f.write(json.dumps(catalog, sort_keys=True, indent=2, ensure_ascii=False) + "\n")
+
+
 def add_bundle_catalog_entry(norm_title: str, entry: dict) -> None:
     """Add/replace one bundle-catalog entry in the per-user file (seeding it from
     the effective catalog on first write, so the committed defaults carry over).
