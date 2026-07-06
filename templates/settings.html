@@ -172,6 +172,21 @@
         </div>
     </div>
 
+    <!-- Bundle splits needing review -->
+    <div id="bundle-review-section" class="bg-surface-light rounded-xl p-6 hidden">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🧩</span>
+            Bundle Splits — Needs Review
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            These imported games look like store bundles on IGDB, but the match
+            wasn't confident enough to split automatically. Approving replaces
+            the bundle row with the listed games (edit the list first if it's
+            wrong); dismissing keeps it as a single game.
+        </p>
+        <div id="bundle-review-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+    </div>
+
     <!-- UPC Enrichment Section -->
     <div class="bg-surface-light rounded-xl p-6">
         <h2 class="text-lg font-medium text-white mb-4 flex items-center">
@@ -292,6 +307,7 @@
         loadCoverStatus();
         checkFetchStatus(); // Check if a fetch is already running
         loadEnrichment();
+        loadBundleReviews();
         loadProfile();
     }
 
@@ -665,6 +681,47 @@
         const r = await api.post(`/api/enrichment/review/${id}/reject`, {});
         if (!r.ok) { alert(r.data?.error || 'Could not reject'); return; }
         await loadEnrichReview(); await loadEnrichStatus();
+    }
+
+    // --- Bundle-split review (IGDB import fallback) ---
+    const BUNDLE_REASON_LABELS = {
+        title_mismatch: 'IGDB name differs from the imported title',
+        no_constituents: 'IGDB lists no playable games inside this bundle',
+        too_many_constituents: 'Unusually many games — looks like a subscription catalog',
+    };
+
+    async function loadBundleReviews() {
+        const res = await api.get('/api/bundle-review');
+        const items = res.items || [];
+        const section = document.getElementById('bundle-review-section');
+        section.classList.toggle('hidden', items.length === 0);
+        document.getElementById('bundle-review-list').innerHTML = items.map(i => `
+            <div class="bg-surface rounded-lg border border-gray-700 p-3">
+                <div class="text-sm text-white truncate" title="${escapeHtml(i.game_title)}">${escapeHtml(i.game_title)}</div>
+                <div class="text-[11px] text-gray-500 truncate">IGDB: ${escapeHtml(i.bundle_name || '?')}</div>
+                <div class="text-[11px] text-yellow-400/80">${escapeHtml(BUNDLE_REASON_LABELS[i.reason] || i.reason)}</div>
+                <textarea id="bundle-cons-${i.id}" rows="${Math.max(2, (i.constituents || []).length)}"
+                          class="mt-2 w-full bg-black/20 rounded border border-gray-600 px-2 py-1 text-xs text-white focus:border-accent focus:outline-none"
+                          placeholder="One game per line">${escapeHtml((i.constituents || []).join('\n'))}</textarea>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="approveBundle(${i.id})" class="text-xs bg-accent/80 hover:bg-accent text-white rounded px-2 py-1">Approve split</button>
+                    <button onclick="dismissBundle(${i.id})" class="text-xs bg-surface-light hover:bg-gray-600 rounded px-2 py-1">Keep as one game</button>
+                </div>
+            </div>`).join('');
+    }
+
+    async function approveBundle(id) {
+        const lines = (document.getElementById(`bundle-cons-${id}`).value || '')
+            .split('\n').map(s => s.trim()).filter(Boolean);
+        const r = await api.post(`/api/bundle-review/${id}/approve`, { constituents: lines });
+        if (!r.ok) { alert(r.data?.error || 'Could not approve split'); return; }
+        await loadBundleReviews();
+    }
+
+    async function dismissBundle(id) {
+        const r = await api.post(`/api/bundle-review/${id}/dismiss`, {});
+        if (!r.ok) { alert(r.data?.error || 'Could not dismiss'); return; }
+        await loadBundleReviews();
     }
 
     // --- CSV import (Data Management) ---
