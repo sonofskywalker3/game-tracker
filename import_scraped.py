@@ -552,9 +552,14 @@ def cleanup_bundles(conn: sqlite3.Connection, *, dry_run: bool = False,
 _VALID_BUNDLE_TYPES = ("compilation", "entitlement", "anthology")
 
 
-def apply_bundle_catalog(conn: sqlite3.Connection, *, dry_run: bool = False) -> list[dict]:
+def apply_bundle_catalog(conn: sqlite3.Connection, *, dry_run: bool = False,
+                         only_titles: set[str] | None = None) -> list[dict]:
     """Expand catalogued multi-game products that exist in the DB. Catalog-keyed
     sibling of cleanup_bundles (which is keyed by vendor id).
+
+    only_titles limits the pass to those normalized-title catalog keys — the
+    runtime IGDB fallback expands just the bundle it resolved through this same
+    path, instead of re-walking the whole catalog.
 
     For each entry in models.load_bundle_catalog() whose parent (matched by
     normalized_title) is owned:
@@ -570,6 +575,8 @@ def apply_bundle_catalog(conn: sqlite3.Connection, *, dry_run: bool = False) -> 
     catalog = models.load_bundle_catalog()
     results: list[dict] = []
     for norm_title, entry in catalog.items():
+        if only_titles is not None and norm_title not in only_titles:
+            continue
         ptype = entry.get("type")
         if ptype not in _VALID_BUNDLE_TYPES:
             continue  # unknown type: never guessed

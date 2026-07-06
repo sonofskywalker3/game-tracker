@@ -160,3 +160,36 @@ def test_cli_apply_bundle_catalog_dry_run(monkeypatch, temp_db):
     assert "Mega Man Legacy Collection" in titles   # dry run wrote nothing
     assert "Mega Man" not in titles
     conn.close()
+
+
+def test_only_titles_limits_to_named_entries(monkeypatch, temp_db):
+    """only_titles scopes the pass to the named catalog keys (the runtime
+    fallback expands just the bundle it resolved, not the whole catalog)."""
+    conn = models.get_db()
+    _add_parent(conn, "Mega Man Legacy Collection")
+    _add_parent(conn, "Pikmin 1plus2")
+    monkeypatch.setattr(models, "load_bundle_catalog", lambda: {
+        "mega man legacy collection": {"type": "compilation",
+                                       "constituents": ["Mega Man", "Mega Man 2"]},
+        "pikmin 1plus2": {"type": "entitlement",
+                          "constituents": ["Pikmin 1", "Pikmin 2"]}})
+    report = imp.apply_bundle_catalog(conn, only_titles={"mega man legacy collection"})
+    titles = _titles(conn)
+    assert "Mega Man Legacy Collection" not in titles
+    assert "Mega Man" in titles
+    assert "Pikmin 1plus2" in titles          # untouched: not in only_titles
+    assert "Pikmin 1" not in titles
+    assert len(report) == 1
+
+
+def test_only_titles_none_processes_everything(monkeypatch, temp_db):
+    conn = models.get_db()
+    _add_parent(conn, "Mega Man Legacy Collection")
+    _add_parent(conn, "Pikmin 1plus2")
+    monkeypatch.setattr(models, "load_bundle_catalog", lambda: {
+        "mega man legacy collection": {"type": "compilation",
+                                       "constituents": ["Mega Man", "Mega Man 2"]},
+        "pikmin 1plus2": {"type": "entitlement",
+                          "constituents": ["Pikmin 1", "Pikmin 2"]}})
+    report = imp.apply_bundle_catalog(conn, only_titles=None)
+    assert len(report) == 2
