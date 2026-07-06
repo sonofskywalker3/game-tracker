@@ -206,6 +206,61 @@ def run_enrichment_background(budget: int, *, db_factory=None) -> tuple[bool, st
     return True, "Enrichment started"
 
 
+TRAITS_AI_TASK_ID = "traits_ai"
+
+
+def get_traits_ai_status() -> dict:
+    """Current session-length AI classification status (mirrors enrichment)."""
+    task = task_manager.get_task(TRAITS_AI_TASK_ID)
+    if not task:
+        return {"status": "idle"}
+    return {
+        "status": task.status,
+        "current": task.current,
+        "total": task.total,
+        "found": task.found,
+        "error": task.error,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+    }
+
+
+def run_traits_ai_background(*, db_factory=None) -> tuple[bool, str]:
+    """Classify unclassified session lengths in a daemon thread (SP-C).
+
+    The classifier itself builds the Anthropic client from config; a missing
+    key surfaces as a task error, but callers should pre-check and refuse
+    before starting (the API endpoint does)."""
+    import traits_ai
+    import models
+    db_factory = db_factory or models.get_db
+
+    if task_manager.is_running(TRAITS_AI_TASK_ID):
+        return False, "Classification already in progress"
+
+    task = task_manager.create_task(TRAITS_AI_TASK_ID)
+    task.status = "running"
+    task.started_at = datetime.now()
+
+    def do_run():
+        conn = db_factory()
+        try:
+            def progress(done, total, found):
+                task_manager.update_task(TRAITS_AI_TASK_ID,
+                                         current=done, total=total, found=found)
+
+            report = traits_ai.classify_unclassified(conn, progress=progress)
+            task_manager.update_task(
+                TRAITS_AI_TASK_ID, status="complete", completed_at=datetime.now(),
+                current=report["total"], total=report["total"],
+                found=report["classified"])
+        finally:
+            conn.close()
+
+    _run_daemon(TRAITS_AI_TASK_ID, do_run)
+    return True, "Classification started"
+
+
 def start_enrichment_drip(*, db_factory=None, sleep_fn=time.sleep) -> threading.Thread:
     """Daemon: at most one batch per UTC day, re-checking every few hours."""
     import enrichment
