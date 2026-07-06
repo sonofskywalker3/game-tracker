@@ -94,9 +94,14 @@ def merge_dlc(conn: sqlite3.Connection, game_id: int, parsed: list[dict]) -> dic
 
 # Nested ids are requested explicitly — IGDB omits them unless named, otherwise
 # every stored DLC row's igdb_id would be NULL. genres.name feeds the genre tags
-# used for slot/session classification (slot_signals).
-_DLC_FIELDS = ("name, slug, cover.url, genres.name, dlcs.id, dlcs.name, expansions.id, "
-               "expansions.name, standalone_expansions.id, standalone_expansions.name")
+# used for slot/session classification (slot_signals). game_type feeds the
+# bundle-import fallback (game_type == 3 -> auto-split via bundle_fallback).
+_DLC_FIELDS = ("name, slug, game_type, cover.url, genres.name, dlcs.id, dlcs.name, "
+               "expansions.id, expansions.name, standalone_expansions.id, "
+               "standalone_expansions.name")
+
+# IGDB game_type for a store bundle (one product granting several games).
+GAME_TYPE_BUNDLE = 3
 
 # IGDB genre name -> our canonical tag vocabulary (slot_signals matches these names
 # exactly). Unmapped IGDB genres are stored under their own name. Extensible table.
@@ -187,12 +192,19 @@ def fetch_game_by_slug(slug: str, client_id: str, token: str) -> dict | None:
 
 
 def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: str,
-                *, slug: str | None = None) -> dict:
+                *, slug: str | None = None, bundle_fallback: bool = True) -> dict:
     """Resolve a game on IGDB (by slug, stored id, or title), store igdb_id +
     cover, and merge its DLC. Returns {matched, cover_set, added, existing}.
 
     Cover is overwritten when pinning by slug; on auto-resolution it is only set
     when the game has no cover (never clobbers a user/IGDB cover).
+
+    When an AUTO-resolution (no slug) comes back a store bundle (game_type 3),
+    the bundle-import fallback runs best-effort: catalog-known bundles expand,
+    unknown ones auto-split or land in the review queue. An explicit slug pin
+    never triggers it (a user's Fix-match pick must not delete their row), and
+    bundle_fallback=False turns it off (used for split constituents so a
+    mis-typed constituent can never recurse).
     """
     row = conn.execute(
         "SELECT title, igdb_id, cover_url, collection_name FROM games WHERE id = ?",
@@ -223,6 +235,12 @@ def enrich_game(conn: sqlite3.Connection, game_id: int, client_id: str, token: s
         cover_set = True
     counts = merge_dlc(conn, game_id, parse_dlc_payload(game))
     store_genres(conn, game_id, parse_genres(game))
+    if bundle_fallback and slug is None and game.get("game_type") == GAME_TYPE_BUNDLE:
+        import bundle_fallback as bf  # function-level: bf imports this module
+        try:
+            bf.handle_enriched_bundle(conn, game_id, game, client_id, token)
+        except Exception as exc:  # best-effort: the split must never fail enrichment
+            logger.warning("bundle fallback failed for game %s: %s", game_id, exc)
     return {"matched": True, "cover_set": cover_set, **counts}
 
 

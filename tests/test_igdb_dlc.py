@@ -301,3 +301,88 @@ def test_enrich_missing_progress_called_per_game(temp_db, monkeypatch):
     founds = [c[2] for c in rec.calls]
     assert founds == [1, 2]
     conn.close()
+
+
+# --- bundle fallback hook (SP-A: auto-split at import) ------------------------
+
+def _bundle_payload(name="Cool Bundle"):
+    return {"id": 146075, "name": name, "game_type": 3, "dlcs": []}
+
+
+def test_dlc_fields_request_game_type():
+    assert "game_type" in igdb_dlc._DLC_FIELDS
+
+
+def test_enrich_game_bundle_payload_triggers_fallback(temp_db, monkeypatch):
+    import bundle_fallback
+    conn = models.get_db()
+    gid = _game(conn, "Cool Bundle")
+    conn.commit()
+    payload = _bundle_payload()
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [payload])
+    calls = []
+    monkeypatch.setattr(bundle_fallback, "handle_enriched_bundle",
+                        lambda c, g, p, ci, to: calls.append((g, p)) or {"action": "queued"})
+    rep = igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    assert rep["matched"]
+    assert calls == [(gid, payload)]
+    conn.close()
+
+
+def test_enrich_game_slug_pin_does_not_trigger_fallback(temp_db, monkeypatch):
+    """An explicit user pin (Fix-match modal) must never auto-split the row."""
+    import bundle_fallback
+    conn = models.get_db()
+    gid = _game(conn, "Cool Bundle")
+    conn.commit()
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [_bundle_payload()])
+    calls = []
+    monkeypatch.setattr(bundle_fallback, "handle_enriched_bundle",
+                        lambda *a, **k: calls.append(a))
+    igdb_dlc.enrich_game(conn, gid, "cid", "tok", slug="cool-bundle")
+    assert calls == []
+    conn.close()
+
+
+def test_enrich_game_fallback_param_off(temp_db, monkeypatch):
+    import bundle_fallback
+    conn = models.get_db()
+    gid = _game(conn, "Cool Bundle")
+    conn.commit()
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [_bundle_payload()])
+    calls = []
+    monkeypatch.setattr(bundle_fallback, "handle_enriched_bundle",
+                        lambda *a, **k: calls.append(a))
+    igdb_dlc.enrich_game(conn, gid, "cid", "tok", bundle_fallback=False)
+    assert calls == []
+    conn.close()
+
+
+def test_enrich_game_non_bundle_does_not_trigger_fallback(temp_db, monkeypatch):
+    import bundle_fallback
+    conn = models.get_db()
+    gid = _game(conn, "Plain Game")
+    conn.commit()
+    payload = {"id": 7, "name": "Plain Game", "game_type": 0, "dlcs": []}
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [payload])
+    calls = []
+    monkeypatch.setattr(bundle_fallback, "handle_enriched_bundle",
+                        lambda *a, **k: calls.append(a))
+    igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    assert calls == []
+    conn.close()
+
+
+def test_enrich_game_fallback_error_never_fails_enrichment(temp_db, monkeypatch):
+    import bundle_fallback
+    conn = models.get_db()
+    gid = _game(conn, "Cool Bundle")
+    conn.commit()
+    monkeypatch.setattr(igdb_dlc, "_igdb_query", lambda q, c, t: [_bundle_payload()])
+
+    def boom(*a, **k):
+        raise RuntimeError("igdb reverse lookup blew up")
+    monkeypatch.setattr(bundle_fallback, "handle_enriched_bundle", boom)
+    rep = igdb_dlc.enrich_game(conn, gid, "cid", "tok")
+    assert rep["matched"] is True
+    conn.close()
