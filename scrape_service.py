@@ -303,6 +303,26 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         enrich_skipped = enrich is None
         review = [{"title": m.addon_title, "reason": m.reason} for m in report.review]
 
+    # Collections sync (SP-A Stage 1): shared, vendor-agnostic polish so scraped
+    # games get IGDB collection memberships without the manual backfill button.
+    # Same batched code path as Settings > backfill; best-effort — a resolve
+    # failure must never sink a finished scrape.
+    collections_synced = None
+    try:
+        import config
+        import igdb_dlc
+        import igdb_resolve
+        cid, secret = config.get_twitch_credentials()
+        if cid:
+            _set(phase="enriching", message="syncing collections...")
+            token = igdb_dlc.get_access_token(cid, secret)
+            creport = igdb_resolve.backfill_collections(
+                conn, cid, token,
+                progress=_progress("enriching", "syncing collections"))
+            collections_synced = creport["games"]
+    except Exception as exc:
+        logger.warning("collections sync failed (%s); scrape result kept", exc)
+
     if visited_pids:
         placeholders = ",".join("?" for _ in visited_pids)
         conn.execute(
@@ -341,6 +361,7 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         "enrich_skipped": enrich_skipped,
         "owned_marked": owned_marked,
         "created": created,
+        "collections_synced": collections_synced,
         "backup_path": backup_path,
         "added_games": added_games,
         "added_dlc": added_dlc,
