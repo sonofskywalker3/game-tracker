@@ -1010,6 +1010,43 @@ def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_collections(conn: sqlite3.Connection) -> None:
+    """IGDB-canonical collections layer (Stage 1, additive alongside series).
+
+    collections: one row per IGDB collection (PK = the IGDB collection id).
+    game_collections: m2m — a game appears in EVERY collection IGDB lists it
+    under (FF7 Remake -> Final Fantasy + Compilation of FF7 + FF7 Remake).
+    games.original_release_ts: the earliest known release (own date,
+    version_parent, or parent_game — remasters sort at the original), stored
+    so collection views sort chronologically without live IGDB calls.
+    Idempotent."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS collections (
+            id         INTEGER PRIMARY KEY,   -- IGDB collection id
+            name       TEXT NOT NULL,
+            slug       TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS game_collections (
+            game_id       INTEGER NOT NULL,
+            collection_id INTEGER NOT NULL,
+            PRIMARY KEY (game_id, collection_id),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+            FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_game_collections_collection
+            ON game_collections(collection_id)
+    """)
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    if "original_release_ts" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN original_release_ts INTEGER")
+    conn.commit()
+
+
 def migrate_schema_flags(conn: sqlite3.Connection) -> None:
     """Create the schema_flags marker table (records one-time reconciles that must
     not re-run on every startup). Idempotent."""
@@ -1223,6 +1260,7 @@ def migrate_db():
     migrate_game_signals(conn)
     migrate_game_traits(conn)
     migrate_collection_name(conn)
+    migrate_collections(conn)
     migrate_series_source(conn)
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)

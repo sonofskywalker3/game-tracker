@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Collections - Game Tracker{% endblock %}
+{% block nav_collections %}text-white bg-surface-lighter{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-2">
+    <h1 class="text-2xl font-bold text-white">Collections</h1>
+    <div class="flex items-center gap-3">
+        <span id="backfill-status" class="text-sm text-gray-400"></span>
+        <button onclick="runBackfill()" id="backfill-button"
+                class="px-4 py-2 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            Refresh from IGDB
+        </button>
+    </div>
+</div>
+<p class="text-sm text-gray-500 mb-6">
+    IGDB's canonical series — a game appears in every collection it belongs to.
+    Games are ordered by original release (remasters at the original's date).
+</p>
+
+<div id="collections-grid" class="flex flex-wrap items-start gap-x-8 gap-y-6"></div>
+
+<div id="collections-empty" class="hidden text-center py-16">
+    <div class="text-6xl mb-4">🗂️</div>
+    <h3 class="text-xl font-medium text-gray-400">No collections yet</h3>
+    <p class="text-gray-500 mt-2">
+        Click <span class="text-white">Refresh from IGDB</span> to resolve your
+        library's collection memberships (needs Twitch/IGDB credentials in Settings).
+    </p>
+</div>
+
+<script>
+    let _collectionsData = [];
+    const _expandedCols = new Set();
+    const _detailCache = {};   // collection id -> {games: [...]}
+
+    async function loadCollections() {
+        const res = await api.get('/api/collections');
+        // Singleton memberships aren't browsable groups; match the Series page rule.
+        _collectionsData = (res.collections || []).filter(c => c.owned_count >= 2);
+        renderCollections();
+    }
+    // base.html's closeModal() calls refreshGameList() after a modal edit.
+    function refreshGameList() { Object.keys(_detailCache).forEach(k => delete _detailCache[k]); loadCollections(); }
+
+    function coverImg(url) {
+        return url
+            ? `<img src="${escapeHtml(url)}" alt="" draggable="false" class="w-full h-full object-cover rounded">`
+            : `<div class="cover-placeholder w-full h-full flex items-center justify-center rounded"><span class="text-2xl">🎮</span></div>`;
+    }
+
+    const CARD_BORDER = 'rounded overflow-hidden border border-gray-400';
+    function stackHtml(col) {
+        const covers = (col.covers && col.covers.length) ? col.covers : [null];
+        const backs = covers.length - 1;
+        const frontW = backs > 0 ? 82 : 100;
+        const step = backs > 0 ? (100 - frontW) / backs : 0;
+        let layers = '';
+        for (let i = covers.length - 1; i >= 1; i--) {
+            layers += `<div class="absolute top-0 bottom-0 aspect-[3/4] ${CARD_BORDER} shadow-md" `
+                    + `style="left:${(i * step).toFixed(2)}%;z-index:${30 - i * 10};">${coverImg(covers[i])}</div>`;
+        }
+        layers += `<div class="relative z-30 aspect-[3/4] ${CARD_BORDER} shadow-lg" `
+                + `style="width:${frontW}%;">${coverImg(covers[0])}</div>`;
+        return `<div class="relative mb-2">${layers}</div>`;
+    }
+
+    function collapsedTile(col) {
+        const n = col.owned_count;
+        return `<div class="flex-none w-[230px] cursor-pointer group" onclick="toggleCollection(${col.id})">
+            ${stackHtml(col)}
+            <p class="text-sm font-medium text-white truncate group-hover:text-accent" title="${escapeHtml(col.name)}">${escapeHtml(col.name)}</p>
+            <p class="text-xs text-gray-500">${n} game${n == 1 ? '' : 's'}</p>
+        </div>`;
+    }
+
+    function releaseYear(ts) {
+        return ts ? new Date(ts * 1000).getUTCFullYear() : '';
+    }
+
+    function expandedTile(col) {
+        const detail = _detailCache[col.id];
+        const cards = detail
+            ? (detail.games || []).map(g => `
+                <div class="w-28 flex-shrink-0 cursor-pointer" onclick="openModal(${g.id})">
+                    <div class="aspect-[3/4]">${coverImg(g.cover_url)}</div>
+                    <p class="text-xs text-gray-300 truncate mt-1" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</p>
+                    <p class="text-[10px] text-gray-500">${releaseYear(g.original_release_ts)}</p>
+                </div>`).join('')
+            : '<p class="text-gray-500 text-sm">Loading…</p>';
+        return `<div class="flex-none max-w-full bg-surface-light rounded-lg p-4 ring-1 ring-accent/40">
+            <div class="flex items-center justify-between mb-3 gap-6">
+                <div class="flex items-center gap-3 min-w-0 cursor-pointer" onclick="toggleCollection(${col.id})">
+                    <span class="text-gray-400">▾</span>
+                    <h3 class="font-medium text-white truncate" title="${escapeHtml(col.name)}">${escapeHtml(col.name)}</h3>
+                    <span class="text-xs text-gray-500 flex-shrink-0">${col.owned_count} game${col.owned_count == 1 ? '' : 's'}</span>
+                </div>
+                <button onclick="toggleCollection(${col.id})" class="text-gray-400 hover:text-white flex-shrink-0" title="Collapse">✕</button>
+            </div>
+            <div class="flex flex-wrap gap-3">${cards || '<p class="text-gray-500 text-sm">No games.</p>'}</div>
+        </div>`;
+    }
+
+    function renderCollections() {
+        const grid = document.getElementById('collections-grid');
+        const empty = document.getElementById('collections-empty');
+        if (!_collectionsData.length) { grid.innerHTML = ''; empty.classList.remove('hidden'); return; }
+        empty.classList.add('hidden');
+        grid.innerHTML = _collectionsData
+            .map(c => _expandedCols.has(c.id) ? expandedTile(c) : collapsedTile(c))
+            .join('');
+    }
+
+    async function toggleCollection(id) {
+        if (_expandedCols.has(id)) {
+            _expandedCols.delete(id);
+            renderCollections();
+            return;
+        }
+        _expandedCols.add(id);
+        renderCollections();                       // shows Loading…
+        if (!_detailCache[id]) {
+            _detailCache[id] = await api.get(`/api/collections/${id}`);
+        }
+        renderCollections();
+    }
+
+    async function runBackfill() {
+        const btn = document.getElementById('backfill-button');
+        const status = document.getElementById('backfill-status');
+        btn.disabled = true;
+        status.textContent = 'Resolving your library against IGDB…';
+        status.className = 'text-sm text-gray-400';
+        try {
+            const res = await api.post('/api/collections/backfill', {});
+            if (!res.ok) throw new Error((res.data && res.data.error) || res.status);
+            const d = res.data;
+            status.textContent = `Resolved ${d.games} games into ${d.collections} collections (${d.memberships} memberships).`;
+            status.className = 'text-sm text-green-400';
+            Object.keys(_detailCache).forEach(k => delete _detailCache[k]);
+            await loadCollections();
+        } catch (e) {
+            status.textContent = 'Backfill failed: ' + e.message;
+            status.className = 'text-sm text-red-400';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadCollections);
+</script>
+{% endblock %}
