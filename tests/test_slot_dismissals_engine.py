@@ -58,6 +58,37 @@ def test_dismissals_cleared_on_outcome(temp_db):
     conn.close()
 
 
+def test_dismissals_cleared_when_game_freed_from_outside(temp_db):
+    """Finishing a game from the game modal (free_slots_for_game, not apply_outcome)
+    is still 'the slot's game changed' — dismissals must clear like every other path."""
+    conn = models.get_db()
+    gid = _add_game(conn, "Hidden")
+    pinned = _add_game(conn, "Pinned", status="playing")
+    sid = _slot_id(conn, "Switch · Quick")
+    slots.pin_game(conn, sid, pinned, "beat it")
+    slots.dismiss_suggestion(conn, sid, gid)
+    slots.free_slots_for_game(conn, pinned)
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM slot_dismissals WHERE slot_id=?",
+                        (sid,)).fetchone()[0] == 0
+    conn.close()
+
+
+def test_free_slots_leaves_unrelated_slot_dismissals(temp_db):
+    conn = models.get_db()
+    gid = _add_game(conn, "Hidden")
+    pinned = _add_game(conn, "Pinned", status="playing")
+    quick = _slot_id(conn, "Switch · Quick")
+    long_ = _slot_id(conn, "Switch · Long")
+    slots.pin_game(conn, quick, pinned, "beat it")
+    slots.dismiss_suggestion(conn, long_, gid)   # unrelated slot, no game change
+    slots.free_slots_for_game(conn, pinned)
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM slot_dismissals WHERE slot_id=?",
+                        (long_,)).fetchone()[0] == 1
+    conn.close()
+
+
 def test_beat_chase_does_not_clear_dismissals(temp_db):
     conn = models.get_db()
     gid = _add_game(conn, "Hidden")

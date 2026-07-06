@@ -13,16 +13,11 @@ logger = logging.getLogger(__name__)
 MODEL_MAX_TOKENS = 1024
 
 
-def _platforms(conn: sqlite3.Connection, game_id: int) -> str:
-    rows = conn.execute(
-        "SELECT p.short_name FROM game_platforms gp JOIN platforms p ON p.id = gp.platform_id "
-        "WHERE gp.game_id = ? ORDER BY p.short_name", (game_id,)).fetchall()
-    return "/".join(r["short_name"] for r in rows if r["short_name"])
-
-
 def build_library_snapshot(conn: sqlite3.Connection) -> str:
     """One compact line per game, deterministic (ordered by id). Status-tagged so the
-    model knows what is finished. Each line starts with #<id> for citation."""
+    model knows what is finished. Each line starts with #<id> for citation.
+    Platforms are fetched in one query (not per game) — the snapshot rebuilds on
+    every chat turn, and its bytes must stay identical for prompt caching."""
     rows = conn.execute("""
         SELECT g.id, g.title, g.session_length, g.series_role,
                ur.status, ur.priority, ur.hours_played, ur.series_id,
@@ -32,12 +27,20 @@ def build_library_snapshot(conn: sqlite3.Connection) -> str:
         LEFT JOIN series s ON s.id = ur.series_id
         ORDER BY g.id
     """).fetchall()
+    plats: dict[int, list[str]] = {}
+    for p in conn.execute(
+            "SELECT gp.game_id, p.short_name FROM game_platforms gp "
+            "JOIN platforms p ON p.id = gp.platform_id "
+            "ORDER BY gp.game_id, p.short_name").fetchall():
+        if p["short_name"]:
+            plats.setdefault(p["game_id"], []).append(p["short_name"])
     lines = []
     for r in rows:
         series = r["series_name"] or "-"
         role = r["series_role"] or "-"
+        platforms = "/".join(plats.get(r["id"], []))
         lines.append(
-            f"#{r['id']} | {r['title']} | plat:{_platforms(conn, r['id']) or '-'} | "
+            f"#{r['id']} | {r['title']} | plat:{platforms or '-'} | "
             f"session:{r['session_length'] or '?'} | series:{series}({role}) | "
             f"status:{r['status'] or '-'} | hrs:{r['hours_played'] or 0} | pri:{r['priority'] or 5}")
     return "\n".join(lines)
@@ -56,7 +59,8 @@ INSTRUCTIONS = (
     "reasoning.\n\n"
     "Only recommend games the user can start now. NEVER recommend a finished game (status "
     "'completed' or '100') or a 'dropped' game unless the user explicitly asks to replay or "
-    "100% something — those are listed only for context (what they've played).\n\n"
+    "100% something, or the slot context explicitly allows beaten games — those are listed "
+    "only for context (what they've played).\n\n"
     "Write in plain conversational prose. Do NOT use Markdown: no **bold**, no ## headings, "
     "no bullet or numbered lists, no backticks.\n\n"
     "Each library line begins with #<id>. End EVERY reply with a single line listing the ids "
@@ -76,17 +80,20 @@ REPLAY_INTENT: tuple[str, ...] = (
 
 def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict],
                                completionist: bool = False) -> set[int]:
-    """Game ids that must not be auto-suggested: dropped always; finished
-    (completed/100%) unless a user message signals replay/completion intent. A
-    completionist slot additionally allows beaten ('completed') games."""
+    """Game ids that must not be auto-suggested: finished (completed/100%) and
+    dropped games, unless a user message signals replay/completion intent (which
+    lifts both — the INSTRUCTIONS promise dropped games are replayable on request).
+    A completionist slot additionally allows beaten ('completed') games."""
     user_text = " ".join(
         m.get("content", "") for m in messages if m.get("role") == "user").lower()
-    statuses = set(ABANDONED_STATUSES)
     finished = set(FINISHED_STATUSES)
     if completionist:
         finished.discard("completed")
+    statuses: set[str] = set()
     if not any(kw in user_text for kw in REPLAY_INTENT):
-        statuses |= finished
+        statuses = set(ABANDONED_STATUSES) | finished
+    if not statuses:
+        return set()
     placeholders = ",".join("?" for _ in statuses)
     rows = conn.execute(
         f"SELECT game_id FROM user_ratings WHERE status IN ({placeholders})",
@@ -117,8 +124,9 @@ def build_slot_context(conn: sqlite3.Connection, slot: dict) -> str:
     if slot.get("completionist"):
         parts.append(
             "Completionist slot — the user has BEATEN these games and wants to 100% "
-            "them (achievements, collectibles, postgame). Beaten games (status "
-            "'complete') ARE welcome here; still avoid already-100% and dropped games.")
+            "them (achievements, collectibles, postgame). For THIS slot, games with "
+            "status 'completed' ARE recommendable (that is the point of the slot); "
+            "still avoid already-100% ('100') and 'dropped' games.")
     if slot.get("focus_series_id"):
         row = conn.execute("SELECT name FROM series WHERE id = ?",
                            (slot["focus_series_id"],)).fetchone()
