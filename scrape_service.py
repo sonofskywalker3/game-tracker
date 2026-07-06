@@ -351,9 +351,15 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         if row:
             newly_owned.append({"game": row["title"], "name": row["name"]})
 
+    # SP-C nudge: games (library-wide) still lacking a session length — the
+    # completion modal offers the opt-in AI classification when > 0.
+    session_unclassified = conn.execute(
+        "SELECT COUNT(*) FROM games WHERE session_length IS NULL").fetchone()[0]
+
     return {
         "vendor": vendor,
         "scraped": len(rows),
+        "session_unclassified": session_unclassified,
         # + parent games auto-created from the vendor catalogue
         "new_games": stats.new_games + (link.created_parents if link else 0),
         "platform_links": stats.platform_links_added,

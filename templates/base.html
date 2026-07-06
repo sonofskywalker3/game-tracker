@@ -1701,6 +1701,10 @@
                 html += `<details class="mt-2"><summary class="cursor-pointer text-gray-300">Needs review (${review.length}) — <button type="button" onclick="event.preventDefault(); openDlcReviewModal();" class="text-accent hover:underline">resolve</button></summary>
                          <div class="mt-1 max-h-48 overflow-y-auto">${rows}</div></details>`;
             }
+            if (s.session_unclassified) {
+                html += `<div class="mt-2 text-gray-400">🕑 ${s.session_unclassified} games have no session length yet — ` +
+                    `<a href="/settings" class="text-accent hover:underline">classify them with AI in Settings</a>.</div>`;
+            }
             el.innerHTML = html || '<div class="text-gray-500">No new games or DLC.</div>';
         }
 

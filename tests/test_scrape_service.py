@@ -602,3 +602,15 @@ def test_run_pipeline_collections_error_never_sinks_scrape(temp_db, monkeypatch)
     conn.close()
     assert summary["new_games"] == 1          # the scrape itself completed
     assert summary["collections_synced"] is None
+
+
+def test_run_pipeline_reports_session_unclassified(temp_db, monkeypatch):
+    """The post-scrape modal nudges toward SP-C when new games lack a
+    session length; the summary carries the count."""
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+    games = [ScrapedGame(title="Totally Unknown Indie", platform="PS5",
+                         source="playstation", external_id="G77")]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.close()
+    assert summary["session_unclassified"] == 1

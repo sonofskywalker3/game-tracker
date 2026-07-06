@@ -187,6 +187,25 @@
         <div id="bundle-review-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
     </div>
 
+    <!-- Session Length AI Section -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🕑</span>
+            Session Length (AI)
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            Games the built-in catalog doesn't know have no short/long session
+            tag (used by picks slots and the decider). Classify them with your
+            own Anthropic API key — each game is classified once, then cached
+            locally so it never costs another call.
+        </p>
+        <div id="traits-ai-status" class="mb-4 text-sm text-gray-400">Loading status…</div>
+        <button onclick="runTraitsAi()" id="traits-ai-button" disabled
+                class="px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            Classify with AI
+        </button>
+    </div>
+
     <!-- UPC Enrichment Section -->
     <div class="bg-surface-light rounded-xl p-6">
         <h2 class="text-lg font-medium text-white mb-4 flex items-center">
@@ -308,6 +327,7 @@
         checkFetchStatus(); // Check if a fetch is already running
         loadEnrichment();
         loadBundleReviews();
+        loadTraitsAi();
         loadProfile();
     }
 
@@ -681,6 +701,53 @@
         const r = await api.post(`/api/enrichment/review/${id}/reject`, {});
         if (!r.ok) { alert(r.data?.error || 'Could not reject'); return; }
         await loadEnrichReview(); await loadEnrichStatus();
+    }
+
+    // --- Session length AI (SP-C, opt-in with the user's own key) ---
+    let traitsAiPoll = null;
+
+    function renderTraitsAiRunning(s) {
+        document.getElementById('traits-ai-status').textContent =
+            `Classifying… ${s.current || 0}/${s.total || 0} (${s.found || 0} classified)`;
+        document.getElementById('traits-ai-button').disabled = true;
+    }
+
+    async function loadTraitsAi() {
+        const s = await api.get('/api/traits/ai/status');
+        if (s.status === 'running') { renderTraitsAiRunning(s); startTraitsAiPolling(); return; }
+        const el = document.getElementById('traits-ai-status');
+        let msg = `<strong class="text-white">${s.unclassified}</strong> games have no session length.`;
+        if (!s.has_api_key) {
+            msg += ' <span class="text-yellow-400/80">Add your Anthropic API key above to enable AI classification.</span>';
+        } else if (s.status === 'complete') {
+            msg += ` <span class="text-green-400">Last run classified ${s.found || 0}.</span>`;
+        } else if (s.status === 'error') {
+            msg += ` <span class="text-red-400">Last run failed: ${escapeHtml(s.error || 'unknown error')}</span>`;
+        } else if (s.unclassified > 0) {
+            msg += ` Uses your key with ${escapeHtml(s.model || 'the configured model')}.`;
+        }
+        el.innerHTML = msg;
+        document.getElementById('traits-ai-button').disabled =
+            !s.has_api_key || s.unclassified === 0;
+    }
+
+    function startTraitsAiPolling() {
+        if (traitsAiPoll) return;
+        traitsAiPoll = setInterval(async () => {
+            const s = await api.get('/api/traits/ai/status');
+            if (s.status === 'running') { renderTraitsAiRunning(s); }
+            else {
+                clearInterval(traitsAiPoll); traitsAiPoll = null;
+                await loadTraitsAi();
+            }
+        }, 800);
+    }
+
+    async function runTraitsAi() {
+        const r = await api.post('/api/traits/ai/run', {});
+        if (!r.ok) { alert(r.data?.error || 'Could not start classification'); return; }
+        document.getElementById('traits-ai-button').disabled = true;
+        startTraitsAiPolling();
     }
 
     // --- Bundle-split review (IGDB import fallback) ---
