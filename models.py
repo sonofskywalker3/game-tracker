@@ -76,6 +76,21 @@ def add_series_pattern(prefix: str, name: str) -> bool:
         json.dump(patterns, f, indent=2, ensure_ascii=False, sort_keys=True)
     return True
 
+
+def add_bundle_catalog_entry(norm_title: str, entry: dict) -> None:
+    """Add/replace one bundle-catalog entry in the per-user file (seeding it from
+    the effective catalog on first write, so the committed defaults carry over).
+
+    This is the runtime cache the IGDB bundle fallback writes into — the SAME
+    file the seed catalog uses, so apply_bundle_catalog is the one expansion
+    path for both. Stable format (sorted keys, 2-space indent, trailing newline)
+    keeps diffs minimal.
+    """
+    catalog = dict(load_bundle_catalog())
+    catalog[norm_title] = entry
+    with open(BUNDLE_CATALOG_PATH, "w", encoding="utf-8") as f:
+        f.write(json.dumps(catalog, sort_keys=True, indent=2, ensure_ascii=False) + "\n")
+
 # Platform era classification (module-level, immutable).
 PC_PLATFORMS = frozenset({"PC", "Steam", "GOG", "Epic", "EGS"})
 LEGACY_PLATFORMS = frozenset({
@@ -718,6 +733,36 @@ def migrate_dlc_review_queue(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_bundle_review_queue(conn: sqlite3.Connection) -> None:
+    """Create the bundle_review_queue table + index if missing. Idempotent.
+
+    Holds low-confidence IGDB bundle auto-splits (title mismatch, no usable
+    constituents, oversized bundles) for the owner to approve or dismiss —
+    the review half of the auto-with-review import flow. constituents_json is
+    the proposed constituent title list at queue time.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS bundle_review_queue (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id           INTEGER,
+            game_title        TEXT    NOT NULL,
+            igdb_id           INTEGER NOT NULL,
+            bundle_name       TEXT,
+            constituents_json TEXT,
+            reason            TEXT    NOT NULL,
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at       TIMESTAMP,
+            dismissed_at      TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_bundle_review_open
+            ON bundle_review_queue(resolved_at, dismissed_at)
+    """)
+    conn.commit()
+
+
 def migrate_slots(conn: sqlite3.Connection) -> None:
     """Create the slots table if missing. Idempotent.
 
@@ -1261,6 +1306,7 @@ def migrate_db():
     migrate_game_traits(conn)
     migrate_collection_name(conn)
     migrate_collections(conn)
+    migrate_bundle_review_queue(conn)
     migrate_series_source(conn)
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
