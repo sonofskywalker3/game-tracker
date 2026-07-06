@@ -458,6 +458,17 @@
 
     function updateAlphabetBar(games) {
         const bar = document.getElementById('alphabet-bar');
+
+        // Letter navigation only makes sense when the grid is in name order;
+        // under rating/priority/metacritic/newest a letter click would jump to
+        // an arbitrary row, so hide the bar entirely.
+        const sort = document.getElementById('sort-select').value;
+        if (sort !== 'title') {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = '';
+
         const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
         // Find which letters have games (use series name if available)

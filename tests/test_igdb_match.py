@@ -25,6 +25,18 @@ def test_title_score_tolerates_missing_interior_article():
     assert s("Mega Man Legacy Collection 2", "Mega Man 2") is None
 
 
+def test_title_score_containment_requires_word_boundary():
+    s = igdb_match._title_score
+    # 'Ori' is a raw substring of 'Original Sin' but not a whole word -> no match.
+    assert s("Divinity Original Sin", "Ori") is None
+    # Whole-word phrase containment still scores.
+    assert s("Ori and the Blind Forest", "Ori") == igdb_match._TITLE_CONTAINS
+    assert s("The Legend of Zelda: Breath of the Wild",
+             "Breath of the Wild") == igdb_match._TITLE_CONTAINS
+    # The article-tolerant re-check must be word-bounded too.
+    assert s("Divinity Original Sin", "The Ori") is None
+
+
 def test_score_prefers_console_over_mobile_for_retro_constituent():
     # game is a Switch bundle constituent; IGDB has the canonical NES entry (no
     # Switch) and a mobile-only port. NES must win because mobile is penalized.

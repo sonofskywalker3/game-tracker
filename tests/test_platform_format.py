@@ -92,6 +92,14 @@ def _tag_physical(conn, game_id):
     conn.execute("INSERT INTO game_tags (game_id, tag_id) VALUES (?, ?)", (game_id, tid))
 
 
+def _clear_reconcile_flag(conn):
+    """The temp_db fixture's migrate_db already stamps the one-time reconcile flag;
+    clear it so these tests exercise a first-ever run."""
+    conn.execute("DELETE FROM schema_flags WHERE name = ?",
+                 (models.TAGGED_PHYSICAL_FLAG,))
+    conn.commit()
+
+
 def test_tagged_games_to_physical_flips_digital_and_null_for_tagged_only(temp_db):
     conn = models.get_db()
     _add_platform(conn, "Nintendo Switch", "Switch", "modern_console")
@@ -114,6 +122,7 @@ def test_tagged_games_to_physical_flips_digital_and_null_for_tagged_only(temp_db
     conn.execute("INSERT INTO games (id,title,normalized_title) VALUES (3,'Digital','digital')")
     conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (3, ?, 'digital')", (sid,))
     conn.commit()
+    _clear_reconcile_flag(conn)
 
     models.migrate_tagged_games_to_physical(conn)
 
@@ -135,9 +144,10 @@ def test_tagged_games_to_physical_is_idempotent(temp_db):
     conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) VALUES (1, ?, 'digital')", (sid,))
     _tag_physical(conn, 1)
     conn.commit()
+    _clear_reconcile_flag(conn)
 
     models.migrate_tagged_games_to_physical(conn)
-    models.migrate_tagged_games_to_physical(conn)  # second run = no-op
+    models.migrate_tagged_games_to_physical(conn)  # second run = no-op (flag gate)
     fmt = conn.execute("SELECT format FROM game_platforms WHERE game_id=1").fetchone()[0]
     conn.close()
     assert fmt == "physical"

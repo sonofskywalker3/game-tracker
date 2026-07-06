@@ -89,6 +89,43 @@ def test_igdb_release_dates_by_id_batches_and_parses(monkeypatch):
     assert "where id = (100,421)" in sent["data"]  # deduped + sorted, single call
 
 
+def test_igdb_release_dates_prefer_original_release(monkeypatch):
+    """A remaster/port must sort by the ORIGINAL game's release (version_parent /
+    parent_game), not its own re-release date — e.g. Tales of Symphonia
+    Remastered belongs at 2003, not 2023."""
+    import app as a
+
+    sent = {}
+
+    def fake_post(url, headers, data):
+        sent["data"] = data
+
+        class _R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return [
+                    # remaster: own 2023, version_parent original 2003 -> 2003
+                    {"id": 5, "first_release_date": 1672531200,
+                     "version_parent": {"first_release_date": 1057017600}},
+                    # port keyed via parent_game -> earliest wins
+                    {"id": 6, "first_release_date": 100,
+                     "parent_game": {"first_release_date": 50}},
+                    # plain game: own date used
+                    {"id": 7, "first_release_date": 900},
+                ]
+        return _R()
+
+    monkeypatch.setattr(a, "requests", type("M", (), {"post": staticmethod(fake_post),
+                                                      "RequestException": Exception}))
+    monkeypatch.setattr("fetch_covers.get_access_token", lambda cid, sec: "tok")
+    out = a.igdb_release_dates_by_id([5, 6, 7], "cid", "sec")
+    assert out == {5: 1057017600, 6: 50, 7: 900}
+    assert "version_parent.first_release_date" in sent["data"]
+    assert "parent_game.first_release_date" in sent["data"]
+
+
 def test_igdb_release_dates_by_id_empty_skips_call(monkeypatch):
     import app as a
 

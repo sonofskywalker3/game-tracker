@@ -19,6 +19,10 @@ from fetch_covers import IGDB_API_URL, get_access_token  # noqa: F401 (get_acces
 
 logger = logging.getLogger(__name__)
 
+# Cap on any single IGDB HTTP call so a hung connection can never block the
+# enrichment/scrape thread indefinitely (requests has NO default timeout).
+IGDB_TIMEOUT_SECONDS = 30
+
 # IGDB relations that count as DLC, with the kind we store.
 _DLC_RELATIONS = (("dlcs", "dlc"), ("expansions", "expansion"),
                   ("standalone_expansions", "expansion"))
@@ -161,7 +165,8 @@ def _igdb_query(query: str, client_id: str, access_token: str,
     """POST an apicalypse query to IGDB /games; retry once on 429, then give up."""
     headers = {"Client-ID": client_id, "Authorization": f"Bearer {access_token}",
                "Content-Type": "text/plain"}
-    response = requests.post(f"{IGDB_API_URL}/games", headers=headers, data=query)
+    response = requests.post(f"{IGDB_API_URL}/games", headers=headers, data=query,
+                             timeout=IGDB_TIMEOUT_SECONDS)
     if response.status_code == 429 and not _retried:
         time.sleep(1)
         return _igdb_query(query, client_id, access_token, _retried=True)

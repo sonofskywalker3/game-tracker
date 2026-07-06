@@ -76,12 +76,15 @@ def _contains(a: str, b: str) -> bool:
 
 
 # Arabic/roman number tokens mark a series position, not a different game.
-# Roman numerals 1–30 (extensible curated set); single letters beyond this range
-# (l, c, d, m) are intentionally excluded so real one-letter title words are kept.
-_ROMAN_NUMERALS = frozenset(
-    "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx "
-    "xxi xxii xxiii xxiv xxv xxvi xxvii xxviii xxix xxx".split()
-)
+# Roman numerals 1–30 (extensible curated set, listed in value order); single
+# letters beyond this range (l, c, d, m) are intentionally excluded so real
+# one-letter title words are kept.
+_ROMAN_TO_ARABIC: dict[str, str] = {
+    numeral: str(value) for value, numeral in enumerate(
+        "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx "
+        "xxi xxii xxiii xxiv xxv xxvi xxvii xxviii xxix xxx".split(), start=1)
+}
+_ROMAN_NUMERALS = frozenset(_ROMAN_TO_ARABIC)
 
 
 def _is_number_token(token: str) -> bool:
@@ -94,17 +97,29 @@ def _numberless(key: str) -> str:
     return " ".join(t for t in key.split() if not _is_number_token(t))
 
 
-def _differ_only_by_number(a: str, b: str) -> bool:
-    """True if two keys are identical once numbers/roman numerals are removed.
+def _number_seq(key: str) -> tuple[str, ...]:
+    """The key's number tokens in order, canonicalized to arabic spellings so
+    "vii" and "7" (and "07") compare equal."""
+    return tuple(str(int(t)) if t.isdigit() else _ROMAN_TO_ARABIC[t]
+                 for t in key.split() if _is_number_token(t))
 
-    Titles that match except for a number are distinct series entries (Final
-    Fantasy VII vs XIII; Axiom Verge vs Axiom Verge 2) or a base name vs a
-    numbered entry (Final Fantasy vs Final Fantasy XIII) — never the same
-    playable game. A key that is *only* numbers (e.g. "XIII") has an empty name
-    part, so it never matches a longer title here.
+
+def _differ_only_by_number(a: str, b: str) -> bool:
+    """True if two keys differ only by which number they carry.
+
+    Titles that match except for a DIFFERENT number are distinct series entries
+    (Final Fantasy VII vs XIII; Axiom Verge vs Axiom Verge 2) or a base name vs
+    a numbered entry (Final Fantasy vs Final Fantasy XIII) — never the same
+    playable game. The SAME number spelled differently (Final Fantasy VII vs
+    Final Fantasy 7) is the same series entry, so it is NOT "differ only by
+    number" and the pair stays a duplicate candidate. A key that is *only*
+    numbers (e.g. "XIII") has an empty name part, so it never matches a longer
+    title here.
     """
     na, nb = _numberless(a), _numberless(b)
-    return not na or not nb or na == nb
+    if na != nb:
+        return not na or not nb
+    return _number_seq(a) != _number_seq(b)
 
 
 def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
@@ -298,6 +313,57 @@ _CURATION_FIELDS = (
 )
 
 
+# Per-platform format values (game_platforms.format, the single source of
+# truth for physical/digital ownership — see migrate_game_platform_format).
+_FORMAT_BOTH = "both"
+
+
+def _merge_platform_formats(a: str | None, b: str | None) -> str | None:
+    """Union of two per-platform formats ('physical'|'digital'|'both'|None).
+
+    Identical or one-sided values pass through; two different owned formats
+    mean physical+digital copies -> 'both' ('both' itself is sticky). Mirrors
+    the import-time upgrade rule in app.py.
+    """
+    if a == b or not b:
+        return a
+    if not a:
+        return b
+    return _FORMAT_BOTH
+
+
+def _merge_platform_rows(conn: sqlite3.Connection, survivor_id: int,
+                         drop_id: int) -> None:
+    """Fold the drop's game_platforms rows into the survivor's.
+
+    New platforms are copied whole (owned, psprices_id, format). On a platform
+    both games share, the survivor's values win but gaps are filled from the
+    drop, and format is unioned so a physical copy is never silently lost.
+    """
+    for gp in conn.execute(
+            "SELECT platform_id, owned, psprices_id, format FROM game_platforms "
+            "WHERE game_id = ?", (drop_id,)).fetchall():
+        existing = conn.execute(
+            "SELECT owned, psprices_id, format FROM game_platforms "
+            "WHERE game_id = ? AND platform_id = ?",
+            (survivor_id, gp["platform_id"])).fetchone()
+        if existing is None:
+            conn.execute(
+                "INSERT INTO game_platforms (game_id, platform_id, owned, psprices_id, format) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (survivor_id, gp["platform_id"], gp["owned"], gp["psprices_id"],
+                 gp["format"]))
+        else:
+            conn.execute(
+                "UPDATE game_platforms SET "
+                "owned = MAX(COALESCE(owned, 0), COALESCE(?, 0)), "
+                "psprices_id = COALESCE(psprices_id, ?), format = ? "
+                "WHERE game_id = ? AND platform_id = ?",
+                (gp["owned"], gp["psprices_id"],
+                 _merge_platform_formats(existing["format"], gp["format"]),
+                 survivor_id, gp["platform_id"]))
+
+
 def _rating_row(conn: sqlite3.Connection, game_id: int) -> dict:
     row = conn.execute(
         "SELECT status, rating, notes, priority, hours_played, started_at, "
@@ -312,7 +378,8 @@ def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int],
                 dry_run: bool = False) -> dict:
     """Merge drop_ids into survivor_id: one row per playable game.
 
-    Moves external ids onto the survivor, unions platform links and tags,
+    Moves external ids and barcode-registry links onto the survivor, unions
+    platform links (formats merged: physical + digital -> 'both') and tags,
     combines curation (or applies the supplied `curation` override), sets the
     survivor's title (+ recomputed normalized_title), and deletes the drops
     (ON DELETE CASCADE removes their leftover children). dry_run writes nothing.
@@ -332,13 +399,14 @@ def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int],
     for drop_id in drop_ids:
         conn.execute("UPDATE game_external_ids SET game_id = ? WHERE game_id = ?",
                      (survivor_id, drop_id))
-        conn.execute(
-            "INSERT OR IGNORE INTO game_platforms (game_id, platform_id, owned, psprices_id) "
-            "SELECT ?, platform_id, owned, psprices_id FROM game_platforms WHERE game_id = ?",
-            (survivor_id, drop_id))
+        _merge_platform_rows(conn, survivor_id, drop_id)
         conn.execute(
             "INSERT OR IGNORE INTO game_tags (game_id, tag_id) "
             "SELECT ?, tag_id FROM game_tags WHERE game_id = ?", (survivor_id, drop_id))
+        # Learned UPC links point at the drop via ON DELETE SET NULL — re-point
+        # them so the delete below cannot orphan them.
+        conn.execute("UPDATE barcode_registry SET game_id = ? WHERE game_id = ?",
+                     (survivor_id, drop_id))
         conn.execute("DELETE FROM games WHERE id = ?", (drop_id,))
 
     conn.execute("UPDATE games SET title = ?, normalized_title = ?, "

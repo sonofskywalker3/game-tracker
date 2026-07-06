@@ -130,6 +130,41 @@ def test_resolve_ambiguous_dlc_with_create_new(conn):
     assert ext[0] == new_row["id"]
 
 
+def test_resolve_ambiguous_apply_leaves_row_open(conn):
+    """A picked-game resolve whose apply only yields an 'ambiguous dlc' review
+    outcome must NOT mark the row resolved or claim a false 'already owned'."""
+    # Queue a "no parent game" review (parent not in the library yet):
+    mark_ownership(conn, [{"title": "Game Z Extra", "source": "steam",
+                           "external_id": "Z1", "source_title": "Extra"}])
+    review_id = conn.execute("SELECT id FROM dlc_review_queue").fetchone()[0]
+    # The user adds the parent — which already has two DLC rows the add-on
+    # matches ambiguously — and picks it:
+    gid = _add_game(conn, "Game Z")
+    a = _add_dlc(conn, gid, "Extra")
+    b = _add_dlc(conn, gid, "Extra ")  # trailing space -> ambiguous on normalize
+    match = dlc_review.resolve(conn, review_id, picked_game_id=gid)
+    # The true outcome is reported (not a false "already owned" success):
+    assert match.reason == "ambiguous dlc"
+    assert match.dlc_id is None
+    # The row stays open, refined to the ambiguous-dlc reason with the parent:
+    row = conn.execute(
+        "SELECT resolved_at, reason, game_id FROM dlc_review_queue WHERE id = ?",
+        (review_id,)).fetchone()
+    assert row["resolved_at"] is None
+    assert row["reason"] == "ambiguous dlc"
+    assert row["game_id"] == gid
+    # Nothing was flipped or created:
+    assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (a,)).fetchone()[0] == 0
+    assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (b,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM dlc WHERE game_id = ?",
+                        (gid,)).fetchone()[0] == 2
+    # The user can then finish the job with a specific pick:
+    dlc_review.resolve(conn, review_id, picked_dlc_id=b)
+    assert conn.execute("SELECT owned FROM dlc WHERE id = ?", (b,)).fetchone()[0] == 1
+    assert conn.execute("SELECT resolved_at FROM dlc_review_queue WHERE id = ?",
+                        (review_id,)).fetchone()[0] is not None
+
+
 def test_resolve_is_idempotent_on_already_resolved(conn):
     mark_ownership(conn, [{"title": "X - Y", "source": "steam",
                            "external_id": "9", "source_title": "X - Y"}])

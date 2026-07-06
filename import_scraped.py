@@ -107,23 +107,41 @@ def add_excluded_games(entries: list[dict]) -> int:
     return added
 
 
-def is_excluded(source: Optional[str], external_id: Optional[str], title: str) -> bool:
+@dataclass(frozen=True)
+class ExclusionIndex:
+    """Set-based view of the exclusion list for O(1) per-game membership checks."""
+    by_external_id: frozenset  # of (source, external_id) tuples
+    by_title: frozenset        # of normalized titles
+
+
+def build_exclusion_index(entries: Optional[list[dict]] = None) -> ExclusionIndex:
+    """Index the exclusion list (loaded once when not supplied) for fast lookups."""
+    if entries is None:
+        entries = load_excluded_games()
+    return ExclusionIndex(
+        by_external_id=frozenset((e.get("source"), e.get("external_id"))
+                                 for e in entries if e.get("external_id")),
+        by_title=frozenset(e.get("normalized_title") for e in entries
+                           if e.get("normalized_title") is not None),
+    )
+
+
+def is_excluded(source: Optional[str], external_id: Optional[str], title: str,
+                index: Optional[ExclusionIndex] = None) -> bool:
     """True if a scraped row was manually marked 'not a game'.
 
     Matches by exact (source, external_id) when the row carries an external id,
     and always by exact normalized title — so the same non-game is skipped even if
     its store id changes or it has none. Keys are exact, so a real game is never
-    caught unless it was explicitly excluded.
+    caught unless it was explicitly excluded. Callers checking many rows should
+    pass a prebuilt `index` (build_exclusion_index) so the exclusion file is read
+    once per run instead of once per row.
     """
-    entries = load_excluded_games()
-    if not entries:
-        return False
-    if external_id and any(
-        e.get("external_id") == external_id and e.get("source") == source for e in entries
-    ):
+    if index is None:
+        index = build_exclusion_index()
+    if external_id and (source, external_id) in index.by_external_id:
         return True
-    key = match_key(title)
-    return any(e.get("normalized_title") == key for e in entries)
+    return match_key(title) in index.by_title
 
 
 @dataclass
@@ -291,9 +309,10 @@ def import_games(conn: sqlite3.Connection, games: list[dict], source: str, *,
     # rows aren't inserted, so without this a same-batch duplicate title would be
     # miscounted as another "new" game; a real run unifies them via the DB.
     batch_new_keys: set[str] = set()
+    excluded = build_exclusion_index()  # one file read per run, not per game
     done = 0
     for game in games:
-        if is_excluded(source, game.get("external_id"), game["title"]):
+        if is_excluded(source, game.get("external_id"), game["title"], excluded):
             stats.skipped_excluded += 1
             done += 1
             if progress:
