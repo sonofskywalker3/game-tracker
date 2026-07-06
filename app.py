@@ -26,7 +26,8 @@ from models import (
     apply_series_catalog,
 )
 from recommendation import get_recommendations, get_quick_picks
-from config import load_config, save_config, get_twitch_credentials, DECIDER_MODELS
+from config import (load_config, save_config, get_twitch_credentials,
+                    get_anthropic_config, DECIDER_MODELS)
 from background_tasks import (
     run_cover_fetch_background, get_cover_fetch_status,
     run_enrichment_background, get_enrichment_status, start_enrichment_drip,
@@ -561,6 +562,35 @@ def api_bundle_review_dismiss(review_id):
     count = _open_bundle_review_count(conn)
     conn.close()
     return jsonify({'ok': True, 'count': count})
+
+
+@app.route('/api/traits/ai/status')
+def api_traits_ai_status():
+    """SP-C: how many games lack a session length + whether the AI run can
+    start (user's Anthropic key configured), plus live task state."""
+    import background_tasks
+    import traits_ai
+    conn = get_db()
+    unclassified = len(traits_ai.find_unclassified(conn))
+    conn.close()
+    key, model = get_anthropic_config()
+    return jsonify({**background_tasks.get_traits_ai_status(),
+                    'unclassified': unclassified,
+                    'has_api_key': bool(key), 'model': model})
+
+
+@app.route('/api/traits/ai/run', methods=['POST'])
+def api_traits_ai_run():
+    """Kick off background AI session-length classification (opt-in, uses the
+    user's own Anthropic key)."""
+    import background_tasks
+    key, _model = get_anthropic_config()
+    if not key:
+        return jsonify({'error': 'Add your Anthropic API key in Settings first'}), 400
+    ok, msg = background_tasks.run_traits_ai_background()
+    if not ok:
+        return jsonify({'error': msg}), 409
+    return jsonify({'ok': True, 'message': msg})
 
 
 # CSV columns for library export/import (Settings > Data Management).
