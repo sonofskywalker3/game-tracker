@@ -234,69 +234,76 @@ def api_games():
     return jsonify(games)
 
 
+# Hard cap on games per /api/games/batch request (each added game may cost an
+# IGDB enrichment round-trip, so an unbounded batch could hang the request).
+MAX_BATCH_ADD = 100
+
+
+def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False):
+    """Shared create core for the single and batch add endpoints: clean/normalize
+    the title, dedup against normalized_title, insert game + backlog rating +
+    platform links, then apply the trait/series catalogs. Returns
+    (status, game_id, clean_display_title) where status is 'exists' or 'added'.
+    Commits the insert (the catalog appliers commit internally)."""
+    title = clean_title(raw_title)
+    normalized = normalize_title(title)
+    existing = conn.execute(
+        "SELECT id FROM games WHERE normalized_title = ?", (normalized,)).fetchone()
+    if existing:
+        return 'exists', existing['id'], title
+
+    conn.execute(
+        "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?)",
+        (title, normalized, (cover_url or '').strip() or None))
+    game_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (game_id,))
+
+    fmt = 'physical' if physical else 'digital'
+    for platform_short_name in platforms or []:
+        platform = conn.execute(
+            "SELECT id FROM platforms WHERE short_name = ?",
+            (platform_short_name,)).fetchone()
+        if platform:
+            conn.execute(
+                "INSERT INTO game_platforms (game_id, platform_id, format) VALUES (?, ?, ?)",
+                (game_id, platform['id'], fmt))
+
+    conn.commit()
+    apply_traits_catalog(conn, game_id)
+    apply_series_catalog(conn, game_id)
+    return 'added', game_id, title
+
+
 @app.route('/api/games', methods=['POST'])
 def api_create_game():
     """Create a new game."""
     conn = get_db()
     data = request.json
 
-    title = data.get('title', '').strip()
-    if not title:
+    raw_title = data.get('title', '').strip()
+    if not raw_title:
         conn.close()
         return jsonify({'error': 'Title is required'}), 400
 
-    # Clean up the title (remove platform indicators, trademark symbols)
-    title = clean_title(title)
-    normalized = normalize_title(title)
-
     # Read the optional UPC for barcode cache persistence
     upc = (data.get('upc') or '').strip() or None
+    platforms = data.get('platforms', [])
 
-    # Check if game already exists
-    existing = conn.execute(
-        "SELECT id, igdb_id FROM games WHERE normalized_title = ?",
-        (normalized,)
-    ).fetchone()
+    status, game_id, title = _insert_game(
+        conn, raw_title, cover_url=data.get('cover_url'),
+        platforms=platforms, physical=bool(data.get('physical')))
 
-    if existing:
+    if status == 'exists':
         if upc:
-            barcode.registry_put(conn, upc, igdb_id=existing['igdb_id'], title=title,
-                              game_id=existing['id'])
+            igdb_row = conn.execute(
+                "SELECT igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+            barcode.registry_put(conn, upc,
+                              igdb_id=igdb_row['igdb_id'] if igdb_row else None,
+                              title=title, game_id=game_id)
             conn.commit()
         conn.close()
-        return jsonify({'error': 'Game already exists', 'game_id': existing['id']}), 409
-
-    # Insert new game
-    cover_url = data.get('cover_url', '').strip() or None
-    conn.execute(
-        "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?)",
-        (title, normalized, cover_url)
-    )
-    game_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-    # Create default user_ratings entry
-    conn.execute(
-        "INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')",
-        (game_id,)
-    )
-
-    # Add platforms if provided
-    platforms = data.get('platforms', [])
-    fmt = 'physical' if data.get('physical') else 'digital'
-    for platform_short_name in platforms:
-        platform = conn.execute(
-            "SELECT id FROM platforms WHERE short_name = ?",
-            (platform_short_name,)
-        ).fetchone()
-        if platform:
-            conn.execute(
-                "INSERT INTO game_platforms (game_id, platform_id, format) VALUES (?, ?, ?)",
-                (game_id, platform['id'], fmt)
-            )
-
-    conn.commit()
-    apply_traits_catalog(conn, game_id)
-    apply_series_catalog(conn, game_id)
+        return jsonify({'error': 'Game already exists', 'game_id': game_id}), 409
 
     # Best-effort IGDB enrichment so a manually-added game gets the same metadata a
     # scraped one does: igdb_id (needed to sync DLC), cover, and genre tags. Never
@@ -323,6 +330,67 @@ def api_create_game():
 
     conn.close()
     return jsonify({'success': True, 'game_id': game_id}), 201
+
+
+@app.route('/api/games/batch', methods=['POST'])
+def api_games_batch():
+    """Bulk add: {games: [{title, cover_url?, platforms?, physical?}]} ->
+    {added, skipped, results: [{title, status: added|exists|error, game_id?}]}.
+    Shared backend for multi-select add and the Chrome extension bulk add. One
+    IGDB token is fetched for the whole batch; enrichment stays best-effort."""
+    data = request.get_json(silent=True) or {}
+    games = data.get('games')
+    if not isinstance(games, list) or not games:
+        return jsonify({'error': 'games must be a non-empty list'}), 400
+    if len(games) > MAX_BATCH_ADD:
+        return jsonify({'error': f'batch limited to {MAX_BATCH_ADD} games'}), 400
+
+    conn = get_db()
+
+    # One shared token for the batch's best-effort enrichment (never fatal).
+    client_id = token = None
+    try:
+        import igdb_dlc
+        client_id, secret = get_twitch_credentials()
+        if client_id:
+            token = igdb_dlc.get_access_token(client_id, secret)
+    except Exception as exc:
+        app.logger.warning("batch add: IGDB token fetch failed: %s", exc)
+        client_id = token = None
+
+    results = []
+    added = skipped = 0
+    for entry in games:
+        if not isinstance(entry, dict):
+            results.append({'title': '', 'status': 'error', 'error': 'invalid entry'})
+            continue
+        raw_title = (entry.get('title') or '').strip()
+        if not raw_title:
+            results.append({'title': raw_title, 'status': 'error',
+                            'error': 'title required'})
+            continue
+
+        status, game_id, title = _insert_game(
+            conn, raw_title, cover_url=entry.get('cover_url'),
+            platforms=entry.get('platforms') or [],
+            physical=bool(entry.get('physical')))
+
+        if status == 'added':
+            added += 1
+            if token:
+                try:
+                    import igdb_dlc
+                    igdb_dlc.enrich_game(conn, game_id, client_id, token)
+                    conn.commit()
+                except Exception as exc:   # best-effort, same contract as single add
+                    app.logger.warning("batch add: enrich failed for %r: %s", title, exc)
+                    conn.rollback()
+        else:
+            skipped += 1
+        results.append({'title': title, 'status': status, 'game_id': game_id})
+
+    conn.close()
+    return jsonify({'added': added, 'skipped': skipped, 'results': results})
 
 
 @app.route('/api/games/<int:game_id>')
