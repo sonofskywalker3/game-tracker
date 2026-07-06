@@ -72,6 +72,12 @@ def series_overview_page():
     return render_template('series_overview.html')
 
 
+@app.route('/collections')
+def collections_page():
+    """IGDB-canonical collections browser (Stage 1: additive alongside Series)."""
+    return render_template('collections.html')
+
+
 @app.route('/series/manage')
 @app.route('/series/<int:series_id>')
 def series_page(series_id=None):
@@ -323,6 +329,10 @@ def api_create_game():
         app.logger.warning("manual-add IGDB enrich failed for game %s: %s", game_id, exc)
         conn.rollback()
 
+    # Collections layer: record the game's IGDB collection memberships (if
+    # enrichment pinned an igdb_id). Best-effort, never blocks the create.
+    _sync_collections_for_game(conn, game_id)
+
     if upc:
         platform_short = platforms[0] if platforms else None
         igdb_row = conn.execute(
@@ -389,12 +399,107 @@ def api_games_batch():
                 except Exception as exc:   # best-effort, same contract as single add
                     app.logger.warning("batch add: enrich failed for %r: %s", title, exc)
                     conn.rollback()
+                _sync_collections_for_game(conn, game_id,
+                                           client_id=client_id, token=token)
         else:
             skipped += 1
         results.append({'title': title, 'status': status, 'game_id': game_id})
 
     conn.close()
     return jsonify({'added': added, 'skipped': skipped, 'results': results})
+
+
+def _sync_collections_for_game(conn, game_id, *, client_id=None, token=None):
+    """Best-effort IGDB collections sync for one game (Stage 1 collections
+    layer). Needs the game to have an igdb_id; silently skips otherwise. Never
+    fails the caller — a resolve error just leaves memberships unsynced (the
+    Settings backfill catches up later)."""
+    import igdb_dlc
+    import igdb_resolve
+    try:
+        row = conn.execute("SELECT igdb_id FROM games WHERE id = ?",
+                           (game_id,)).fetchone()
+        if not row or not row['igdb_id']:
+            return
+        if client_id is None or token is None:
+            client_id, secret = get_twitch_credentials()
+            if not client_id:
+                return
+            token = igdb_dlc.get_access_token(client_id, secret)
+        info = igdb_resolve.fetch_game_collections(
+            [row['igdb_id']], client_id, token).get(row['igdb_id'])
+        if info:
+            igdb_resolve.sync_game_collections(conn, game_id, info)
+    except Exception as exc:   # best-effort: sync must never block the caller
+        app.logger.warning("collections sync failed for game %s: %s", game_id, exc)
+
+
+@app.route('/api/collections')
+def api_collections():
+    """All IGDB collections that contain at least one owned game, with counts
+    and a few covers for the tile art. Sorted by owned count, then name."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT c.id, c.name, c.slug, COUNT(gc.game_id) AS owned_count
+        FROM collections c
+        JOIN game_collections gc ON gc.collection_id = c.id
+        GROUP BY c.id
+        ORDER BY owned_count DESC, c.name
+    """).fetchall()
+    out = []
+    for r in rows:
+        covers = [x[0] for x in conn.execute(
+            "SELECT g.cover_url FROM games g "
+            "JOIN game_collections gc ON gc.game_id = g.id "
+            "WHERE gc.collection_id = ? AND g.cover_url IS NOT NULL AND g.cover_url != '' "
+            "ORDER BY g.original_release_ts IS NULL, g.original_release_ts, g.title "
+            "LIMIT 3", (r['id'],)).fetchall()]
+        out.append({**dict(r), 'covers': covers})
+    conn.close()
+    return jsonify({'collections': out})
+
+
+@app.route('/api/collections/<int:collection_id>')
+def api_collection_detail(collection_id):
+    """One collection with its owned games in chronological order (original
+    release — remasters sort at the original's date; undated games last)."""
+    conn = get_db()
+    c = conn.execute("SELECT id, name, slug FROM collections WHERE id = ?",
+                     (collection_id,)).fetchone()
+    if not c:
+        conn.close()
+        return jsonify({'error': 'Collection not found'}), 404
+    games = conn.execute("""
+        SELECT g.id, g.title, g.cover_url, g.original_release_ts, ur.status
+        FROM games g
+        JOIN game_collections gc ON gc.game_id = g.id
+        LEFT JOIN user_ratings ur ON ur.game_id = g.id
+        WHERE gc.collection_id = ?
+        ORDER BY g.original_release_ts IS NULL, g.original_release_ts, g.title
+    """, (collection_id,)).fetchall()
+    conn.close()
+    return jsonify({**dict(c), 'games': [dict(g) for g in games]})
+
+
+@app.route('/api/collections/backfill', methods=['POST'])
+def api_collections_backfill():
+    """Resolve IGDB collection memberships + original release dates for every
+    igdb-pinned game (a whole library is only a few batched calls)."""
+    import igdb_dlc
+    import igdb_resolve
+    client_id, secret = get_twitch_credentials()
+    if not client_id:
+        return jsonify({'error': 'Twitch API credentials not configured'}), 400
+    conn = get_db()
+    try:
+        token = igdb_dlc.get_access_token(client_id, secret)
+        report = igdb_resolve.backfill_collections(conn, client_id, token)
+    except requests.RequestException as exc:
+        conn.close()
+        log.warning("collections backfill failed: %s", exc)
+        return jsonify({'error': 'IGDB request failed'}), 502
+    conn.close()
+    return jsonify(report)
 
 
 # CSV columns for library export/import (Settings > Data Management).
@@ -988,6 +1093,8 @@ def api_igdb_pick(game_id):
         "igdb_locked = 1, needs_igdb_review = 0, igdb_review_reason = NULL, "
         "updated_at = CURRENT_TIMESTAMP WHERE id = ?", (igdb_id, cover_url, game_id))
     conn.commit()
+    # The IGDB identity changed, so the collection memberships follow it.
+    _sync_collections_for_game(conn, game_id)
     conn.close()
     return jsonify({'success': True})
 
