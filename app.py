@@ -502,6 +502,67 @@ def api_collections_backfill():
     return jsonify(report)
 
 
+def _open_bundle_review_count(conn):
+    return conn.execute(
+        "SELECT COUNT(*) FROM bundle_review_queue "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL").fetchone()[0]
+
+
+@app.route('/api/bundle-review')
+def api_bundle_review_list():
+    """Open bundle-split review items (low-confidence IGDB bundle fallbacks)."""
+    import bundle_fallback
+    conn = get_db()
+    items = bundle_fallback.pending_reviews(conn)
+    conn.close()
+    return jsonify({'items': items, 'count': len(items)})
+
+
+@app.route('/api/bundle-review/<int:review_id>/approve', methods=['POST'])
+def api_bundle_review_approve(review_id):
+    """Approve a queued bundle split (optionally with an edited constituent
+    list); expands through the shared bundle-catalog path."""
+    import bundle_fallback
+    import igdb_dlc
+    data = request.get_json(silent=True) or {}
+    constituents = data.get('constituents')
+    # Creds are optional polish: without them the split still happens, the
+    # constituents just wait for the next scrape/backfill to enrich.
+    client_id = token = None
+    try:
+        client_id, secret = get_twitch_credentials()
+        if client_id:
+            token = igdb_dlc.get_access_token(client_id, secret)
+    except Exception as exc:
+        app.logger.warning("bundle review approve: IGDB token fetch failed: %s", exc)
+        client_id = token = None
+    conn = get_db()
+    try:
+        report = bundle_fallback.approve_review(
+            conn, review_id, client_id=client_id, token=token,
+            constituents=constituents)
+    except ValueError as exc:
+        conn.rollback()
+        conn.close()
+        msg = str(exc)
+        return jsonify({'error': msg}), 404 if 'not found' in msg else 400
+    count = _open_bundle_review_count(conn)
+    conn.close()
+    return jsonify({'ok': True, 'count': count,
+                    'constituents': report['constituents']})
+
+
+@app.route('/api/bundle-review/<int:review_id>/dismiss', methods=['POST'])
+def api_bundle_review_dismiss(review_id):
+    """Dismiss a queued bundle split (the game stays a single row)."""
+    import bundle_fallback
+    conn = get_db()
+    bundle_fallback.dismiss_review(conn, review_id)
+    count = _open_bundle_review_count(conn)
+    conn.close()
+    return jsonify({'ok': True, 'count': count})
+
+
 # CSV columns for library export/import (Settings > Data Management).
 CSV_FIELDS = ("title", "status", "rating", "priority", "platforms", "notes")
 # Statuses accepted from an imported CSV; anything else falls back to backlog.
