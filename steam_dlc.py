@@ -93,23 +93,30 @@ def fetch_appdetails(appid: int, *, cache_dir: Path = CACHE_DIR,
                      session=requests, delay_s: float = REQUEST_DELAY_S) -> dict | None:
     """Return the appdetails `data` object for an appid (cached on disk), or None.
 
-    A cache hit skips the network entirely. On a miss, GET appdetails, cache the
-    `data` object (an empty object for a not-found/failed app), throttle, and
-    return it (None when there is no data).
+    A cache hit skips the network entirely. On a miss, GET appdetails and cache
+    ONLY a genuinely-successful payload. A null / success:false body (Steam
+    throttle, delisted app) returns None WITHOUT writing the cache file, so the
+    next run retries instead of being poisoned forever; an empty object cached
+    by the old behavior is treated as a miss for the same reason. Throttles
+    after every network call.
     """
     cache_dir = Path(cache_dir)
     cache_file = cache_dir / f"{appid}.json"
     if cache_file.exists():
-        return json.loads(cache_file.read_text(encoding="utf-8")) or None
+        cached = json.loads(cache_file.read_text(encoding="utf-8"))
+        if cached:
+            return cached
+        # Empty cached object = legacy throttle poison; fall through and retry.
     resp = session.get(APPDETAILS_URL, params={"appids": appid, "l": "english"}, timeout=30)
     resp.raise_for_status()
     entry = (resp.json() or {}).get(str(appid)) or {}
     data = entry.get("data") if entry.get("success") else None
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(data or {}, ensure_ascii=False), encoding="utf-8")
+    if data:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     if delay_s:
         time.sleep(delay_s)
-    return data
+    return data or None
 
 
 @dataclass
