@@ -19,6 +19,18 @@ def _reset_state():
     scrape_service._reset()
 
 
+@pytest.fixture(autouse=True)
+def _stub_collections_sync(monkeypatch):
+    """Keep pipeline tests offline: the post-import collections sync would
+    otherwise hit IGDB whenever a test supplies Twitch creds. Tests that assert
+    on the sync override this stub."""
+    import igdb_resolve
+    monkeypatch.setattr(
+        igdb_resolve, "backfill_collections",
+        lambda conn, cid, tok, progress=None: {"games": 0, "collections": 0,
+                                               "memberships": 0})
+
+
 def test_status_initial_shape():
     st = scrape_service.status()
     assert st["phase"] == "idle"
@@ -506,3 +518,87 @@ def test_scrape_progress_updates_status_message():
     cb2 = scrape_service._scrape_progress("xbox")
     cb2(3)
     assert "3 pages" in scrape_service.status()["message"]
+
+
+# --- collections sync in the shared pipeline (SP-A Stage 1 follow-up) ---------
+
+def _creds(monkeypatch):
+    import igdb_dlc
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda c, s: "tok")
+    monkeypatch.setattr(igdb_dlc, "backfill_genres",
+                        lambda conn, *, client_id, token, progress=None: 0)
+
+
+def test_run_pipeline_syncs_collections(temp_db, monkeypatch):
+    import igdb_dlc
+    import igdb_resolve
+    _creds(monkeypatch)
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+    calls = []
+
+    def fake_backfill(conn, cid, tok, progress=None):
+        calls.append((cid, tok))
+        return {"games": 3, "collections": 2, "memberships": 5}
+    monkeypatch.setattr(igdb_resolve, "backfill_collections", fake_backfill)
+    games = [ScrapedGame(title="Hades", platform="PS5", source="playstation",
+                         external_id="G9")]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.close()
+    assert calls == [("cid", "tok")]
+    assert summary["collections_synced"] == 3
+
+
+def test_run_pipeline_collections_sync_runs_for_steam_too(temp_db, monkeypatch):
+    """The sync lives in the shared launcher, not a vendor branch."""
+    import igdb_resolve
+    import steam_dlc
+    _creds(monkeypatch)
+    monkeypatch.setattr(
+        steam_dlc, "enrich_and_mark",
+        lambda conn, ids, progress=None: steam_dlc.SteamReport())
+    calls = []
+    monkeypatch.setattr(igdb_resolve, "backfill_collections",
+                        lambda conn, cid, tok, progress=None: calls.append(1) or
+                        {"games": 1, "collections": 1, "memberships": 1})
+    games = [ScrapedGame(title="Hades", platform="PC", source="steam",
+                         external_id="1145360")]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "steam", games)
+    conn.close()
+    assert calls == [1]
+    assert summary["collections_synced"] == 1
+
+
+def test_run_pipeline_collections_skipped_without_creds(temp_db, monkeypatch):
+    import igdb_resolve
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+
+    def boom(*a, **k):
+        raise AssertionError("collections sync must not run without creds")
+    monkeypatch.setattr(igdb_resolve, "backfill_collections", boom)
+    games = [ScrapedGame(title="Hades", platform="PS5", source="playstation",
+                         external_id="G9")]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.close()
+    assert summary["collections_synced"] is None
+
+
+def test_run_pipeline_collections_error_never_sinks_scrape(temp_db, monkeypatch):
+    import igdb_dlc
+    import igdb_resolve
+    _creds(monkeypatch)
+    monkeypatch.setattr(igdb_dlc, "enrich_missing", _fake_enrich)
+
+    def boom(*a, **k):
+        raise RuntimeError("igdb down")
+    monkeypatch.setattr(igdb_resolve, "backfill_collections", boom)
+    games = [ScrapedGame(title="Hades", platform="PS5", source="playstation",
+                         external_id="G9")]
+    conn = models.get_db()
+    summary = scrape_service._run_pipeline(conn, "playstation", games)
+    conn.close()
+    assert summary["new_games"] == 1          # the scrape itself completed
+    assert summary["collections_synced"] is None
