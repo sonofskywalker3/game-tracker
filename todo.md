@@ -7,14 +7,14 @@ Adding games one at a time is the main pain point before sharing the project pub
 ---
 
 ### 1. Batch Add API Endpoint
-- **Status:** Not started
+- **Status:** ✅ DONE (2026-07) — `POST /api/games/batch`, shared `_insert_game` core with the single-add endpoint, per-game added/exists/error results, one IGDB token per batch, `MAX_BATCH_ADD` cap.
 - **Endpoint:** `POST /api/games/batch`
 - **Request:** `{ "games": [{"title": "...", "cover_url": "...", "platforms": [...]}] }`
 - **Response:** `{ "added": N, "skipped": N, "results": [{title, status, game_id}] }`
 - **Notes:** This is a shared backend for both multi-select add (feature #2) and Chrome extension bulk add (feature #4). Build this first since both depend on it. Use same logic as single game create, return per-game status (added/exists/error).
 
 ### 2. CSV Import/Export
-- **Status:** Not started
+- **Status:** ✅ DONE (2026-07) — `GET /api/data/export` + `POST /api/data/import` (title required; status/rating/priority/platforms/notes optional; dedup via normalized title) + "Data Management" section in Settings. Round-trip covered by tests + browser-verified.
 - **Export endpoint:** `GET /api/data/export` — returns CSV with headers: `title, status, rating, priority, platforms, notes`. Use Content-Disposition header for browser download.
 - **Import endpoint:** `POST /api/data/import` — accepts CSV file upload (multipart/form-data). Minimum required column: `title`. Optional: `status`, `platforms` (comma-separated). Returns `{imported: N, skipped: N, errors: [...]}`. Use existing `normalize_title()` for deduplication.
 - **UI location:** New "Data Management" section in Settings page, placed after the Cover Art section. The settings page already has a clean modular pattern with real-time status updates and background task polling (used for cover fetch) — follow that same pattern for import progress.
@@ -23,7 +23,7 @@ Adding games one at a time is the main pain point before sharing the project pub
 - **Notes:** `import_data.py` already handles CSV and PSPrices HTML parsing — reference its logic but build proper API endpoints rather than exposing the script directly.
 
 ### 3. Multi-Select Add Interface
-- **Status:** Not started
+- **Status:** ✅ DONE (2026-07) — checkboxes in the IGDB results, selected-games queue with removable chips, "Add N Games" button posting to /api/games/batch. Single-click add flow unchanged. Browser-verified.
 - **Depends on:** Batch Add API (#1)
 - **Changes to Add Game modal (`templates/base.html`):**
   - Change IGDB search results from click-to-select to checkboxes
@@ -51,17 +51,14 @@ Adding games one at a time is the main pain point before sharing the project pub
 ## Polish & Refinements
 
 ### 5. Series: Sort by Original Release Date
-- **Status:** Partially implemented
-- **Issue:** Remasters sort by remaster date, not original game date. Example: "Tales of Symphonia Remastered" should sort by when Tales of Symphonia originally released.
-- **Current approach:** Strips remaster/remake suffixes before searching IGDB. May still have edge cases.
+- **Status:** ✅ DONE (2026-07) — release lookup now requests `version_parent.first_release_date` + `parent_game.first_release_date` from IGDB and uses the earliest available date, so remasters/ports sort at the original game's release.
 
 ### 6. Series: Mini-Boxart Thumbnails
 - **Status:** Not started
 - **Request:** Replace series numbers on the Kanban view with small cover art thumbnails.
 
 ### 7. Alphabet Navigation Bar: Series-Aware Scrolling
-- **Status:** Partially implemented
-- **Issue:** The letter bar should navigate by series name, not individual game name, when a game belongs to a series. Uses `data-sort-name` attribute on game cards. May need further refinement — clicking "M" was jumping to Final Fantasy row because of "Monster of the Deep: Final Fantasy XV".
+- **Status:** Mostly done (2026-07) — root cause of the "M jumps to Final Fantasy" report was the bar staying active under non-alphabetical sorts; it now hides unless Sort: Name is active. Series-aware `data-sort-name` behavior unchanged.
 
 ---
 
