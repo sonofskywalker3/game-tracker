@@ -41,9 +41,12 @@ def resolve(
 
     Exactly one of picked_game_id / picked_dlc_id / create_new_dlc must be set.
     Idempotent: resolving an already-resolved row is a no-op that returns a
-    synthesized Match for the current state. Raises ValueError if the picked
-    game or DLC doesn't exist, or if the row is dismissed, or if the choice
-    count is wrong.
+    synthesized Match for the current state. The row is marked resolved only
+    when the apply yields a real create/reconcile/already-owned outcome; an
+    apply that merely refines to an 'ambiguous dlc' review leaves the row open
+    and returns a Match with that reason. Raises ValueError if the picked game
+    or DLC doesn't exist, or if the row is dismissed, or if the choice count is
+    wrong.
     """
     picks = [picked_game_id is not None, picked_dlc_id is not None, create_new_dlc]
     if sum(picks) != 1:
@@ -97,6 +100,17 @@ def resolve(
         forced_dlc_id=picked_dlc_id,
         force_create=create_new_dlc,
     )
+
+    if not (report.marked or report.already_owned):
+        # The apply produced no create/reconcile/already-owned outcome — it only
+        # refined this row to an 'ambiguous dlc' review (persisted by the apply's
+        # own upsert). Leave the row OPEN so the user can pick a specific DLC,
+        # and report the true outcome instead of a false "already owned" success.
+        logger.info("review_id %s left open: apply outcome is %r", review_id,
+                    report.review[0].reason if report.review else "unapplied")
+        if report.review:
+            return report.review[0]
+        return Match(row["addon_title"], game_id=parent, reason="unapplied")
 
     conn.execute(
         "UPDATE dlc_review_queue SET resolved_at = CURRENT_TIMESTAMP WHERE id = ?",

@@ -28,6 +28,11 @@ COMPLETION_BOOST = 30.0       # completed game surfaced in a completionist slot
 # Statuses excluded from a completionist slot's pool (beaten games ARE allowed in;
 # only fully-100%'d and dropped games are nothing left to grind).
 COMPLETIONIST_EXCLUDED = frozenset({"100", "dropped"})
+# Taste signal (mirrors recommendation.get_recommendations): only tags whose average
+# rating clears the bar contribute, each weighted, with the total capped.
+TASTE_MIN_AVG_RATING = 7
+TASTE_TAG_WEIGHT = 0.5
+TASTE_BOOST_CAP = 15
 
 
 def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
@@ -35,6 +40,45 @@ def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
         "SELECT t.name FROM game_tags gt JOIN tags t ON t.id = gt.tag_id WHERE gt.game_id = ?",
         (game_id,)).fetchall()
     return {r["name"] for r in rows}
+
+
+def _candidate_platforms(conn: sqlite3.Connection,
+                         excluded: frozenset[str]) -> dict[int, set[str]]:
+    """Platform short_names per candidate game id, one query for the whole pool."""
+    rows = conn.execute(f"""
+        SELECT gp.game_id, p.short_name
+        FROM game_platforms gp
+        JOIN platforms p ON p.id = gp.platform_id
+        JOIN user_ratings ur ON ur.game_id = gp.game_id
+        WHERE ur.status NOT IN ({",".join("?" * len(excluded))})
+    """, tuple(excluded)).fetchall()
+    by_game: dict[int, set[str]] = {}
+    for r in rows:
+        by_game.setdefault(r["game_id"], set()).add(r["short_name"])
+    return by_game
+
+
+def _candidate_tags(conn: sqlite3.Connection,
+                    excluded: frozenset[str]) -> dict[int, set[str]]:
+    """Tag names per candidate game id, one query for the whole pool."""
+    rows = conn.execute(f"""
+        SELECT gt.game_id, t.name
+        FROM game_tags gt
+        JOIN tags t ON t.id = gt.tag_id
+        JOIN user_ratings ur ON ur.game_id = gt.game_id
+        WHERE ur.status NOT IN ({",".join("?" * len(excluded))})
+    """, tuple(excluded)).fetchall()
+    by_game: dict[int, set[str]] = {}
+    for r in rows:
+        by_game.setdefault(r["game_id"], set()).add(r["name"])
+    return by_game
+
+
+def _taste_boost_by_tag(affinity: dict) -> dict[str, float]:
+    """Per-tag-name boost from calculate_tag_affinity (tag names are unique)."""
+    return {data["name"]: data["score"] * TASTE_TAG_WEIGHT
+            for data in affinity.values()
+            if data["avg_rating"] >= TASTE_MIN_AVG_RATING}
 
 
 def _recent_fatigue_tags(conn: sqlite3.Connection) -> set[str]:
@@ -86,7 +130,7 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
     """Return ranked eligible games for a slot: [{"game", "score", "reasons"}]."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
     streamable_only = bool(slot.get("streamable_only"))
-    affinity = calculate_tag_affinity(conn)
+    taste_boosts = _taste_boost_by_tag(calculate_tag_affinity(conn))
     fatigue_tags = _recent_fatigue_tags(conn)
     pinned = _pinned_game_ids(conn)
     dismissed = _dismissed_game_ids(conn, slot["id"]) if slot.get("id") else set()
@@ -100,6 +144,9 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status NOT IN ({placeholders})
     """, tuple(excluded)).fetchall()
+    # Batched sidecar data for the whole candidate pool (was 2 queries per game).
+    platforms_by_game = _candidate_platforms(conn, excluded)
+    tags_by_game = _candidate_tags(conn, excluded)
 
     recent_series_id = _slot_recent_series_id(conn, slot["id"]) if slot.get("id") else None
 
@@ -110,15 +157,11 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         if game["id"] in dismissed:
             continue
         # Platform hard filter
-        game_platforms = {
-            r["short_name"] for r in conn.execute(
-                "SELECT p.short_name FROM game_platforms gp "
-                "JOIN platforms p ON p.id = gp.platform_id WHERE gp.game_id = ?",
-                (game["id"],)).fetchall()}
+        game_platforms = platforms_by_game.get(game["id"], set())
         if platforms and not (game_platforms & platforms):
             continue
         # Latency hard filter
-        tag_names = _game_tag_names(conn, game["id"])
+        tag_names = tags_by_game.get(game["id"], set())
         tolerant = latency_tolerant(tag_names, game["input_lag_override"])
         if streamable_only and not tolerant:
             continue          # streamed slot: drop lag-sensitive games
@@ -133,12 +176,8 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
             score += COMPLETION_BOOST
             reasons.append("Beaten — chase 100%")
         # Taste signal from tag affinity
-        tag_boost = 0.0
-        for t in tag_names:
-            for data in affinity.values():
-                if data["name"] == t and data["avg_rating"] >= 7:
-                    tag_boost += data["score"] * 0.5
-        score += min(tag_boost, 15)
+        tag_boost = sum(taste_boosts.get(t, 0.0) for t in tag_names)
+        score += min(tag_boost, TASTE_BOOST_CAP)
         if tag_boost:
             reasons.append("Matches your taste")
         # Genre fatigue penalty

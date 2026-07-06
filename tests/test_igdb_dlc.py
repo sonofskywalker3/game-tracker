@@ -26,6 +26,28 @@ def test_parse_genres_keeps_unmapped_name_and_handles_empty():
     assert igdb_dlc.parse_genres({"id": 1, "name": "x"}) == []
 
 
+def test_igdb_query_passes_timeout(monkeypatch):
+    """A hung IGDB connection must not block the enrichment thread forever:
+    every _igdb_query POST carries the module timeout."""
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return []
+
+    def fake_post(url, headers=None, data=None, timeout=None):
+        seen["timeout"] = timeout
+        return _Resp()
+
+    monkeypatch.setattr(igdb_dlc.requests, "post", fake_post)
+    assert igdb_dlc._igdb_query("fields name;", "cid", "tok") == []
+    assert seen["timeout"] == igdb_dlc.IGDB_TIMEOUT_SECONDS
+    assert igdb_dlc.IGDB_TIMEOUT_SECONDS > 0
+
+
 def _add_game_with_igdb(conn, title, igdb_id):
     conn.execute("INSERT INTO games (title, normalized_title, igdb_id) VALUES (?, ?, ?)",
                  (title, models.normalize_title(title), igdb_id))

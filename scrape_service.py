@@ -44,14 +44,19 @@ _cancel = threading.Event()
 _state: dict = {}
 
 
+def _reset_state_locked(vendor: str | None = None, phase: str = "idle") -> None:
+    """Reinitialize _state in place. Caller must hold _lock."""
+    _state.clear()
+    _state.update(phase=phase, vendor=vendor, message="", error=None,
+                  summary={}, started_at=None, finished_at=None)
+
+
 def _reset(vendor: str | None = None) -> None:
     """Reset global state to idle and clear the handshake events."""
     _continue.clear()
     _cancel.clear()
     with _lock:
-        _state.clear()
-        _state.update(phase="idle", vendor=vendor, message="", error=None,
-                      summary={}, started_at=None, finished_at=None)
+        _reset_state_locked(vendor)
 
 
 _reset()  # initialize at import
@@ -194,11 +199,6 @@ def status() -> dict:
     """A snapshot of the current scrape state (safe to call from any thread)."""
     with _lock:
         return dict(_state)
-
-
-def _is_active() -> bool:
-    with _lock:
-        return _state.get("phase") in _ACTIVE
 
 
 def backup_db() -> str | None:
@@ -355,9 +355,15 @@ def start(vendor: str, *, browser_factory=None, collect=None,
     vendor is unknown. browser_factory/collect/collect_addons are test seams."""
     if vendor not in VENDORS:
         return False, f"unknown vendor: {vendor}"
-    if _is_active():
-        return False, "a scrape is already running"
-    _reset(vendor=vendor)
+    # Guard + state transition under ONE lock acquisition: the phase flips to
+    # "launching" before the lock is released, so a near-simultaneous second
+    # start() can never also pass the active check and spawn a duplicate runner.
+    with _lock:
+        if _state.get("phase") in _ACTIVE:
+            return False, "a scrape is already running"
+        _reset_state_locked(vendor, phase="launching")
+    _continue.clear()
+    _cancel.clear()
     thread = threading.Thread(
         target=_run, args=(vendor, browser_factory, collect, collect_addons),
         daemon=True)
@@ -430,16 +436,21 @@ def _run(vendor: str, browser_factory, collect, collect_addons=None) -> None:
                 targets = _psn_addon_targets(games)
                 _set(phase="scraping",
                      message=f"checking add-ons for {len(targets)} games...")
-                owned_addons, visited_pids, addon_parents = addon_fn(
-                    page, targets, captured,
-                    progress=_progress("scraping", "checking add-ons", "owned"),
-                    should_cancel=_cancel.is_set)
-                games = list(games) + owned_addons
-                # Parent-down: link each add-on to the GAME whose page surfaced it
-                # (holds across PS4/PS5), via the same resolver path Nintendo uses.
-                from addon_parent import ParentRef
-                parent_map = {aid: ParentRef(product_id=gid)
-                              for aid, gid in addon_parents.items()}
+                try:
+                    owned_addons, visited_pids, addon_parents = addon_fn(
+                        page, targets, captured,
+                        progress=_progress("scraping", "checking add-ons", "owned"),
+                        should_cancel=_cancel.is_set)
+                except Exception as exc:  # never sink the scrape; keep the base library
+                    logger.warning("playstation: add-on pass failed (%s); "
+                                   "importing base library only", exc)
+                else:
+                    games = list(games) + owned_addons
+                    # Parent-down: link each add-on to the GAME whose page surfaced it
+                    # (holds across PS4/PS5), via the same resolver path Nintendo uses.
+                    from addon_parent import ParentRef
+                    parent_map = {aid: ParentRef(product_id=gid)
+                                  for aid, gid in addon_parents.items()}
             elif vendor == "nintendo":
                 from scrapers import nintendo_catalog
                 # Each owned add-on's own eShop page names its required base game

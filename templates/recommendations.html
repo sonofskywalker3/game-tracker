@@ -109,7 +109,7 @@
             <div class="flex gap-3">
                 <div class="w-16 flex-shrink-0 cursor-pointer" onclick="openModal(${g.id})">
                     <div class="aspect-[3/4] rounded overflow-hidden">
-                        ${g.cover_url ? `<img src="${g.cover_url}" alt="" draggable="false" class="w-full h-full object-cover">`
+                        ${g.cover_url ? `<img src="${escapeHtml(g.cover_url)}" alt="" draggable="false" class="w-full h-full object-cover">`
                                       : `<div class="cover-placeholder w-full h-full flex items-center justify-center">🎮</div>`}
                     </div>
                 </div>
@@ -139,7 +139,7 @@
                            placeholder="Ask me anything about your backlog…"
                            class="flex-1 bg-surface rounded border border-gray-700 px-2 py-1 text-white text-xs placeholder-gray-600 focus:border-accent focus:outline-none"
                            onkeydown="if(event.key==='Enter') sendDeciderMessage(${slot.id})">
-                    <button onclick="sendDeciderMessage(${slot.id})"
+                    <button onclick="sendDeciderMessage(${slot.id})" id="decider-send-${slot.id}"
                             class="px-2 py-1 bg-accent hover:bg-accent-hover rounded text-white text-xs">Send</button>
                 </div>
             </div>`;
@@ -148,7 +148,7 @@
             <div class="flex items-center gap-2 py-1">
                 <div class="w-7 flex-shrink-0 cursor-pointer" onclick="openModal(${c.game.id})">
                     <div class="aspect-[3/4] rounded overflow-hidden">
-                        ${c.game.cover_url ? `<img src="${c.game.cover_url}" class="w-full h-full object-cover">`
+                        ${c.game.cover_url ? `<img src="${escapeHtml(c.game.cover_url)}" class="w-full h-full object-cover">`
                                            : `<div class="cover-placeholder w-full h-full flex items-center justify-center text-xs">🎮</div>`}
                     </div>
                 </div>
@@ -315,7 +315,7 @@
             else box.innerHTML = results.map(r => `
                 <button onclick="pinSearchResult(${slotId}, ${r.id})" class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface">
                     <div class="w-6 flex-shrink-0"><div class="aspect-[3/4] rounded overflow-hidden">
-                        ${r.cover_url ? `<img src="${r.cover_url}" class="w-full h-full object-cover">` : `<div class="cover-placeholder w-full h-full flex items-center justify-center text-[10px]">🎮</div>`}
+                        ${r.cover_url ? `<img src="${escapeHtml(r.cover_url)}" class="w-full h-full object-cover">` : `<div class="cover-placeholder w-full h-full flex items-center justify-center text-[10px]">🎮</div>`}
                     </div></div>
                     <span class="flex-1 min-w-0 text-sm text-white truncate">${escapeHtml(r.title)}</span>
                     <span class="text-[10px] text-gray-500">${(r.platforms || []).join('/')}</span>
@@ -336,7 +336,7 @@
         box.innerHTML = items.map(it => `
             <div class="flex items-center gap-2 bg-surface-light rounded-lg px-3 py-2 cursor-pointer hover:bg-surface-lighter" onclick="openModal(${it.game_id})">
                 <div class="w-6 flex-shrink-0"><div class="aspect-[3/4] rounded overflow-hidden">
-                    ${it.cover_url ? `<img src="${it.cover_url}" class="w-full h-full object-cover">` : `<div class="cover-placeholder w-full h-full flex items-center justify-center text-[10px]">🎮</div>`}
+                    ${it.cover_url ? `<img src="${escapeHtml(it.cover_url)}" class="w-full h-full object-cover">` : `<div class="cover-placeholder w-full h-full flex items-center justify-center text-[10px]">🎮</div>`}
                 </div></div>
                 <span class="text-sm text-gray-200">${escapeHtml(it.title)}</span>
                 <span class="text-xs text-gray-500">${escapeHtml(it.outcome)}</span>
@@ -594,16 +594,28 @@
         _deciderAppendMsg(slotId, 'user', text);
         _persistDeciderState();
 
-        // Show thinking placeholder
+        // Show thinking placeholder and lock the input while the request runs
         const box = document.getElementById('decider-msgs-' + slotId);
+        const sendBtn = document.getElementById('decider-send-' + slotId);
         const thinking = document.createElement('div');
         thinking.className = 'flex justify-start';
         thinking.innerHTML = `<span class="bg-surface-lighter text-gray-500 rounded-lg px-2 py-1 italic">Thinking…</span>`;
         if (box) { box.appendChild(thinking); box.scrollTop = box.scrollHeight; }
+        input.disabled = true;
+        if (sendBtn) sendBtn.disabled = true;
 
-        const res = await api.post(`/api/slots/${slotId}/chat`, { messages: _deciderMessages[slotId] });
-
-        if (box && thinking.parentNode === box) box.removeChild(thinking);
+        let res;
+        try {
+            res = await api.post(`/api/slots/${slotId}/chat`, { messages: _deciderMessages[slotId] });
+        } catch (e) {
+            // Network drop or a non-JSON error response: fall through to the
+            // same notice path as an HTTP error so the user can retry.
+            res = { ok: false, data: null };
+        } finally {
+            if (box && thinking.parentNode === box) box.removeChild(thinking);
+            input.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+        }
 
         if (!res.ok) {
             const errCode = (res.data && res.data.error) || '';

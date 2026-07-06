@@ -50,6 +50,40 @@ def test_fetch_appdetails_failure_returns_none(tmp_path):
     assert steam_dlc.fetch_appdetails(99, cache_dir=tmp_path, session=sess, delay_s=0) is None
 
 
+def test_fetch_appdetails_does_not_cache_failure(tmp_path):
+    """A success:false body (Steam throttle / delisted app) must NOT poison the
+    disk cache: no cache file is written and the next call retries the network."""
+    sess = _FakeSession({"99": {"success": False}})
+    assert steam_dlc.fetch_appdetails(99, cache_dir=tmp_path, session=sess, delay_s=0) is None
+    assert not (tmp_path / "99.json").exists()
+    # The throttle clears; the retry now succeeds and gets cached.
+    sess.payload = {"99": {"success": True, "data": {"type": "game", "name": "Recovered"}}}
+    data = steam_dlc.fetch_appdetails(99, cache_dir=tmp_path, session=sess, delay_s=0)
+    assert data["name"] == "Recovered" and sess.calls == 2
+    assert (tmp_path / "99.json").exists()
+    # Third call is a genuine cache hit.
+    data2 = steam_dlc.fetch_appdetails(99, cache_dir=tmp_path, session=sess, delay_s=0)
+    assert data2["name"] == "Recovered" and sess.calls == 2
+
+
+def test_fetch_appdetails_does_not_cache_null_body(tmp_path):
+    """Steam returns a literal JSON null body when throttling -- same rule."""
+    sess = _FakeSession(None)
+    assert steam_dlc.fetch_appdetails(42, cache_dir=tmp_path, session=sess, delay_s=0) is None
+    assert not (tmp_path / "42.json").exists()
+    assert steam_dlc.fetch_appdetails(42, cache_dir=tmp_path, session=sess, delay_s=0) is None
+    assert sess.calls == 2   # retried, not served from a poisoned cache
+
+
+def test_fetch_appdetails_retries_legacy_empty_cache(tmp_path):
+    """An empty object cached by the old behavior is treated as a miss so it
+    self-heals on the next run."""
+    (tmp_path / "77.json").write_text("{}", encoding="utf-8")
+    sess = _FakeSession({"77": {"success": True, "data": {"type": "game", "name": "Healed"}}})
+    data = steam_dlc.fetch_appdetails(77, cache_dir=tmp_path, session=sess, delay_s=0)
+    assert data["name"] == "Healed" and sess.calls == 1
+
+
 # --- enrich_and_mark (temp DB, injected fetch) ---
 
 def _seed_steam_game(conn, appid="620", title="Portal 2"):

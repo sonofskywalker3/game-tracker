@@ -3,6 +3,8 @@ Configuration management for Game Tracker.
 Stores API credentials and other settings in a JSON file.
 """
 import json
+import os
+import tempfile
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -36,10 +38,19 @@ def load_config():
 
 
 def save_config(config):
-    """Save configuration to file."""
+    """Save configuration to file atomically (tempfile + replace), so a crash
+    mid-write can never leave a truncated config.json behind."""
     current = load_config()
     current.update(config)
-    CONFIG_PATH.write_text(json.dumps(current, indent=2))
+    fd, tmp_path = tempfile.mkstemp(
+        dir=CONFIG_PATH.parent, prefix=CONFIG_PATH.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(current, indent=2))
+        os.replace(tmp_path, CONFIG_PATH)
+    except OSError:
+        os.unlink(tmp_path)
+        raise
     return current
 
 

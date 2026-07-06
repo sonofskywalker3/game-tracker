@@ -441,6 +441,61 @@ def test_run_pipeline_xbox_mixed_resolved_and_unresolved(temp_db, monkeypatch):
     conn.close()
 
 
+def test_psn_addon_pass_failure_still_persists_base_scrape(temp_db, monkeypatch):
+    """A blown add-on pass must not sink the run: the already-scraped base library
+    still gets written + imported (same protection the Nintendo DLC pass has)."""
+    monkeypatch.setattr("config.get_twitch_credentials", lambda: (None, None))
+    written: dict = {}
+
+    def fake_write(vendor, games):
+        written["vendor"] = vendor
+        written["games"] = list(games)
+
+    monkeypatch.setattr(scrape_service, "write_scrape", fake_write)
+
+    def fake_collect(page, captured, progress=None):
+        return [ScrapedGame(title="Hades", platform="PS5",
+                            source="playstation", external_id="G1")]
+
+    def boom_addons(page, product_ids, captured, progress=None, should_cancel=None):
+        raise RuntimeError("add-on pass exploded")
+
+    ok, _ = scrape_service.start("playstation", browser_factory=_fake_browser,
+                                 collect=fake_collect, collect_addons=boom_addons)
+    assert ok
+    assert _wait_phase("awaiting_login")
+    scrape_service.signal_continue()
+    assert _wait_phase("complete")
+    assert written["vendor"] == "playstation"
+    assert [g.title for g in written["games"]] == ["Hades"]
+    st = scrape_service.status()
+    assert st["summary"]["new_games"] == 1
+
+
+def test_start_guard_atomic_before_thread_runs(monkeypatch):
+    """Two back-to-back start() calls must not both pass the active guard: the
+    phase flips to 'launching' inside start() itself (one lock acquisition), not
+    only once the spawned thread gets scheduled."""
+    from types import SimpleNamespace
+    launches: list[int] = []
+
+    class _InertThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            launches.append(1)
+
+    monkeypatch.setattr(scrape_service, "threading",
+                        SimpleNamespace(Thread=_InertThread))
+    ok1, _ = scrape_service.start("playstation")
+    ok2, msg = scrape_service.start("playstation")
+    assert ok1 is True
+    assert ok2 is False and "already running" in msg
+    assert len(launches) == 1
+    assert scrape_service.status()["phase"] == "launching"
+
+
 def test_scrape_progress_updates_status_message():
     cb = scrape_service._scrape_progress("playstation")
     cb(150)

@@ -2,6 +2,7 @@ import requests
 
 import barcode
 import igdb_match
+import import_scraped
 import models
 
 
@@ -48,6 +49,23 @@ def _seed_game(title, platform_short=None):
     conn.commit()
     conn.close()
     return gid
+
+
+def test_owned_game_id_matches_stored_match_key(temp_db):
+    """games.normalized_title stores normalize_title(clean_title(...)) (the
+    import_scraped.match_key composition), so ownership detection must apply the
+    same composed key: an IGDB name carrying a platform-edition suffix still
+    matches the stored game."""
+    conn = models.get_db()
+    conn.execute(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        ("Minecraft", import_scraped.match_key("Minecraft: Nintendo Switch Edition")))
+    conn.commit()
+    gid = conn.execute("SELECT id FROM games").fetchone()[0]
+    assert barcode._owned_game_id(conn, "Minecraft: Nintendo Switch Edition") == gid
+    # Plain titles keep matching too.
+    assert barcode._owned_game_id(conn, "Minecraft") == gid
+    conn.close()
 
 
 def test_registry_put_then_get_roundtrip(temp_db):

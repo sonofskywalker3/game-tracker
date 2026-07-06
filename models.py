@@ -1010,15 +1010,37 @@ def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_schema_flags(conn: sqlite3.Connection) -> None:
+    """Create the schema_flags marker table (records one-time reconciles that must
+    not re-run on every startup). Idempotent."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schema_flags (
+            name       TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+
+TAGGED_PHYSICAL_FLAG = "tagged_games_to_physical"
+
+
 def migrate_tagged_games_to_physical(conn: sqlite3.Connection) -> None:
     """One-time conservative reconcile of the legacy 'Physical' tag into the
     per-platform format source of truth. For every game carrying the 'Physical'
     tag, set format='physical' on each owned platform whose current format is
     'digital' or NULL. Never downgrades 'both' or an existing 'physical', and
-    never touches untagged games. Idempotent: only digital/NULL rows of tagged
-    games move, so re-running is a no-op.
+    never touches untagged games.
+
+    Gated by a schema_flags marker: without it this re-ran on every startup and
+    silently reverted deliberate physical->digital edits on games still carrying
+    the retired legacy tag.
 
     Must run AFTER migrate_game_platform_format (which creates the column)."""
+    migrate_schema_flags(conn)
+    if conn.execute("SELECT 1 FROM schema_flags WHERE name = ?",
+                    (TAGGED_PHYSICAL_FLAG,)).fetchone():
+        return
     conn.execute("""
         UPDATE game_platforms SET format = 'physical'
         WHERE (format IS NULL OR format = 'digital')
@@ -1027,6 +1049,8 @@ def migrate_tagged_games_to_physical(conn: sqlite3.Connection) -> None:
               WHERE gt.game_id = game_platforms.game_id AND t.name = 'Physical'
           )
     """)
+    conn.execute("INSERT OR IGNORE INTO schema_flags (name) VALUES (?)",
+                 (TAGGED_PHYSICAL_FLAG,))
     conn.commit()
 
 
@@ -1159,6 +1183,11 @@ def migrate_db():
         conn.execute("ALTER TABLE user_ratings ADD COLUMN series_order INTEGER")
         conn.commit()
         print("Added series columns to user_ratings")
+
+    # Every series operation filters on series_id; index it.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_series_id "
+                 "ON user_ratings(series_id)")
+    conn.commit()
 
     # Add/backfill platform era category
     migrate_platform_category(conn)

@@ -13,6 +13,7 @@ import requests
 
 import dedup
 import igdb_match
+import import_scraped
 import models
 
 log = logging.getLogger(__name__)
@@ -67,13 +68,29 @@ _ALL_NOISE_WORDS: tuple[str, ...] = _RETAIL_NOISE_WORDS + _PUBLISHER_NOISE_WORDS
 _BRACKETS_RE = re.compile(r"[\(\[\{][^\)\]\}]*[\)\]\}]")
 # Drops "video game" plus an optional preceding genre word ("racing video game").
 _VIDEO_GAME_RE = re.compile(r"\b(?:\w+\s+)?video game\b", re.IGNORECASE)
-_NOISE_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(w) for w in _ALL_NOISE_WORDS) + r")\b",
+# Noise words are stripped ONLY at the trailing edge (typical UPC DB shapes:
+# "Game Title - Nintendo Switch", "Game Title Wii", trailing publisher), NEVER
+# mid-title — names that CONTAIN a platform word ("Wii Sports", "Nintendo Switch
+# Sports", "Wii Play") must survive intact. Bracketed platform chunks anywhere
+# ("(Wii U)") are handled by _BRACKETS_RE above.
+_TRAILING_NOISE_RE = re.compile(
+    r"[\s\-–—:,]*\b(?:" + "|".join(re.escape(w) for w in _ALL_NOISE_WORDS)
+    + r")\b\.?[\s\-–—:,]*$",
     re.IGNORECASE,
 )
 # Standalone catalog numbers / embedded UPCs (5+ digits). The floor preserves
 # real title numbers like "1942" or "FIFA 23".
 _CATALOG_NUM_RE = re.compile(r"\b\d{5,}\b")
+
+
+def _strip_trailing_noise(t: str) -> str:
+    """Peel noise words off the trailing edge, one at a time, stopping before the
+    title would be emptied (a console UPC titled just "Nintendo Switch" stays)."""
+    while True:
+        stripped = _TRAILING_NOISE_RE.sub("", t)
+        if stripped == t or not stripped.strip():
+            return t
+        t = stripped
 # Retail platform phrase (as it appears in UPC titles) -> app short_name. Longest
 # phrases first so "nintendo switch" wins over "switch". Extensible.
 RETAIL_PLATFORM_TO_SHORT: tuple[tuple[str, str], ...] = (
@@ -132,6 +149,8 @@ _SEP_DASH_RE = re.compile(r"\s+[-–—]+\s+")
 def clean_product_title(raw: str | None) -> str:
     """Strip retail/platform/packaging boilerplate from a UPC product title so it
     can be title-searched on IGDB. Preserves intra-word hyphens and inner colons.
+    Platform words are removed only from brackets or the trailing edge, never
+    mid-title ("Wii Sports" stays "Wii Sports").
 
     "Mario Kart 8 Deluxe racing video game (Nintendo Switch)" -> "Mario Kart 8 Deluxe"
     """
@@ -139,8 +158,8 @@ def clean_product_title(raw: str | None) -> str:
         return ""
     t = _BRACKETS_RE.sub(" ", raw)
     t = _VIDEO_GAME_RE.sub(" ", t)
-    t = _NOISE_RE.sub(" ", t)
-    t = _CATALOG_NUM_RE.sub(" ", t)
+    t = _CATALOG_NUM_RE.sub(" ", t)    # numbers first, so a publisher becomes trailing
+    t = _strip_trailing_noise(t)
     t = _SEP_DASH_RE.sub(" ", t)                 # collapse separator dashes
     t = re.sub(r"\s{2,}", " ", t).strip()
     return t.strip(" -–—:").strip()    # trim stray leading/trailing seps
@@ -259,16 +278,20 @@ def registry_put(conn: sqlite3.Connection, upc: str, *, igdb_id: int | None = No
                  game_id: int | None = None) -> None:
     """Upsert a UPC -> game mapping (stamps confirmed_at).
 
-    cover_url is stored but never clobbered with NULL on update — an existing
-    cover is preserved when a later call omits it (COALESCE guard)."""
+    Every field is COALESCE-guarded on update: an incoming non-NULL value wins,
+    an omitted (NULL) value preserves what a previous call confirmed — so a
+    metadata-less re-put never degrades an existing registry row."""
     conn.execute(
         "INSERT INTO barcode_registry "
         "(upc, igdb_id, title, platform, cover_url, game_id, confirmed_at) "
         "VALUES (?, ?, ?, ?, ?, ?, datetime('now')) "
-        "ON CONFLICT(upc) DO UPDATE SET igdb_id=excluded.igdb_id, title=excluded.title, "
-        "platform=excluded.platform, "
+        "ON CONFLICT(upc) DO UPDATE SET "
+        "igdb_id=COALESCE(excluded.igdb_id, barcode_registry.igdb_id), "
+        "title=COALESCE(excluded.title, barcode_registry.title), "
+        "platform=COALESCE(excluded.platform, barcode_registry.platform), "
         "cover_url=COALESCE(excluded.cover_url, barcode_registry.cover_url), "
-        "game_id=excluded.game_id, confirmed_at=datetime('now')",
+        "game_id=COALESCE(excluded.game_id, barcode_registry.game_id), "
+        "confirmed_at=datetime('now')",
         (upc, igdb_id, title, platform, cover_url, game_id),
     )
 
@@ -283,12 +306,17 @@ def registry_upcs_for_game(conn: sqlite3.Connection, game_id: int) -> list[dict]
 
 
 def _owned_game_id(conn: sqlite3.Connection, title: str) -> int | None:
-    """id of an existing game whose normalized title matches, else None."""
+    """id of an existing game whose stored match key equals the title's, else None.
+
+    games.normalized_title stores normalize_title(clean_title(...)) — the
+    import_scraped.match_key composition — so the same composed key is applied
+    here; a bare normalize_title would miss titles clean_title changes (edition
+    suffixes, leading region tags, ...)."""
     if not title:
         return None
     row = conn.execute(
         "SELECT id FROM games WHERE normalized_title = ?",
-        (models.normalize_title(title),),
+        (import_scraped.match_key(title),),
     ).fetchone()
     return row["id"] if row else None
 

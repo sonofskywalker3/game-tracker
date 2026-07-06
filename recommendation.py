@@ -15,6 +15,8 @@ from models import get_db
 # Effective time-to-beat (override, else HLTB main) at or under this counts as a
 # "quick session" pick.
 QUICK_SESSION_MAX_MINUTES = 600
+# Either critic score at or above this qualifies as "critically acclaimed".
+ACCLAIMED_MIN_CRITIC_SCORE = 85
 
 
 def calculate_tag_affinity(conn):
@@ -186,17 +188,19 @@ def get_quick_picks(conn, count=3):
         LIMIT ?
     """, (QUICK_SESSION_MAX_MINUTES, count)).fetchall()
 
-    # "Highly rated" - best critic scores
+    # "Highly rated" - best critic scores. A game qualifies when EITHER score
+    # clears the bar, so display/sort by the better of the two — not by a
+    # COALESCE that would surface the lower metacritic number.
     picks['critically_acclaimed'] = conn.execute("""
         SELECT g.id, g.title, g.cover_url,
-               COALESCE(g.metacritic_score, g.opencritic_score) as score
+               MAX(COALESCE(g.metacritic_score, 0), COALESCE(g.opencritic_score, 0)) as score
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status = 'backlog'
-        AND (g.metacritic_score >= 85 OR g.opencritic_score >= 85)
+        AND (g.metacritic_score >= ? OR g.opencritic_score >= ?)
         ORDER BY score DESC
         LIMIT ?
-    """, (count,)).fetchall()
+    """, (ACCLAIMED_MIN_CRITIC_SCORE, ACCLAIMED_MIN_CRITIC_SCORE, count)).fetchall()
 
     # "Hidden gems" - lower profile but potentially good
     picks['hidden_gems'] = conn.execute("""

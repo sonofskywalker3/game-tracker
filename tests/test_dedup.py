@@ -1,8 +1,8 @@
 import sqlite3
 
 from dedup import (
-    _is_number_token, _numberless, _word_prefix_of, base_key,
-    compute_merged_curation, find_duplicate_groups, group_candidates,
+    _differ_only_by_number, _is_number_token, _numberless, _word_prefix_of,
+    base_key, compute_merged_curation, find_duplicate_groups, group_candidates,
     infer_series_name, merge_games, refresh_normalized_titles, strip_edition_key,
 )
 from models import normalize_title
@@ -141,9 +141,13 @@ def _full_conn():
             updated_at TIMESTAMP);
         CREATE TABLE platforms (id INTEGER PRIMARY KEY, short_name TEXT UNIQUE);
         CREATE TABLE game_platforms (game_id INTEGER, platform_id INTEGER,
-            owned BOOLEAN DEFAULT 1, psprices_id TEXT,
+            owned BOOLEAN DEFAULT 1, psprices_id TEXT, format TEXT,
             PRIMARY KEY (game_id, platform_id),
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
+        CREATE TABLE barcode_registry (upc TEXT PRIMARY KEY, igdb_id INTEGER,
+            title TEXT, platform TEXT,
+            game_id INTEGER REFERENCES games(id) ON DELETE SET NULL,
+            confirmed_at TEXT, cover_url TEXT);
         CREATE TABLE game_external_ids (game_id INTEGER, source TEXT, external_id TEXT,
             source_title TEXT, PRIMARY KEY (source, external_id),
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
@@ -231,6 +235,69 @@ def test_merge_preserves_series_source():
     conn.close()
 
 
+def test_merge_unions_platform_formats_physical_plus_digital_is_both():
+    # format is the single source of truth for physical/digital ownership; the
+    # merged row must reflect owning BOTH copies, never silently drop 'physical'.
+    conn = _full_conn()
+    _add_game(conn, 1, "Hades")
+    _add_game(conn, 2, "Hades II")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (1, 1, 'digital')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, format) "
+                 "VALUES (2, 1, 'physical')")
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+    fmt = conn.execute("SELECT format FROM game_platforms "
+                       "WHERE game_id = 1 AND platform_id = 1").fetchone()[0]
+    assert fmt == "both"
+
+
+def test_merge_carries_format_owned_psprices_on_drop_only_platform():
+    conn = _full_conn()
+    _add_game(conn, 1, "Hades", platform_ids=[1])
+    _add_game(conn, 2, "Hades Copy")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, owned, psprices_id, format) "
+                 "VALUES (2, 2, 1, 'PSP-1', 'physical')")
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+    row = conn.execute("SELECT owned, psprices_id, format FROM game_platforms "
+                       "WHERE game_id = 1 AND platform_id = 2").fetchone()
+    assert (row["owned"], row["psprices_id"], row["format"]) == (1, "PSP-1", "physical")
+
+
+def test_merge_platform_conflict_keeps_survivor_values_and_fills_gaps():
+    conn = _full_conn()
+    _add_game(conn, 1, "Hades")
+    _add_game(conn, 2, "Hades Copy")
+    # platform 1: survivor has no psprices_id; drop supplies one (same format).
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, psprices_id, format) "
+                 "VALUES (1, 1, NULL, 'physical')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, psprices_id, format) "
+                 "VALUES (2, 1, 'D-1', 'physical')")
+    # platform 2: survivor already 'both' with its own psprices_id — both sticky,
+    # survivor's psprices_id wins.
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, psprices_id, format) "
+                 "VALUES (1, 2, 'S-2', 'both')")
+    conn.execute("INSERT INTO game_platforms (game_id, platform_id, psprices_id, format) "
+                 "VALUES (2, 2, 'D-2', 'digital')")
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+    rows = {r["platform_id"]: r for r in conn.execute(
+        "SELECT platform_id, psprices_id, format FROM game_platforms WHERE game_id = 1")}
+    assert (rows[1]["psprices_id"], rows[1]["format"]) == ("D-1", "physical")
+    assert (rows[2]["psprices_id"], rows[2]["format"]) == ("S-2", "both")
+
+
+def test_merge_repoints_barcode_registry_links():
+    # barcode_registry.game_id is ON DELETE SET NULL — without re-pointing, the
+    # drop's learned UPC links would be orphaned by the delete.
+    conn = _full_conn()
+    _add_game(conn, 1, "Metroid Dread")
+    _add_game(conn, 2, "Metroid Dread US")
+    conn.execute("INSERT INTO barcode_registry (upc, game_id) VALUES ('045496596675', 2)")
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+    gid = conn.execute("SELECT game_id FROM barcode_registry "
+                       "WHERE upc = '045496596675'").fetchone()[0]
+    assert gid == 1
+
+
 def test_refresh_updates_keys_to_fresh_clean_title():
     conn = _full_conn()
     # stale normalized_title (old key with edition suffix still present)
@@ -308,6 +375,33 @@ def test_no_candidate_for_bare_numeral_title_substring():
 
 def test_no_candidate_when_only_arabic_number_differs():
     conn = _games_conn([(1, "Axiom Verge"), (2, "Axiom Verge 2")])
+    assert find_duplicate_groups(conn)["candidates"] == []
+
+
+def test_differ_only_by_number_same_number_different_spelling():
+    # Roman vs arabic spelling of the SAME number is the same game, so the
+    # pair is NOT "differ only by number" and must stay a duplicate candidate.
+    assert _differ_only_by_number("final fantasy vii", "final fantasy 7") is False
+    assert _differ_only_by_number("final fantasy x", "final fantasy 10") is False
+    # Different numbers (regardless of spelling) are distinct series entries.
+    assert _differ_only_by_number("final fantasy vii", "final fantasy viii") is True
+    assert _differ_only_by_number("final fantasy vii", "final fantasy 8") is True
+    assert _differ_only_by_number("final fantasy 7", "final fantasy 8") is True
+    # Base name vs numbered entry is still a distinct series entry.
+    assert _differ_only_by_number("final fantasy", "final fantasy 13") is True
+
+
+def test_roman_vs_arabic_duplicate_stays_a_candidate():
+    # "Final Fantasy VII" vs "Final Fantasy 7" is one playable game imported
+    # with two spellings — the numeral guard must not suppress the pair.
+    conn = _games_conn([(1, "Final Fantasy VII"), (2, "Final Fantasy 7")])
+    cands = find_duplicate_groups(conn)["candidates"]
+    assert len(cands) == 1
+    assert {cands[0]["a"], cands[0]["b"]} == {1, 2}
+
+
+def test_roman_vs_arabic_different_numbers_not_candidates():
+    conn = _games_conn([(1, "Final Fantasy VII"), (2, "Final Fantasy 8")])
     assert find_duplicate_groups(conn)["candidates"] == []
 
 

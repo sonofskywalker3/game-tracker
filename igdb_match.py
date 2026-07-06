@@ -106,13 +106,23 @@ def platform_labels(platform_ids: Iterable[int] | None) -> list[str]:
     return [name for name, pset in _PLATFORM_LABELS if pset & ids]
 
 
+def _word_contains(container: str, phrase: str) -> bool:
+    """True if `phrase` appears in `container` as a whole-word token run.
+
+    Both args are normalize_title outputs (lowercase, space-separated tokens),
+    so padding with spaces makes plain substring search word-boundary-aware:
+    "ori" is contained in "ori and the blind forest" but not in "original sin".
+    """
+    return f" {phrase} " in f" {container} "
+
+
 def _title_score(cand_name: str, search: str) -> int | None:
     a, b = normalize_title(cand_name), normalize_title(search)
     if not a or not b:
         return None
     if a == b:
         return _TITLE_EXACT
-    if b in a or a in b:
+    if _word_contains(a, b) or _word_contains(b, a):
         return _TITLE_CONTAINS
     # Tolerate a differing leading/interior article (e.g. a UPC title dropping the
     # "A" in "A Link Between Worlds") by re-checking with a/an/the removed. Kept
@@ -120,7 +130,7 @@ def _title_score(cand_name: str, search: str) -> int | None:
     # "Mega Man 2" to "Mega Man Legacy Collection 2".
     ax = " ".join(w for w in a.split() if w not in _ARTICLE_WORDS)
     bx = " ".join(w for w in b.split() if w not in _ARTICLE_WORDS)
-    if ax and bx and (ax == bx or bx in ax or ax in bx):
+    if ax and bx and (ax == bx or _word_contains(ax, bx) or _word_contains(bx, ax)):
         return _TITLE_CONTAINS
     return None
 

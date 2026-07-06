@@ -168,6 +168,7 @@
     let allGames = [];
     let searchTimeout = null;
     const initialSeriesId = {{ series_id if series_id else 'null' }};
+    let initialSelectionDone = false;
 
     async function loadAllGames() {
         allGames = await api.get('/api/games');
@@ -189,10 +190,22 @@
             select.appendChild(option);
         });
 
-        // If we have an initial series ID, select it
-        if (initialSeriesId) {
-            select.value = initialSeriesId;
-            loadSelectedSeries();
+        // Auto-select the URL's series on the FIRST load only. On later reloads
+        // (after rename/create/delete) preserve the user's current selection —
+        // or clear it if the selected series no longer exists.
+        if (!initialSelectionDone) {
+            initialSelectionDone = true;
+            if (initialSeriesId) {
+                select.value = initialSeriesId;
+                loadSelectedSeries();
+            }
+        } else if (currentSeries) {
+            if (allSeriesData.some(s => s.id === currentSeries.id)) {
+                select.value = currentSeries.id;
+                loadSelectedSeries();
+            } else {
+                showEmptyState();
+            }
         }
     }
 
@@ -266,7 +279,7 @@
             <div class="game-item flex items-center gap-4 p-4 bg-surface-light rounded-lg cursor-grab border border-transparent hover:border-gray-600 transition-colors"
                  draggable="true" data-game-id="${game.id}">
                 ${game.cover_url
-                    ? `<img src="${game.cover_url.replace('t_cover_big', 't_thumb')}" alt="" class="w-8 h-10 object-cover rounded flex-shrink-0">`
+                    ? `<img src="${escapeHtml(game.cover_url.replace('t_cover_big', 't_thumb'))}" alt="" class="w-8 h-10 object-cover rounded flex-shrink-0">`
                     : `<div class="flex items-center justify-center w-8 h-10 rounded bg-surface text-gray-400 font-medium text-sm flex-shrink-0">${index + 1}</div>`
                 }
                 <div class="flex-1 min-w-0">
@@ -514,16 +527,16 @@
             <div class="bg-surface rounded-lg overflow-hidden border border-gray-700 hover:border-gray-600 transition-colors">
                 <div class="aspect-[3/4] relative">
                     ${game.cover_url
-                        ? `<img src="${game.cover_url}" alt="${game.name}" class="w-full h-full object-cover opacity-60">`
+                        ? `<img src="${escapeHtml(game.cover_url)}" alt="${escapeHtml(game.name)}" class="w-full h-full object-cover opacity-60">`
                         : `<div class="w-full h-full bg-surface-lighter flex items-center justify-center text-2xl opacity-60">🎮</div>`
                     }
-                    <button onclick="addMissingGame('${game.name.replace(/'/g, "\\'")}')"
+                    <button data-game-name="${escapeHtml(game.name)}" onclick="addMissingGame(this.dataset.gameName)"
                             class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity">
                         <span class="px-3 py-1.5 bg-accent rounded-lg text-white text-sm font-medium">+ Add</span>
                     </button>
                 </div>
                 <div class="p-2">
-                    <p class="text-sm text-gray-400 truncate" title="${game.name}">${game.name}</p>
+                    <p class="text-sm text-gray-400 truncate" title="${escapeHtml(game.name)}">${escapeHtml(game.name)}</p>
                 </div>
             </div>
         `).join('');
@@ -699,9 +712,9 @@
         }
 
         container.innerHTML = suggestions.map(s => `
-            <button onclick="selectSeriesSuggestion('${s.name.replace(/'/g, "\\'")}')"
+            <button data-series-name="${escapeHtml(s.name)}" onclick="selectSeriesSuggestion(this.dataset.seriesName)"
                     class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-sm text-white transition-colors">
-                ${s.name} <span class="text-gray-500">(${s.count})</span>
+                ${escapeHtml(s.name)} <span class="text-gray-500">(${s.count})</span>
             </button>
         `).join('');
 

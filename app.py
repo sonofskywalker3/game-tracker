@@ -1,7 +1,9 @@
 """
 Game Tracker - Flask Application
 """
+import csv
 import difflib
+import io
 import json
 import logging
 import os
@@ -17,7 +19,7 @@ import igdb_match
 import slots
 import slot_schedule
 import barcode
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
     reclean_display_titles, DB_PATH, add_series_pattern, apply_traits_catalog,
@@ -247,15 +249,17 @@ def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False
     Commits the insert (the catalog appliers commit internally)."""
     title = clean_title(raw_title)
     normalized = normalize_title(title)
-    existing = conn.execute(
-        "SELECT id FROM games WHERE normalized_title = ?", (normalized,)).fetchone()
-    if existing:
-        return 'exists', existing['id'], title
-
-    conn.execute(
-        "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?)",
+    # Atomic dedup on UNIQUE(normalized_title): DO NOTHING (rowcount 0) means a
+    # concurrent or prior create won — no check-then-insert race, no 500.
+    cur = conn.execute(
+        "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?) "
+        "ON CONFLICT(normalized_title) DO NOTHING",
         (title, normalized, (cover_url or '').strip() or None))
-    game_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if cur.rowcount == 0:
+        existing = conn.execute(
+            "SELECT id FROM games WHERE normalized_title = ?", (normalized,)).fetchone()
+        return 'exists', existing['id'], title
+    game_id = cur.lastrowid
     conn.execute(
         "INSERT INTO user_ratings (game_id, status) VALUES (?, 'backlog')", (game_id,))
 
@@ -391,6 +395,117 @@ def api_games_batch():
 
     conn.close()
     return jsonify({'added': added, 'skipped': skipped, 'results': results})
+
+
+# CSV columns for library export/import (Settings > Data Management).
+CSV_FIELDS = ("title", "status", "rating", "priority", "platforms", "notes")
+# Statuses accepted from an imported CSV; anything else falls back to backlog.
+IMPORTABLE_STATUSES = frozenset({"backlog", "playing", "completed", "100",
+                                 "dropped", "parked"})
+
+
+@app.route('/api/data/export')
+def api_data_export():
+    """Download the whole library as a CSV attachment (title, status, rating,
+    priority, platforms, notes). Platforms are comma-joined short_names."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT g.id, g.title, ur.status, ur.rating, ur.priority, ur.notes
+        FROM games g
+        LEFT JOIN user_ratings ur ON ur.game_id = g.id
+        ORDER BY g.title
+    """).fetchall()
+    plats: dict[int, list] = {}
+    for p in conn.execute(
+            "SELECT gp.game_id, p.short_name FROM game_platforms gp "
+            "JOIN platforms p ON p.id = gp.platform_id "
+            "ORDER BY gp.game_id, p.short_name").fetchall():
+        plats.setdefault(p["game_id"], []).append(p["short_name"])
+    conn.close()
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=CSV_FIELDS, lineterminator="\r\n")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({
+            "title": r["title"],
+            "status": r["status"] or "",
+            "rating": r["rating"] if r["rating"] is not None else "",
+            "priority": r["priority"] if r["priority"] is not None else "",
+            "platforms": ",".join(plats.get(r["id"], [])),
+            "notes": r["notes"] or "",
+        })
+    return Response(
+        buf.getvalue(), mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=game-library.csv"})
+
+
+@app.route('/api/data/import', methods=['POST'])
+def api_data_import():
+    """Import games from an uploaded CSV (multipart field 'file'). Only 'title'
+    is required; optional columns: status, rating, priority, platforms
+    (comma-separated short_names), notes. Existing games (by normalized title)
+    are skipped, never modified. No per-game IGDB enrichment here — bulk covers/
+    metadata come from the Settings cover-fetch flow afterwards."""
+    file = request.files.get('file')
+    if file is None or not file.filename:
+        return jsonify({'error': "CSV file is required (multipart field 'file')"}), 400
+    try:
+        text = file.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return jsonify({'error': 'File is not valid UTF-8 text'}), 400
+
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = [(f or '').strip().lower() for f in (reader.fieldnames or [])]
+    if 'title' not in fieldnames:
+        return jsonify({'error': "CSV must have a 'title' column"}), 400
+
+    conn = get_db()
+    imported = skipped = 0
+    errors = []
+    for lineno, raw in enumerate(reader, start=2):   # 1-based; line 1 is the header
+        row = {(k or '').strip().lower(): (v or '').strip()
+               for k, v in raw.items() if k is not None}
+        title = row.get('title', '')
+        if not title:
+            errors.append(f"line {lineno}: missing title")
+            continue
+
+        platforms = [p.strip() for p in row.get('platforms', '').split(',') if p.strip()]
+        status, game_id, _clean = _insert_game(conn, title, platforms=platforms)
+        if status == 'exists':
+            skipped += 1
+            continue
+        imported += 1
+
+        updates, params = [], []
+        csv_status = row.get('status', '')
+        if csv_status and csv_status in IMPORTABLE_STATUSES:
+            updates.append("status = ?")
+            params.append(csv_status)
+        elif csv_status:
+            errors.append(f"line {lineno}: unknown status {csv_status!r}, kept backlog")
+        for field in ('rating', 'priority'):
+            value = row.get(field, '')
+            if not value:
+                continue
+            try:
+                params.append(int(value))
+                updates.append(f"{field} = ?")
+            except ValueError:
+                errors.append(f"line {lineno}: non-numeric {field} {value!r}, ignored")
+        if row.get('notes'):
+            updates.append("notes = ?")
+            params.append(row['notes'])
+        if updates:
+            params.append(game_id)
+            conn.execute(
+                f"UPDATE user_ratings SET {', '.join(updates)} WHERE game_id = ?",
+                params)
+
+    conn.commit()
+    conn.close()
+    return jsonify({'imported': imported, 'skipped': skipped, 'errors': errors})
 
 
 @app.route('/api/games/<int:game_id>')
@@ -857,6 +972,12 @@ def api_igdb_pick(game_id):
     igdb_id = data.get('igdb_id')
     if igdb_id is None:
         return jsonify({'error': 'igdb_id is required'}), 400
+    try:
+        igdb_id = int(igdb_id)
+    except (ValueError, TypeError):
+        # A non-integer igdb_id persisted here bricks series sort-by-release and
+        # DLC refresh later — reject it at the door.
+        return jsonify({'error': 'igdb_id must be an integer'}), 400
     cover_url = (data.get('cover_url') or '').strip() or None
     conn = get_db()
     if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
@@ -1092,6 +1213,8 @@ def api_update_game(game_id):
         return jsonify({'success': True})
     except sqlite3.IntegrityError:
         return jsonify({'error': 'A game with that name already exists'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid numeric value'}), 400
     finally:
         conn.close()
 
@@ -1599,7 +1722,12 @@ def igdb_release_dates_by_id(igdb_ids, client_id, client_secret):
     call. Ids with no stored date are omitted; empty/blank input returns {} without
     a network call. Looking dates up by the game's pinned igdb_id is exact — it
     replaces the old fuzzy title re-search that cross-matched same-franchise
-    entries (e.g. every numbered Final Fantasy is a substring of the next)."""
+    entries (e.g. every numbered Final Fantasy is a substring of the next).
+
+    Remasters/ports carry their re-release date, so the ORIGINAL's date is taken
+    from version_parent/parent_game when present — the earliest available date
+    wins (a series sorted by release wants Tales of Symphonia Remastered at 2003,
+    not 2023)."""
     from fetch_covers import get_access_token
     ids = sorted({i for i in igdb_ids if i})
     if not ids:
@@ -1610,12 +1738,20 @@ def igdb_release_dates_by_id(igdb_ids, client_id, client_secret):
         'Authorization': f'Bearer {token}',
         'Content-Type': 'text/plain',
     }
-    query = (f"fields id, first_release_date; "
+    query = (f"fields id, first_release_date, version_parent.first_release_date, "
+             f"parent_game.first_release_date; "
              f"where id = ({','.join(str(i) for i in ids)}); limit {len(ids)};")
     response = requests.post('https://api.igdb.com/v4/games', headers=headers, data=query)
     response.raise_for_status()
-    return {row['id']: row['first_release_date'] for row in response.json()
-            if row.get('first_release_date')}
+    out = {}
+    for row in response.json():
+        dates = [row.get('first_release_date'),
+                 (row.get('version_parent') or {}).get('first_release_date'),
+                 (row.get('parent_game') or {}).get('first_release_date')]
+        dates = [d for d in dates if d]
+        if dates:
+            out[row['id']] = min(dates)
+    return out
 
 
 @app.route('/api/series/<int:series_id>/sort-by-release', methods=['POST'])
@@ -2284,6 +2420,9 @@ def api_get_settings():
         'decider_model': config.get('decider_model', 'claude-sonnet-4-6'),
         'decider_models': [{'id': mid, 'label': label} for mid, label in DECIDER_MODELS],
         'has_anthropic_key': bool(config.get('anthropic_api_key')),
+        'steam_api_key': '••••••••' if config.get('steam_api_key') else '',
+        'steam_id': config.get('steam_id', ''),   # SteamID64 is not a secret
+        'has_steam_credentials': bool(config.get('steam_api_key') and config.get('steam_id')),
     }
     return jsonify(masked)
 
@@ -2305,6 +2444,12 @@ def api_update_settings():
 
     if 'decider_model' in data:
         updates['decider_model'] = data['decider_model'].strip()
+
+    if 'steam_api_key' in data and data['steam_api_key'] != '••••••••':
+        updates['steam_api_key'] = data['steam_api_key'].strip()
+
+    if 'steam_id' in data:
+        updates['steam_id'] = data['steam_id'].strip()
 
     if updates:
         save_config(updates)
@@ -2381,7 +2526,9 @@ def api_igdb_search():
     from fetch_covers import get_access_token
     import requests
 
-    query = request.args.get('q', '').strip()
+    # Strip double quotes: the query is spliced into an Apicalypse string literal,
+    # and a quote breaks out of it (same sanitization as the series IGDB routes).
+    query = request.args.get('q', '').strip().replace('"', '')
     if not query or len(query) < 2:
         return jsonify([])
 
@@ -2585,13 +2732,18 @@ def api_scrape_status():
 # Startup
 # ============================================================================
 
-if __name__ == '__main__':
-    # Initialize database if needed
+def ensure_db():
+    """Bring the database fully up to date on startup. init_db alone is NOT a
+    complete schema (it predates every migration), so a fresh install must run
+    the migrations too — previously a brand-new DB was missing the slate/DLC/
+    barcode tables and the app 500'd everywhere on first launch."""
     if not DB_PATH.exists():
         init_db()
-    else:
-        # Run migrations for existing databases
-        migrate_db()
+    migrate_db()
+
+
+if __name__ == '__main__':
+    ensure_db()
 
     start_enrichment_drip()
 

@@ -34,6 +34,27 @@ def test_clean_product_title_handles_empty():
     assert barcode.clean_product_title("") == ""
 
 
+def test_clean_product_title_keeps_platform_words_inside_names():
+    """Platform indicators are only retail noise at the trailing edge or in
+    brackets — a game whose NAME contains a platform word must survive intact."""
+    cases = {
+        "Wii Sports": "Wii Sports",
+        "Nintendo Switch Sports": "Nintendo Switch Sports",
+        "Wii Play": "Wii Play",
+        "Mario Kart 8 Deluxe - Nintendo Switch": "Mario Kart 8 Deluxe",
+        "Zelda: Breath of the Wild (Wii U)": "Zelda: Breath of the Wild",
+    }
+    for raw, expected in cases.items():
+        assert barcode.clean_product_title(raw) == expected
+
+
+def test_clean_product_title_never_strips_to_empty():
+    # A console/accessory UPC whose whole title is a platform name: stripping
+    # would leave nothing, so the title is kept as-is.
+    assert barcode.clean_product_title("Nintendo Switch") == "Nintendo Switch"
+    assert barcode.clean_product_title("Wii") == "Wii"
+
+
 def test_resolve_uses_cleaned_title_for_prefill(client, monkeypatch):
     # UPC lookup returns a noisy retail title; force the IGDB match to miss so we
     # hit the manual-search branch, which must hand back the cleaned name.
@@ -319,6 +340,36 @@ def test_registry_put_does_not_clobber_cover_with_null(temp_db):
     row = barcode.registry_get(conn, "U2")
     conn.close()
     assert row["cover_url"] == "http://x/c.jpg"   # preserved
+
+
+def test_registry_put_does_not_clobber_confirmed_fields_with_null(temp_db):
+    """A later put with omitted fields (e.g. a link call that only knows the
+    game_id) must not degrade a previously-confirmed row to NULLs."""
+    import models
+    conn = models.get_db()
+    conn.execute("INSERT INTO games (id, title, normalized_title) VALUES (6,'Halo','halo')")
+    barcode.registry_put(conn, "U3", igdb_id=77, title="Halo", platform="Xbox",
+                         cover_url="http://x/h.jpg", game_id=6)
+    barcode.registry_put(conn, "U3")   # metadata-less re-put
+    conn.commit()
+    row = barcode.registry_get(conn, "U3")
+    conn.close()
+    assert row["igdb_id"] == 77
+    assert row["title"] == "Halo"
+    assert row["platform"] == "Xbox"
+    assert row["game_id"] == 6
+    assert row["cover_url"] == "http://x/h.jpg"
+
+
+def test_registry_put_incoming_non_null_still_wins(temp_db):
+    import models
+    conn = models.get_db()
+    barcode.registry_put(conn, "U4", igdb_id=1, title="Old Name", platform="Wii")
+    barcode.registry_put(conn, "U4", igdb_id=2, title="New Name", platform="Switch")
+    conn.commit()
+    row = barcode.registry_get(conn, "U4")
+    conn.close()
+    assert (row["igdb_id"], row["title"], row["platform"]) == (2, "New Name", "Switch")
 
 
 def test_cache_hit_returns_platform_and_cover(client, monkeypatch):
