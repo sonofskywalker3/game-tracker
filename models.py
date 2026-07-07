@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
@@ -975,6 +976,38 @@ def migrate_drop_series(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _normalize_collection_key(s: str) -> str:
+    """Collapse a title/collection_name to a case- and punctuation-insensitive key
+    so member rows can be matched to their container row despite formatting drift
+    (e.g. 'Megaman...Vol.1' vs 'Mega Man...Vol. 1')."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def migrate_parent_collection(conn: sqlite3.Connection) -> None:
+    """Add games.parent_collection_id and link compilation MEMBER rows to their
+    CONTAINER row (title ~= collection_name, normalized). Idempotent; additive
+    only. Members whose container row doesn't exist stay NULL, and no row is
+    ever linked to itself.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(games)")}
+    if "parent_collection_id" not in cols:
+        conn.execute("ALTER TABLE games ADD COLUMN parent_collection_id INTEGER")
+    # Build title -> id map for potential container rows.
+    by_key: dict[str, int] = {}
+    for gid, title in conn.execute("SELECT id, title FROM games"):
+        by_key.setdefault(_normalize_collection_key(title), gid)
+    for gid, cname in conn.execute(
+        "SELECT id, collection_name FROM games WHERE collection_name IS NOT NULL"
+    ):
+        container = by_key.get(_normalize_collection_key(cname))
+        # Never link a row to itself.
+        conn.execute(
+            "UPDATE games SET parent_collection_id=? WHERE id=?",
+            (container if container and container != gid else None, gid),
+        )
+    conn.commit()
+
+
 def migrate_igdb_review(conn: sqlite3.Connection) -> None:
     """Add games.igdb_locked + games.needs_igdb_review. Idempotent.
     igdb_locked=1 protects a hand-picked IGDB identity from enrichment + audit.
@@ -1358,6 +1391,9 @@ def migrate_db():
     # migrate_drop_series drops the series table and the remaining series columns.
     _rebuild_user_ratings_without_series(conn)
     migrate_drop_series(conn)
+    # Link compilation member rows to their container row (needs collection_name,
+    # which the migration above does not touch).
+    migrate_parent_collection(conn)
     apply_traits_catalog(conn)
     seed_default_slots(conn)
 
