@@ -98,10 +98,10 @@ def test_dismissed_pair_excluded():
 def test_merged_curation_takes_furthest_status_and_max_values():
     rows = [
         {"status": "playing", "rating": 3, "hours_played": 5.0, "priority": 5,
-         "notes": "on PS4", "series_id": None, "series_order": None,
+         "notes": "on PS4",
          "started_at": "2025-01-01", "completed_at": None, "sort_order": 12},
         {"status": "completed", "rating": 4, "hours_played": 20.0, "priority": 7,
-         "notes": "100%'d on Switch", "series_id": 3, "series_order": 1,
+         "notes": "100%'d on Switch",
          "started_at": "2025-02-01", "completed_at": "2025-03-01", "sort_order": None},
     ]
     merged = compute_merged_curation(rows)
@@ -109,7 +109,6 @@ def test_merged_curation_takes_furthest_status_and_max_values():
     assert merged["rating"] == 4
     assert merged["hours_played"] == 20.0
     assert merged["priority"] == 7
-    assert merged["series_id"] == 3
     assert merged["started_at"] == "2025-01-01"   # earliest
     assert merged["completed_at"] == "2025-03-01"  # latest
     assert merged["sort_order"] == 12              # survivor (first row) wins
@@ -119,10 +118,10 @@ def test_merged_curation_takes_furthest_status_and_max_values():
 def test_merged_curation_all_defaults():
     rows = [
         {"status": "backlog", "rating": None, "hours_played": 0, "priority": 5,
-         "notes": None, "series_id": None, "series_order": None,
+         "notes": None,
          "started_at": None, "completed_at": None, "sort_order": None},
         {"status": "backlog", "rating": None, "hours_played": 0, "priority": 5,
-         "notes": None, "series_id": None, "series_order": None,
+         "notes": None,
          "started_at": None, "completed_at": None, "sort_order": None},
     ]
     merged = compute_merged_curation(rows)
@@ -213,26 +212,6 @@ def test_merge_dry_run_writes_nothing():
     plan = merge_games(conn, survivor_id=1, drop_ids=[2], title="Disco Elysium", dry_run=True)
     assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
     assert plan["survivor_id"] == 1 and plan["drop_ids"] == [2]
-
-
-def test_merge_preserves_series_source():
-    """series_source from the drop (manual) is carried to the survivor when survivor has none."""
-    conn = _full_conn()
-    _add_game(conn, 1, "Halo: Combat Evolved", platform_ids=[1])
-    _add_game(conn, 2, "Halo CE", platform_ids=[2])
-    # Drop (id=2) has the manual series assignment; survivor (id=1) has none.
-    conn.execute("DELETE FROM user_ratings WHERE game_id = 2")
-    conn.execute(
-        "INSERT INTO user_ratings (game_id, status, series_id, series_order, series_source) "
-        "VALUES (2, 'backlog', 1, 0, 'manual')"
-    )
-    conn.commit()
-    merge_games(conn, survivor_id=1, drop_ids=[2])
-    src = conn.execute(
-        "SELECT series_source FROM user_ratings WHERE game_id = 1"
-    ).fetchone()[0]
-    assert src == "manual"
-    conn.close()
 
 
 def test_merge_unions_platform_formats_physical_plus_digital_is_both():
