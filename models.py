@@ -883,6 +883,9 @@ _USER_RATINGS_REBUILD_SCHEMA = """
 """
 
 
+_USER_RATINGS_REBUILD_TMP = "_user_ratings_pre_series_drop"
+
+
 def _rebuild_user_ratings_without_series(conn: sqlite3.Connection) -> None:
     """Retire user_ratings.series_id/series_order/series_source via table rebuild.
 
@@ -894,22 +897,62 @@ def _rebuild_user_ratings_without_series(conn: sqlite3.Connection) -> None:
     So we recreate the table with only the surviving columns. Runs BEFORE
     migrate_drop_series (while the series table still exists) so the copy is clean.
     Idempotent: a no-op once no series column remains (fresh installs never have them).
+
+    Follows SQLite's official 12-step table-rebuild recipe so it is ATOMIC and
+    FK-SAFE against a REAL production DB (the connection has foreign_keys ON):
+
+    * PRAGMA foreign_keys = OFF is issued OUTSIDE any transaction (it is a silent
+      no-op mid-transaction), so we commit first and drop to autocommit control.
+    * The RENAME -> CREATE -> INSERT...SELECT -> DROP steps run inside one explicit
+      BEGIN/COMMIT. Any failure ROLLS BACK the whole thing, restoring the original
+      user_ratings intact and leaving NO half-done rename behind -- so a crashed run
+      is cleanly retryable and never strands data in the temp table.
+    * With foreign_keys OFF the copy cannot be bricked by a pre-existing orphan row
+      (a user_ratings.game_id with no games row): orphans are COPIED THROUGH and
+      preserved, not dropped and not fatal. PRAGMA foreign_key_check only logs them.
+    * PRAGMA foreign_keys = ON is restored at the end, outside the transaction.
     """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(user_ratings)").fetchall()}
     if not cols or not (set(_SERIES_RATING_COLS) & cols):
         return
-    conn.execute(f"DROP INDEX IF EXISTS {_SERIES_RATING_INDEX}")
-    conn.execute("ALTER TABLE user_ratings RENAME TO _user_ratings_pre_series_drop")
-    conn.execute(_USER_RATINGS_REBUILD_SCHEMA)
     kept = ", ".join(_USER_RATINGS_KEEP_COLS)
-    conn.execute(
-        f"INSERT INTO user_ratings ({kept}) SELECT {kept} FROM _user_ratings_pre_series_drop")
-    conn.execute("DROP TABLE _user_ratings_pre_series_drop")
-    # Recreate the non-series indexes the rebuild dropped (matches init_db).
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_status ON user_ratings(status)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_priority ON user_ratings(priority DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_sort_order ON user_ratings(sort_order)")
+    # Reach autocommit control so BEGIN/COMMIT/ROLLBACK and the FK pragma behave
+    # deterministically regardless of the sqlite3 module's implicit-transaction mode.
     conn.commit()
+    prev_isolation = conn.isolation_level
+    conn.isolation_level = None
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+        try:
+            conn.execute(f"DROP INDEX IF EXISTS {_SERIES_RATING_INDEX}")
+            # Defensive: a stale temp table from a pre-fix crashed run would block the
+            # RENAME. It can only exist here when user_ratings still has series columns
+            # (guarded above), i.e. the live table is the real one and the temp is junk.
+            conn.execute(f"DROP TABLE IF EXISTS {_USER_RATINGS_REBUILD_TMP}")
+            conn.execute(f"ALTER TABLE user_ratings RENAME TO {_USER_RATINGS_REBUILD_TMP}")
+            conn.execute(_USER_RATINGS_REBUILD_SCHEMA)
+            conn.execute(
+                f"INSERT INTO user_ratings ({kept}) "
+                f"SELECT {kept} FROM {_USER_RATINGS_REBUILD_TMP}")
+            conn.execute(f"DROP TABLE {_USER_RATINGS_REBUILD_TMP}")
+            # Recreate the non-series indexes the rebuild dropped (matches init_db).
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_status ON user_ratings(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_priority ON user_ratings(priority DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_sort_order ON user_ratings(sort_order)")
+            # Preserve, don't abort: orphan rows are copied through. Log for visibility.
+            orphans = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if orphans:
+                logging.warning(
+                    "user_ratings series-drop rebuild preserved %d orphan row(s) "
+                    "(game_id with no matching games row): %s", len(orphans), orphans)
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.isolation_level = prev_isolation
 
 
 def migrate_drop_series(conn: sqlite3.Connection) -> None:
