@@ -288,6 +288,26 @@ def test_not_a_game_404_for_missing(client):
     assert client.post("/api/games/999999/not-a-game").status_code == 404
 
 
+def test_not_a_game_nulls_member_parent_collection_id(client, seed_compilation, tmp_path,
+                                                        monkeypatch):
+    # Not-a-game'ing the container (id=1) must not leave the member (id=2) with
+    # a stale parent_collection_id — same cleanup as a plain delete.
+    import import_scraped as imp
+    monkeypatch.setattr(imp, "EXCLUDED_GAMES_PATH", tmp_path / "excluded_games.json")
+
+    resp = client.post('/api/games/1/not-a-game')
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT id, parent_collection_id FROM games WHERE id = ?", (2,)
+    ).fetchone()
+    conn.close()
+
+    assert row is not None  # member game still exists
+    assert row['parent_collection_id'] is None  # orphan reference cleared
+
+
 def test_get_game_includes_dlc(client, temp_db):
     import models
     conn = models.get_db()

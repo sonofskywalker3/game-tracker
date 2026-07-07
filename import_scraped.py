@@ -2,7 +2,7 @@
 
 Match cascade per scraped game: exact (source, external_id) -> exact normalized
 title -> fuzzy title (needs confirmation) -> new game. Never overwrites existing
-user curation (status / rating / notes / series); only adds platform links and
+user curation (status / rating / notes); only adds platform links and
 external ids. Idempotent; supports --dry-run.
 """
 from __future__ import annotations

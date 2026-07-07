@@ -302,6 +302,19 @@ def _merge_platform_rows(conn: sqlite3.Connection, survivor_id: int,
                  survivor_id, gp["platform_id"]))
 
 
+def clear_parent_collection(conn: sqlite3.Connection, game_id: int) -> None:
+    """Null out any member rows that pointed to game_id as their collection container.
+
+    Shared by every path that deletes a games row (delete, not-a-game, dedup
+    merge) so a member never keeps a stale parent_collection_id: in 'collection'
+    display mode that would hide the member as though its (now-gone) container
+    still existed, making it vanish from the library entirely.
+    """
+    conn.execute(
+        "UPDATE games SET parent_collection_id = NULL WHERE parent_collection_id = ?",
+        (game_id,))
+
+
 def _rating_row(conn: sqlite3.Connection, game_id: int) -> dict:
     row = conn.execute(
         "SELECT status, rating, notes, priority, hours_played, started_at, "
@@ -346,6 +359,7 @@ def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int],
         conn.execute("UPDATE barcode_registry SET game_id = ? WHERE game_id = ?",
                      (survivor_id, drop_id))
         conn.execute("DELETE FROM games WHERE id = ?", (drop_id,))
+        clear_parent_collection(conn, drop_id)
 
     conn.execute("UPDATE games SET title = ?, normalized_title = ?, "
                  "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
