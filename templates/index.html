@@ -298,7 +298,7 @@
         else if (sort === 'priority') arr.sort((a, b) => (b.priority || 0) - (a.priority || 0));
         else if (sort === 'metacritic') arr.sort((a, b) => (b.metacritic_score || 0) - (a.metacritic_score || 0));
         else if (sort === 'newest') arr.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-        else arr.sort((a, b) => (a.series_name || a.title).localeCompare(b.series_name || b.title));
+        else arr.sort((a, b) => a.title.localeCompare(b.title));
         return arr;
     }
 
@@ -323,7 +323,7 @@
         grid.innerHTML = games.length ? games.map(game => {
             const coverUrl = game.cover_url || '';
             const physicalMedia = game.physical_media || [];
-            const sortName = game.series_name || game.title;
+            const sortName = game.title;
 
             return `
                 <div class="game-card bg-surface-light rounded-lg overflow-hidden cursor-pointer"
@@ -471,10 +471,10 @@
 
         const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
-        // Find which letters have games (use series name if available)
+        // Find which letters have games
         alphabetAvailableLetters = new Set();
         games.forEach(game => {
-            const sortName = game.series_name || game.title;
+            const sortName = game.title;
             const firstChar = sortName.charAt(0).toUpperCase();
             if (/[A-Z]/.test(firstChar)) {
                 alphabetAvailableLetters.add(firstChar);
