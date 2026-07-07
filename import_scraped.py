@@ -450,13 +450,13 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
     dry_run; the returned report stays accurate for already-existing constituents.
     """
     row = conn.execute(
-        "SELECT status, rating, notes, series_id, series_source, started_at, completed_at, hours_played "
+        "SELECT status, rating, notes, started_at, completed_at, hours_played "
         "FROM user_ratings WHERE game_id = ?", (bundle_id,)).fetchone()
-    report: dict = {"ambiguous": False, "status": None, "series_to": []}
+    report: dict = {"ambiguous": False, "status": None}
     if not row:
         return report
     if any(row[f] not in _DEFAULT_CURATION[f] for f in _AMBIGUOUS_FIELDS):
-        return {"ambiguous": True, "status": None, "series_to": []}
+        return {"ambiguous": True, "status": None}
 
     if row["status"] not in _DEFAULT_CURATION["status"]:
         for cid in constituent_ids:
@@ -471,24 +471,6 @@ def _migrate_bundle_curation(conn: sqlite3.Connection, bundle_id: int,
                         "status = excluded.status, started_at = excluded.started_at, "
                         "completed_at = excluded.completed_at, updated_at = CURRENT_TIMESTAMP",
                         (cid, row["status"], row["started_at"], row["completed_at"]))
-
-    if row["series_id"] is not None:
-        order = conn.execute(
-            "SELECT MAX(series_order) FROM user_ratings WHERE series_id = ?",
-            (row["series_id"],)).fetchone()[0] or 0
-        for cid in constituent_ids:
-            cur = conn.execute("SELECT series_id FROM user_ratings WHERE game_id = ?",
-                               (cid,)).fetchone()
-            if cur is None or cur["series_id"] is None:
-                order += 1
-                report["series_to"].append(cid)
-                if not dry_run:
-                    conn.execute(
-                        "INSERT INTO user_ratings (game_id, series_id, series_order, series_source) "
-                        "VALUES (?, ?, ?, ?) ON CONFLICT(game_id) DO UPDATE SET "
-                        "series_id = excluded.series_id, series_order = excluded.series_order, "
-                        "series_source = excluded.series_source, updated_at = CURRENT_TIMESTAMP",
-                        (cid, row["series_id"], order, row["series_source"]))
     return report
 
 
@@ -702,12 +684,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--apply-bundle-catalog", action="store_true",
                         help="expand catalogued compilations/entitlement bundles "
                              "(bundle_catalog.json) already in the DB, then exit")
-    parser.add_argument("--apply-series-catalog", action="store_true",
-                        help="default games into series from series_catalog.json "
-                             "(fill-only; never clobbers a manual assignment), then exit")
     parser.add_argument("--include-curated", action="store_true",
                         help="with --cleanup-bundles: also migrate curated phantoms' "
-                             "status/series onto constituents, then delete them")
+                             "status onto constituents, then delete them")
     parser.add_argument("--accept-fuzzy", action="store_true",
                         help="auto-confirm ALL fuzzy matches")
     parser.add_argument("--auto-fuzzy", action="store_true",
@@ -731,8 +710,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             mig = r.get("migrated") or {}
             if mig.get("status"):
                 extra += f" status={mig['status']}"
-            if mig.get("series_to"):
-                extra += f" series+{len(mig['series_to'])}"
             logger.info("%s: %s (+%d constituents)%s [%s]", r["title"], r["action"],
                         r["constituents_created"], extra, f"{r['source']}/{r['external_id']}")
         logger.info("DRY RUN — no changes written." if args.dry_run
@@ -750,18 +727,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         conn.close()
         return
 
-    if args.apply_series_catalog:
-        report = models.apply_series_catalog(conn, dry_run=args.dry_run)
-        for r in report:
-            logger.info("%s: %s (%d games)", r["series"], r["action"], r["assigned"])
-        logger.info("DRY RUN — no changes written." if args.dry_run
-                    else "series-catalog: %d series processed" % len(report))
-        conn.close()
-        return
-
     if not args.paths:
-        parser.error("paths are required unless --cleanup-bundles, --apply-bundle-catalog, "
-                     "or --apply-series-catalog is given")
+        parser.error("paths are required unless --cleanup-bundles or --apply-bundle-catalog is given")
 
     if args.accept_fuzzy:
         confirm = _auto_confirm
