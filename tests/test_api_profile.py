@@ -28,3 +28,14 @@ def test_put_profile_partial_keeps_others(client):
     client.put("/api/profile", json={"bed_time_min": 1380})
     data = client.get("/api/profile").get_json()
     assert data["work_start_min"] == 540 and data["bed_time_min"] == 1380
+
+
+def test_profile_display_mode_roundtrip(client):
+    assert client.get('/api/profile').get_json()['collection_display_mode'] == 'members'
+    client.put('/api/profile', json={'collection_display_mode': 'both'})
+    assert client.get('/api/profile').get_json()['collection_display_mode'] == 'both'
+
+
+def test_profile_display_mode_invalid_normalized(client):
+    client.put('/api/profile', json={'collection_display_mode': 'bogus'})
+    assert client.get('/api/profile').get_json()['collection_display_mode'] == 'members'
