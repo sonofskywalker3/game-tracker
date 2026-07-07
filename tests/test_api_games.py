@@ -62,6 +62,35 @@ def test_normalize_endpoint_is_display_only_and_collision_safe(client):
     }
 
 
+def test_api_games_default_sort_is_alphabetical(client):
+    # A game in a series would previously sort by COALESCE(series.name, title),
+    # so an "Alpha"-named series could pull a "Z..." game ahead of a "B..." game
+    # that isn't in any series. The default sort must now ignore series entirely
+    # and go strictly by the game's own title.
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
+        [("Zelda: Breath of the Wild", "zelda breath of the wild"),
+         ("Beta Game", "beta game")],
+    )
+    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
+    conn.execute("INSERT INTO series (name) VALUES ('Alpha Adventures')")
+    sid = conn.execute("SELECT id FROM series WHERE name = 'Alpha Adventures'").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 0)",
+        (rows["Zelda: Breath of the Wild"], sid),
+    )
+    conn.commit()
+    conn.close()
+
+    r = client.get('/api/games')
+    assert r.status_code == 200
+    games = r.get_json()
+    titles = [g['title'] for g in games]
+    assert titles == sorted(titles, key=str.lower)
+    assert all('series_name' not in g for g in games)
+
+
 def test_api_games_exposes_categories_and_physical(client):
     _ensure_platform("PlayStation 4", "PS4", "modern_console")
     _ensure_platform("PlayStation 3", "PS3", "legacy_console")

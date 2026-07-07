@@ -140,13 +140,9 @@ def api_games():
             ur.rating,
             ur.priority,
             ur.hours_played,
-            ur.notes,
-            ur.series_id,
-            ur.series_order,
-            s.name as series_name
+            ur.notes
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
-        LEFT JOIN series s ON s.id = ur.series_id
         LEFT JOIN game_platforms gp ON gp.game_id = g.id
         LEFT JOIN platforms p ON p.id = gp.platform_id
         LEFT JOIN game_tags gt ON gt.game_id = g.id
@@ -195,9 +191,7 @@ def api_games():
         # For manual sort, put NULL sort_order last, then sort by sort_order ASC
         query += " ORDER BY ur.sort_order IS NULL, ur.sort_order ASC, g.title ASC"
     elif sort == 'title':
-        # For title sort, use series name if in a series, then series_order within series
-        # Games not in a series sort by their own title
-        query += f" ORDER BY COALESCE(s.name, g.title) {sort_order}, ur.series_order ASC, g.title ASC"
+        query += f" ORDER BY g.title COLLATE NOCASE {sort_order}"
     else:
         query += f" ORDER BY {sort_col} {sort_order}"
 
