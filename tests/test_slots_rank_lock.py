@@ -1,6 +1,6 @@
 """Behavior lock for slots.rank_candidates: pins exact ranked order, scores and
 reasons for a small varied library (platforms, tag affinity, fatigue, dismissals,
-session lengths, series momentum, started boost).
+session lengths, started boost).
 
 This test passed on the pre-batching implementation (2 queries per candidate) and
 must stay green across the batched-query refactor: any diff in ranking output is a
@@ -16,7 +16,7 @@ def _platform_id(conn, short_name):
 
 
 def _add_game(conn, title, platform_short, *, tags=(), status="backlog", priority=5,
-              session_length=None, rating=None, series_id=None):
+              session_length=None, rating=None):
     conn.execute(
         "INSERT INTO games (title, normalized_title, session_length) VALUES (?, ?, ?)",
         (title, models.normalize_title(title), session_length))
@@ -29,8 +29,8 @@ def _add_game(conn, title, platform_short, *, tags=(), status="backlog", priorit
         conn.execute("INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)",
                      (gid, tid))
     conn.execute(
-        "INSERT INTO user_ratings (game_id, status, priority, rating, series_id) "
-        "VALUES (?, ?, ?, ?, ?)", (gid, status, priority, rating, series_id))
+        "INSERT INTO user_ratings (game_id, status, priority, rating) "
+        "VALUES (?, ?, ?, ?)", (gid, status, priority, rating))
     conn.commit()
     return gid
 
@@ -41,25 +41,21 @@ def _slot(conn, label):
 
 def _build_library(conn):
     """Varied fixture: returns {name: game_id}."""
-    conn.execute("INSERT INTO series (name) VALUES ('Lock Series')")
-    series_id = conn.execute(
-        "SELECT id FROM series WHERE name='Lock Series'").fetchone()[0]
-
     ids = {}
     # Affinity source: rated 9 with Roguelike (completed -> never a candidate).
     ids["rated_donor"] = _add_game(conn, "Rated Donor", "PS", tags=("Roguelike",),
                                    status="completed", rating=9)
-    # Fatigue + series-momentum source: completed, tagged Farming, in Lock Series,
-    # logged in the Quick slot's history below.
+    # Fatigue source: completed, tagged Farming, logged in the Quick slot's
+    # history below.
     ids["fatigue_donor"] = _add_game(conn, "Fatigue Donor", "Switch", tags=("Farming",),
-                                     status="completed", series_id=series_id)
+                                     status="completed")
     # Candidates on Switch.
     ids["continue_me"] = _add_game(conn, "Continue Me", "Switch", status="playing",
                                    session_length="short")
     ids["tasty_rogue"] = _add_game(conn, "Tasty Rogue", "Switch", tags=("Roguelike",),
                                    priority=8, session_length="short")
     ids["farm_again"] = _add_game(conn, "Farm Again", "Switch", tags=("Farming",),
-                                  priority=6, series_id=series_id)
+                                  priority=6)
     ids["long_epic"] = _add_game(conn, "Long Epic", "Switch", session_length="long")
     ids["plain_filler"] = _add_game(conn, "Plain Filler", "Switch", priority=3)
     ids["dismissed_one"] = _add_game(conn, "Dismissed One", "Switch", priority=9,
@@ -91,11 +87,10 @@ def test_quick_slot_ranking_locked(temp_db):
         # priority 8 (+15) + Roguelike affinity (9 avg, 1 game -> +0.9) + short (+25)
         (ids["tasty_rogue"], 90.9,
          ["High priority (8/10)", "Matches your taste", "Fits a quick session"]),
-        # priority 6 (+5) - fatigue (20) + series momentum (+30)
-        (ids["farm_again"], 65.0,
-         ["Similar to what you just finished", "Next in this series"]),
         # priority 3 (-10), nothing else
         (ids["plain_filler"], 40.0, []),
+        # priority 6 (+5) - fatigue (20)
+        (ids["farm_again"], 35.0, ["Similar to what you just finished"]),
     ]
     conn.close()
 
@@ -113,7 +108,7 @@ def test_long_slot_ranking_locked(temp_db):
         (ids["dismissed_one"], 70.0, ["High priority (9/10)"]),
         (ids["tasty_rogue"], 65.9, ["High priority (8/10)", "Matches your taste"]),
         (ids["plain_filler"], 40.0, []),
-        # fatigue applies globally; series momentum is per-slot so no +30 here
+        # fatigue applies globally
         (ids["farm_again"], 35.0, ["Similar to what you just finished"]),
     ]
     conn.close()

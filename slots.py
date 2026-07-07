@@ -1,10 +1,10 @@
 """The Slate engine: per-slot eligibility/ranking + pin/outcome lifecycle.
 
 Ranking reuses recommendation.calculate_tag_affinity for taste signal and layers
-slot-specific hard filters (platform, latency, session_length) + a session-fit and
-focus-series boost + a genre-fatigue penalty from recent slot_history. Effective
-time-to-beat is surfaced per candidate (data for the UI + chat) but no longer drives
-the Quick/Long axis.
+slot-specific hard filters (platform, latency, session_length) + a session-fit
+boost + a genre-fatigue penalty from recent slot_history. Effective time-to-beat
+is surfaced per candidate (data for the UI + chat) but no longer drives the
+Quick/Long axis.
 """
 from __future__ import annotations
 
@@ -20,10 +20,7 @@ FINISHED_STATUSES = frozenset({"completed", "100", "dropped"})
 FATIGUE_RECENT_COUNT = 5
 FATIGUE_PENALTY = 20.0
 STARTED_BOOST = 1000.0
-SERIES_BOOST = 30.0           # recent-series auto-boost (slot's last play)
 SESSION_FIT_BOOST = 25.0      # session_length matches the slot's session window
-FOCUS_SERIES_BOOST = 30.0     # candidate is in the slot's focus_series_id
-ROLE_BOOST = 20.0             # mainline->long slot / spinoff->short slot routing
 COMPLETION_BOOST = 30.0       # completed game surfaced in a completionist slot
 # Statuses excluded from a completionist slot's pool (beaten games ARE allowed in;
 # only fully-100%'d and dropped games are nothing left to grind).
@@ -92,17 +89,6 @@ def _recent_fatigue_tags(conn: sqlite3.Connection) -> set[str]:
     return tags
 
 
-def _slot_recent_series_id(conn: sqlite3.Connection, slot_id: int) -> int | None:
-    """series_id of the most recent game that passed through this slot, or None."""
-    row = conn.execute("""
-        SELECT ur.series_id
-        FROM slot_history h JOIN user_ratings ur ON ur.game_id = h.game_id
-        WHERE h.slot_id = ? AND ur.series_id IS NOT NULL
-        ORDER BY h.removed_at DESC LIMIT 1
-    """, (slot_id,)).fetchone()
-    return row["series_id"] if row else None
-
-
 def _pinned_game_ids(conn: sqlite3.Connection) -> set[int]:
     rows = conn.execute(
         "SELECT current_game_id FROM slots WHERE current_game_id IS NOT NULL").fetchall()
@@ -139,7 +125,7 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
     excluded = COMPLETIONIST_EXCLUDED if completionist else FINISHED_STATUSES
     placeholders = ",".join("?" * len(excluded))
     rows = conn.execute(f"""
-        SELECT g.*, ur.status, ur.priority, ur.hours_played, ur.series_id
+        SELECT g.*, ur.status, ur.priority, ur.hours_played
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status NOT IN ({placeholders})
@@ -147,8 +133,6 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
     # Batched sidecar data for the whole candidate pool (was 2 queries per game).
     platforms_by_game = _candidate_platforms(conn, excluded)
     tags_by_game = _candidate_tags(conn, excluded)
-
-    recent_series_id = _slot_recent_series_id(conn, slot["id"]) if slot.get("id") else None
 
     out = []
     for game in rows:
@@ -200,26 +184,10 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
             if session_length == "long":
                 score += SESSION_FIT_BOOST
                 reasons.append("Worth a long sitting")
-        # Focus-series boost + role routing (when the slot focuses a series).
-        focus_series_id = slot.get("focus_series_id")
-        if focus_series_id is not None and game["series_id"] == focus_series_id:
-            score += FOCUS_SERIES_BOOST
-            reasons.append("In this slot's focus series")
-            role = game["series_role"]
-            if max_session is not None and role == "spinoff":
-                score += ROLE_BOOST
-                reasons.append("Spin-off suits a short slot")
-            elif min_session is not None and role == "mainline":
-                score += ROLE_BOOST
-                reasons.append("Mainline for a long sitting")
         # Boost in-progress games to the top when prioritize_started is enabled
         if slot.get("prioritize_started") and game["status"] == "playing":
             score += STARTED_BOOST
             reasons.append("Continue playing")
-        # Series momentum: boost games that share a series with the slot's last play
-        if recent_series_id is not None and game["series_id"] == recent_series_id:
-            score += SERIES_BOOST
-            reasons.append("Next in this series")
 
         out.append({"game": dict(game), "score": round(score, 1), "reasons": reasons,
                     "time_to_beat_minutes": effective_time_to_beat_minutes(game)})

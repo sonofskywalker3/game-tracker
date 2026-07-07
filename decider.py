@@ -19,12 +19,10 @@ def build_library_snapshot(conn: sqlite3.Connection) -> str:
     Platforms are fetched in one query (not per game) — the snapshot rebuilds on
     every chat turn, and its bytes must stay identical for prompt caching."""
     rows = conn.execute("""
-        SELECT g.id, g.title, g.session_length, g.series_role,
-               ur.status, ur.priority, ur.hours_played, ur.series_id,
-               s.name AS series_name
+        SELECT g.id, g.title, g.session_length,
+               ur.status, ur.priority, ur.hours_played
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
-        LEFT JOIN series s ON s.id = ur.series_id
         ORDER BY g.id
     """).fetchall()
     plats: dict[int, list[str]] = {}
@@ -36,12 +34,10 @@ def build_library_snapshot(conn: sqlite3.Connection) -> str:
             plats.setdefault(p["game_id"], []).append(p["short_name"])
     lines = []
     for r in rows:
-        series = r["series_name"] or "-"
-        role = r["series_role"] or "-"
         platforms = "/".join(plats.get(r["id"], []))
         lines.append(
             f"#{r['id']} | {r['title']} | plat:{platforms or '-'} | "
-            f"session:{r['session_length'] or '?'} | series:{series}({role}) | "
+            f"session:{r['session_length'] or '?'} | "
             f"status:{r['status'] or '-'} | hrs:{r['hours_played'] or 0} | pri:{r['priority'] or 5}")
     return "\n".join(lines)
 
@@ -127,11 +123,6 @@ def build_slot_context(conn: sqlite3.Connection, slot: dict) -> str:
             "them (achievements, collectibles, postgame). For THIS slot, games with "
             "status 'completed' ARE recommendable (that is the point of the slot); "
             "still avoid already-100% ('100') and 'dropped' games.")
-    if slot.get("focus_series_id"):
-        row = conn.execute("SELECT name FROM series WHERE id = ?",
-                           (slot["focus_series_id"],)).fetchone()
-        if row:
-            parts.append(f"Focus series: {row['name']}.")
     if slot.get("context_notes"):
         parts.append(f"Notes: {slot['context_notes']}")
     return "\n".join(parts)
