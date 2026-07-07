@@ -1321,6 +1321,9 @@ def migrate_user_profile(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO user_profile "
         "(id, work_start_min, work_end_min, bed_time_min, meal_windows) "
         "VALUES (1, NULL, NULL, NULL, NULL)")
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(user_profile)").fetchall()]
+    if "collection_display_mode" not in cols:
+        conn.execute("ALTER TABLE user_profile ADD COLUMN collection_display_mode TEXT")
     conn.commit()
 
 

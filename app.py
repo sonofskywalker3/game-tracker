@@ -1757,17 +1757,24 @@ def api_delete_slot_window(slot_id: int, wid: int):
 
 _PROFILE_MINUTE_FIELDS = ("work_start_min", "work_end_min", "bed_time_min")
 
+# Collection display modes for the picks/library views: show individual member
+# games, the collapsed collection container, or both. Default is 'members'.
+COLLECTION_DISPLAY_MODES = ("members", "collection", "both")
+_DEFAULT_COLLECTION_DISPLAY_MODE = "members"
+
 
 @app.route('/api/profile')
 def api_get_profile():
     """The single user_profile row; meal_windows parsed to a list."""
     conn = get_db()
     row = conn.execute(
-        "SELECT work_start_min, work_end_min, bed_time_min, meal_windows "
+        "SELECT work_start_min, work_end_min, bed_time_min, meal_windows, "
+        "collection_display_mode "
         "FROM user_profile WHERE id = 1").fetchone()
     conn.close()
     data = dict(row) if row else {f: None for f in _PROFILE_MINUTE_FIELDS}
     data["meal_windows"] = json.loads(data["meal_windows"]) if data.get("meal_windows") else []
+    data["collection_display_mode"] = data.get("collection_display_mode") or _DEFAULT_COLLECTION_DISPLAY_MODE
     return jsonify(data)
 
 
@@ -1786,6 +1793,12 @@ def api_update_profile():
     if 'meal_windows' in data:
         fields.append("meal_windows = ?")
         params.append(json.dumps(data['meal_windows']))
+    if 'collection_display_mode' in data:
+        mode = data['collection_display_mode']
+        if mode not in COLLECTION_DISPLAY_MODES:
+            mode = _DEFAULT_COLLECTION_DISPLAY_MODE
+        fields.append("collection_display_mode = ?")
+        params.append(mode)
     if not fields:
         return jsonify({'error': 'no fields'}), 400
     conn = get_db()
