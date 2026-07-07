@@ -1,35 +1,13 @@
 import json
+import logging
 import sqlite3
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "games.db"
-SERIES_PATTERNS_PATH = Path(__file__).parent / "series_patterns.json"           # per-user (gitignored)
-SERIES_PATTERNS_DEFAULT_PATH = Path(__file__).parent / "series_patterns.default.json"  # committed seed
 GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                  # per-user (gitignored)
 GAME_TRAITS_DEFAULT_PATH = Path(__file__).parent / "game_traits.default.json"  # committed seed
 BUNDLE_CATALOG_PATH = Path(__file__).parent / "bundle_catalog.json"            # per-user (gitignored)
 BUNDLE_CATALOG_DEFAULT_PATH = Path(__file__).parent / "bundle_catalog.default.json"  # committed seed
-SERIES_CATALOG_PATH = Path(__file__).parent / "series_catalog.json"            # per-user (gitignored)
-SERIES_CATALOG_DEFAULT_PATH = Path(__file__).parent / "series_catalog.default.json"  # committed seed
-
-
-def load_series_patterns() -> dict:
-    """Load the prefix->series-name table (per-user file, else committed seed)."""
-    path = SERIES_PATTERNS_PATH if SERIES_PATTERNS_PATH.exists() else SERIES_PATTERNS_DEFAULT_PATH
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def match_series_prefix(title: str, known_series: dict) -> str | None:
-    """Return the series name for the longest matching title prefix, else None.
-    Longest-first so a specific prefix beats a shorter one ('Cyberpunk 2077' > 'Cyberpunk')."""
-    for prefix, series_name in sorted(known_series.items(), key=lambda kv: -len(kv[0])):
-        if title.upper().startswith(prefix.upper()):
-            return series_name
-    return None
 
 
 def load_game_traits() -> dict:
@@ -50,31 +28,6 @@ def load_bundle_catalog() -> dict:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-
-
-def load_series_catalog() -> dict:
-    """Load the normalized_title->series-entry catalog (per-user file, else committed seed)."""
-    path = SERIES_CATALOG_PATH if SERIES_CATALOG_PATH.exists() else SERIES_CATALOG_DEFAULT_PATH
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def add_series_pattern(prefix: str, name: str) -> bool:
-    """Add prefix->name to the per-user patterns file (seeding from the default on
-    first write). Returns True if added, False if blank or already present."""
-    prefix, name = prefix.strip(), name.strip()
-    if not prefix or not name:
-        return False
-    patterns = dict(load_series_patterns())
-    if patterns.get(prefix) == name:
-        return False
-    patterns[prefix] = name
-    with open(SERIES_PATTERNS_PATH, "w", encoding="utf-8") as f:
-        json.dump(patterns, f, indent=2, ensure_ascii=False, sort_keys=True)
-    return True
 
 
 def add_game_traits_entries(entries: dict) -> None:
@@ -271,13 +224,6 @@ def init_db():
             FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
         );
 
-        -- Series table for grouping games
-        CREATE TABLE IF NOT EXISTS series (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
         -- User ratings and notes
         CREATE TABLE IF NOT EXISTS user_ratings (
             game_id INTEGER PRIMARY KEY,
@@ -289,12 +235,8 @@ def init_db():
             started_at DATE,
             completed_at DATE,
             sort_order INTEGER,  -- manual sort order for drag-and-drop reordering
-            series_id INTEGER,  -- which series this game belongs to
-            series_order INTEGER,  -- order within the series
-            series_source TEXT,  -- provenance of series_id: auto / catalog / manual
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
-            FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE SET NULL
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
         );
 
         -- Indexes for common queries
@@ -812,11 +754,6 @@ def migrate_slots(conn: sqlite3.Connection) -> None:
     if "prioritize_started" not in cols:
         conn.execute("ALTER TABLE slots ADD COLUMN prioritize_started INTEGER NOT NULL DEFAULT 1")
     cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
-    if "focus_series_id" not in cols:
-        conn.execute(
-            "ALTER TABLE slots ADD COLUMN focus_series_id INTEGER "
-            "REFERENCES series(id) ON DELETE SET NULL")
-    cols = [c[1] for c in conn.execute("PRAGMA table_info(slots)").fetchall()]
     if "completionist" not in cols:
         conn.execute("ALTER TABLE slots ADD COLUMN completionist INTEGER NOT NULL DEFAULT 0")
     conn.commit()
@@ -889,20 +826,17 @@ def migrate_game_signals(conn: sqlite3.Connection) -> None:
 
 
 def migrate_game_traits(conn: sqlite3.Connection) -> None:
-    """Add the session-tolerance + series-role columns to games. Idempotent.
+    """Add the session-tolerance columns to games. Idempotent.
 
     Each carries a `*_source` of catalog/ai/manual (manual LOCKS the row against
     catalog re-sync and AI). session_length (short/long) is written by the trait
-    catalog (apply_traits_catalog); series_role (mainline/spinoff) is written by the
-    SERIES catalog (apply_series_catalog) — this migration only adds the columns. Null
+    catalog (apply_traits_catalog) — this migration only adds the columns. Null
     is always a safe, neutral value.
     """
     cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
     additions = [
         ("session_length", "TEXT"),
         ("session_length_source", "TEXT"),
-        ("series_role", "TEXT"),
-        ("series_role_source", "TEXT"),
     ]
     for name, decl in additions:
         if name not in cols:
@@ -921,14 +855,80 @@ def migrate_collection_name(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def migrate_series_source(conn: sqlite3.Connection) -> None:
-    """Add user_ratings.series_source (auto/catalog/manual) so the series catalog can
-    override prefix-auto assignments while never clobbering a manual one. Idempotent.
-    Null is treated as unset (overwritable). See backfill_series_source for existing rows.
+_SERIES_GAME_COLS = ("series_role", "series_role_source")
+_SERIES_RATING_COLS = ("series_id", "series_order", "series_source")
+_SERIES_RATING_INDEX = "idx_user_ratings_series_id"
+
+# Canonical user_ratings columns AFTER the series columns are retired. Kept in sync
+# with the user_ratings CREATE in init_db; the drop-migration rebuild copies exactly
+# these across when it recreates the table (see _rebuild_user_ratings_without_series).
+_USER_RATINGS_KEEP_COLS = (
+    "game_id", "status", "rating", "notes", "priority", "hours_played",
+    "started_at", "completed_at", "sort_order", "updated_at",
+)
+_USER_RATINGS_REBUILD_SCHEMA = """
+    CREATE TABLE user_ratings (
+        game_id INTEGER PRIMARY KEY,
+        status TEXT DEFAULT 'backlog',
+        rating INTEGER,
+        notes TEXT,
+        priority INTEGER DEFAULT 5,
+        hours_played REAL DEFAULT 0,
+        started_at DATE,
+        completed_at DATE,
+        sort_order INTEGER,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+    )
+"""
+
+
+def _rebuild_user_ratings_without_series(conn: sqlite3.Connection) -> None:
+    """Retire user_ratings.series_id/series_order/series_source via table rebuild.
+
+    A plain ALTER TABLE DROP COLUMN cannot remove series_id on an existing DB: the
+    column is indexed (idx_user_ratings_series_id) AND pinned by a table-level
+    FOREIGN KEY to the series table, both of which SQLite refuses to drop a column
+    through. Worse, once the series table is gone that dangling FK makes EVERY
+    user_ratings insert fail ("no such table: main.series") with foreign_keys ON.
+    So we recreate the table with only the surviving columns. Runs BEFORE
+    migrate_drop_series (while the series table still exists) so the copy is clean.
+    Idempotent: a no-op once no series column remains (fresh installs never have them).
     """
-    cols = [c[1] for c in conn.execute("PRAGMA table_info(user_ratings)").fetchall()]
-    if "series_source" not in cols:
-        conn.execute("ALTER TABLE user_ratings ADD COLUMN series_source TEXT")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(user_ratings)").fetchall()}
+    if not cols or not (set(_SERIES_RATING_COLS) & cols):
+        return
+    conn.execute(f"DROP INDEX IF EXISTS {_SERIES_RATING_INDEX}")
+    conn.execute("ALTER TABLE user_ratings RENAME TO _user_ratings_pre_series_drop")
+    conn.execute(_USER_RATINGS_REBUILD_SCHEMA)
+    kept = ", ".join(_USER_RATINGS_KEEP_COLS)
+    conn.execute(
+        f"INSERT INTO user_ratings ({kept}) SELECT {kept} FROM _user_ratings_pre_series_drop")
+    conn.execute("DROP TABLE _user_ratings_pre_series_drop")
+    # Recreate the non-series indexes the rebuild dropped (matches init_db).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_status ON user_ratings(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_priority ON user_ratings(priority DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_sort_order ON user_ratings(sort_order)")
+    conn.commit()
+
+
+def migrate_drop_series(conn: sqlite3.Connection) -> None:
+    """Idempotently drop the retired home-rolled series schema (SQLite >= 3.35)."""
+    conn.execute("DROP TABLE IF EXISTS series")
+    for table, cols in (("games", _SERIES_GAME_COLS), ("user_ratings", _SERIES_RATING_COLS)):
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col in existing:
+                try:
+                    conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+                except sqlite3.OperationalError as exc:  # older SQLite: leave unused
+                    logging.warning("could not drop %s.%s: %s", table, col, exc)
+    slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)")}
+    if "focus_series_id" in slot_cols:
+        try:
+            conn.execute("ALTER TABLE slots DROP COLUMN focus_series_id")
+        except sqlite3.OperationalError as exc:
+            logging.warning("could not drop slots.focus_series_id: %s", exc)
     conn.commit()
 
 
@@ -1072,7 +1072,7 @@ def migrate_game_platform_format(conn: sqlite3.Connection) -> None:
 
 
 def migrate_collections(conn: sqlite3.Connection) -> None:
-    """IGDB-canonical collections layer (Stage 1, additive alongside series).
+    """IGDB-canonical collections layer (Stage 1).
 
     collections: one row per IGDB collection (PK = the IGDB collection id).
     game_collections: m2m — a game appears in EVERY collection IGDB lists it
@@ -1262,31 +1262,6 @@ def migrate_db():
         conn.commit()
         print("Added sort_order column to user_ratings")
 
-    # Create series table if not exists
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS series (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-
-    # Add series columns to user_ratings if not exist
-    columns = conn.execute("PRAGMA table_info(user_ratings)").fetchall()
-    column_names = [col[1] for col in columns]
-
-    if 'series_id' not in column_names:
-        conn.execute("ALTER TABLE user_ratings ADD COLUMN series_id INTEGER REFERENCES series(id) ON DELETE SET NULL")
-        conn.execute("ALTER TABLE user_ratings ADD COLUMN series_order INTEGER")
-        conn.commit()
-        print("Added series columns to user_ratings")
-
-    # Every series operation filters on series_id; index it.
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_series_id "
-                 "ON user_ratings(series_id)")
-    conn.commit()
-
     # Add/backfill platform era category
     migrate_platform_category(conn)
 
@@ -1323,7 +1298,6 @@ def migrate_db():
     migrate_collection_name(conn)
     migrate_collections(conn)
     migrate_bundle_review_queue(conn)
-    migrate_series_source(conn)
     migrate_igdb_review(conn)
     migrate_igdb_review_reason(conn)
     migrate_psn_addons_synced_at(conn)
@@ -1336,9 +1310,12 @@ def migrate_db():
     migrate_upc_enrichment_state(conn)
     migrate_slot_schedule_window(conn)
     migrate_user_profile(conn)
-    backfill_series_source(conn)
+    # Retire the home-rolled series schema. The rebuild removes the indexed +
+    # FK-pinned user_ratings.series_id (which a plain DROP COLUMN cannot), then
+    # migrate_drop_series drops the series table and the remaining series columns.
+    _rebuild_user_ratings_without_series(conn)
+    migrate_drop_series(conn)
     apply_traits_catalog(conn)
-    apply_series_catalog(conn)
     seed_default_slots(conn)
 
     # Re-clean display titles with the current rules (remove (PS4), trademark
@@ -1367,196 +1344,6 @@ def normalize_title(title):
     # Collapse multiple spaces
     title = re.sub(r'\s+', ' ', title)
     return title
-
-
-def auto_populate_series():
-    """Automatically create series based on common game title prefixes."""
-    conn = get_db()
-
-    known_series = load_series_patterns()
-
-    # Get all games
-    games = conn.execute("SELECT id, title FROM games ORDER BY title").fetchall()
-
-    # Track which series we've created and which games belong to them
-    series_games = {}  # series_name -> [(game_id, title, sort_key)]
-
-    for game in games:
-        game_id = game['id']
-        title = game['title']
-
-        # Check against known series patterns, longest prefix first so a specific
-        # prefix wins over a shorter one regardless of file order
-        # ("Cyberpunk 2077" must beat "Cyberpunk").
-        matched_series = match_series_prefix(title, known_series)
-
-        if matched_series:
-            if matched_series not in series_games:
-                series_games[matched_series] = []
-
-            # Create a sort key - try to extract numbers for ordering
-            # This helps sort "Final Fantasy VII" before "Final Fantasy X"
-            sort_key = title.lower()
-            series_games[matched_series].append((game_id, title, sort_key))
-
-    # Create series and assign games
-    created_count = 0
-    assigned_count = 0
-
-    for series_name, games_list in series_games.items():
-        if len(games_list) < 2:
-            continue  # Skip series with only 1 game
-
-        # Check if series already exists
-        existing = conn.execute("SELECT id FROM series WHERE name = ?", (series_name,)).fetchone()
-        if existing:
-            series_id = existing['id']
-        else:
-            conn.execute("INSERT INTO series (name) VALUES (?)", (series_name,))
-            series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            created_count += 1
-
-        # Sort games and assign to series
-        games_list.sort(key=lambda x: x[2])  # Sort by sort_key
-
-        for order, (game_id, title, _) in enumerate(games_list):
-            # Check if already assigned
-            existing_assignment = conn.execute(
-                "SELECT series_id FROM user_ratings WHERE game_id = ?",
-                (game_id,)
-            ).fetchone()
-
-            if existing_assignment and existing_assignment['series_id']:
-                continue  # Already assigned to a series
-
-            conn.execute("""
-                INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
-                VALUES (?, ?, ?, 'auto')
-                ON CONFLICT(game_id) DO UPDATE SET
-                    series_id = excluded.series_id,
-                    series_order = excluded.series_order,
-                    series_source = excluded.series_source,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (game_id, series_id, order))
-            assigned_count += 1
-
-    conn.commit()
-    conn.close()
-
-    print(f"Created {created_count} new series, assigned {assigned_count} games")
-    return created_count, assigned_count
-
-
-def backfill_series_source(conn: sqlite3.Connection) -> None:
-    """Stamp series_source on pre-existing assignments that predate the column.
-    'auto' if the current series equals what prefix-matching would produce for the
-    title, else 'manual' (a human must have set it). Only fills NULL source rows."""
-    known = load_series_patterns()
-    rows = conn.execute("""
-        SELECT ur.game_id, g.title, s.name AS series_name
-        FROM user_ratings ur
-        JOIN games g ON g.id = ur.game_id
-        JOIN series s ON s.id = ur.series_id
-        WHERE ur.series_id IS NOT NULL AND ur.series_source IS NULL
-    """).fetchall()
-    for r in rows:
-        source = "auto" if match_series_prefix(r["title"], known) == r["series_name"] else "manual"
-        conn.execute("UPDATE user_ratings SET series_source = ? WHERE game_id = ?",
-                     (source, r["game_id"]))
-    conn.commit()
-
-
-SERIES_ROLE_VALUES = frozenset({"mainline", "spinoff"})
-
-
-def apply_series_catalog(conn: sqlite3.Connection, game_id: int | None = None,
-                         *, dry_run: bool = False) -> list[dict]:
-    """Default games into series from the per-title catalog. Fill-only, idempotent.
-
-    Pass A (membership+order): bucket catalog-matched games by target series; join an
-    existing series always, create a new series only at >=2 catalog-matched games;
-    write series_id/series_order/series_source='catalog' unless the current source is
-    'manual'. Absent order leaves the existing series_order unchanged. Pass B (role):
-    write games.series_role (source='catalog') unless series_role_source='manual'.
-    Matches by normalized_title. game_id scopes to one game; dry_run writes nothing.
-    Missing catalog/entry/file is a safe no-op. Returns a report list.
-    Report entries are {series, action, created, assigned} where action is 'created', 'joined', or 'skipped_singleton'.
-    When game_id is given (on-add), only existing series are joined; creating a brand-new series is a library-wide decision left to the full pass (game_id=None on startup/bulk apply).
-    """
-    catalog = load_series_catalog()
-    if not catalog:
-        return []
-
-    game_sql = "SELECT id, normalized_title, series_role_source FROM games"
-    params: tuple = ()
-    if game_id is not None:
-        game_sql += " WHERE id = ?"
-        params = (game_id,)
-    games = conn.execute(game_sql, params).fetchall()
-
-    # --- Pass A: membership + order ---
-    by_series: dict[str, list[tuple[int, dict]]] = {}
-    for g in games:
-        entry = catalog.get(g["normalized_title"])
-        if entry and entry.get("series"):
-            by_series.setdefault(entry["series"], []).append((g["id"], entry))
-
-    report: list[dict] = []
-    for series_name, members in by_series.items():
-        existing = conn.execute("SELECT id FROM series WHERE name = ?", (series_name,)).fetchone()
-        if existing:
-            series_id, created = existing["id"], False
-        elif len(members) < 2:
-            report.append({"series": series_name, "action": "skipped_singleton",
-                           "created": False, "assigned": 0})
-            continue
-        else:
-            created = True
-            if dry_run:
-                series_id = None  # unused in dry-run; the per-member write below is skipped
-            else:
-                conn.execute("INSERT INTO series (name) VALUES (?)", (series_name,))
-                series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        assigned = 0
-        for gid, entry in members:
-            cur = conn.execute(
-                "SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
-            if cur and cur["series_source"] == "manual":
-                continue  # locked
-            assigned += 1
-            if dry_run:
-                continue
-            conn.execute("""
-                INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
-                VALUES (?, ?, ?, 'catalog')
-                ON CONFLICT(game_id) DO UPDATE SET
-                    series_id = excluded.series_id,
-                    series_order = COALESCE(excluded.series_order, user_ratings.series_order),
-                    series_source = excluded.series_source,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (gid, series_id, entry.get("order")))
-        report.append({"series": series_name, "action": "created" if created else "joined",
-                       "created": created, "assigned": assigned})
-
-    # --- Pass B: role (independent of membership) ---
-    for g in games:
-        entry = catalog.get(g["normalized_title"])
-        if not entry:
-            continue
-        role = entry.get("role")
-        if role not in SERIES_ROLE_VALUES:
-            continue
-        if g["series_role_source"] == "manual":
-            continue
-        if not dry_run:
-            conn.execute(
-                "UPDATE games SET series_role = ?, series_role_source = 'catalog' WHERE id = ?",
-                (role, g["id"]))
-
-    if not dry_run:
-        conn.commit()
-    return report
 
 
 if __name__ == "__main__":

@@ -34,8 +34,10 @@ def test_put_ignores_invalid_trait_value(client):
 def test_get_returns_trait_fields(client):
     gid = _make_game(client)
     g = client.get(f"/api/games/{gid}").get_json()
-    for key in ("session_length", "session_length_source", "series_role", "series_role_source"):
+    for key in ("session_length", "session_length_source"):
         assert key in g
+    for key in ("series_role", "series_role_source"):
+        assert key not in g   # series traits retired
 
 
 def test_create_applies_catalog(monkeypatch, client):

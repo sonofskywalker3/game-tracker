@@ -63,22 +63,14 @@ def test_normalize_endpoint_is_display_only_and_collision_safe(client):
 
 
 def test_api_games_default_sort_is_alphabetical(client):
-    # A game in a series would previously sort by COALESCE(series.name, title),
-    # so an "Alpha"-named series could pull a "Z..." game ahead of a "B..." game
-    # that isn't in any series. The default sort must now ignore series entirely
-    # and go strictly by the game's own title.
+    # The default sort goes strictly by the game's own title. (The retired series
+    # system used to sort by COALESCE(series.name, title), which could pull a
+    # "Z..." game ahead of a "B..." one; that concept no longer exists.)
     conn = models.get_db()
     conn.executemany(
         "INSERT INTO games (title, normalized_title) VALUES (?, ?)",
         [("Zelda: Breath of the Wild", "zelda breath of the wild"),
          ("Beta Game", "beta game")],
-    )
-    rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM games")}
-    conn.execute("INSERT INTO series (name) VALUES ('Alpha Adventures')")
-    sid = conn.execute("SELECT id FROM series WHERE name = 'Alpha Adventures'").fetchone()["id"]
-    conn.execute(
-        "INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 0)",
-        (rows["Zelda: Breath of the Wild"], sid),
     )
     conn.commit()
     conn.close()
