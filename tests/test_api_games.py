@@ -1,4 +1,25 @@
+import pytest
+
 import models
+
+
+def set_mode(client, mode):
+    return client.put('/api/profile', json={'collection_display_mode': mode})
+
+
+@pytest.fixture
+def seed_compilation(client):
+    """Container id=1, member id=2 (parent_collection_id=1), standalone id=9."""
+    conn = models.get_db()
+    conn.executemany(
+        "INSERT INTO games (id, title, normalized_title) VALUES (?, ?, ?)",
+        [(1, "Container Collection", "container collection"),
+         (2, "Member Game", "member game"),
+         (9, "Standalone Game", "standalone game")],
+    )
+    conn.execute("UPDATE games SET parent_collection_id = 1 WHERE id = 2")
+    conn.commit()
+    conn.close()
 
 
 def _ensure_platform(name, short, category):
@@ -782,3 +803,21 @@ def test_physical_media_derived_from_format_not_tag(client):
     assert by_id[2]["physical_media"] == ["cartridge", "disc"]   # sorted, deduped
     assert by_id[3]["physical"] is False        # tag ignored; format is digital
     assert by_id[3]["physical_media"] == []
+
+
+def test_games_mode_members_hides_container(client, seed_compilation):
+    set_mode(client, 'members')
+    ids = {g['id'] for g in client.get('/api/games').get_json()}
+    assert 1 not in ids and 2 in ids and 9 in ids
+
+
+def test_games_mode_collection_hides_members(client, seed_compilation):
+    set_mode(client, 'collection')
+    ids = {g['id'] for g in client.get('/api/games').get_json()}
+    assert 1 in ids and 2 not in ids and 9 in ids
+
+
+def test_games_mode_both_shows_all(client, seed_compilation):
+    set_mode(client, 'both')
+    ids = {g['id'] for g in client.get('/api/games').get_json()}
+    assert {1, 2, 9} <= ids
