@@ -243,6 +243,29 @@
         </div>
     </div>
 
+    <!-- Collection Display Section -->
+    <div class="bg-surface-light rounded-xl p-6">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🗂️</span>
+            Collection display
+        </h2>
+        <div>
+            <label class="block text-sm font-medium text-gray-400 mb-1" for="collection-display-mode">Collection display</label>
+            <select id="collection-display-mode" onchange="saveCollectionDisplayMode()"
+                    class="w-full bg-surface rounded-lg border border-gray-600 px-4 py-2 text-white focus:border-accent focus:outline-none">
+                <option value="members">Member games</option>
+                <option value="collection">Collection</option>
+                <option value="both">Both</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">
+                Member games shows each entry separately (e.g. Mega Man 1–6). Collection
+                shows the collapsed tile instead (e.g. "Mega Man Legacy Collection").
+                Both shows the member games and the collection tile.
+            </p>
+            <span id="collection-display-status" class="ml-3 text-sm"></span>
+        </div>
+    </div>
+
     <!-- Daily rhythm Section -->
     <div class="bg-surface-light rounded-xl p-6 mt-6">
         <h2 class="text-lg font-medium text-white mb-4 flex items-center">
@@ -329,6 +352,7 @@
         loadBundleReviews();
         loadTraitsAi();
         loadProfile();
+        loadCollectionDisplayMode();
     }
 
     async function loadCoverStatus() {
@@ -594,6 +618,28 @@
         const status = document.getElementById('prof-status');
         status.textContent = res.ok ? 'Saved.' : ('Error: ' + (res.data?.error || res.status));
         status.className = 'ml-3 text-sm ' + (res.ok ? 'text-green-400' : 'text-red-400');
+    }
+
+    // --- Collection display mode ---
+    async function loadCollectionDisplayMode() {
+        const p = await api.get('/api/profile');
+        document.getElementById('collection-display-mode').value = p.collection_display_mode || 'members';
+    }
+
+    async function saveCollectionDisplayMode() {
+        const statusEl = document.getElementById('collection-display-status');
+        statusEl.textContent = 'Saving...';
+        statusEl.className = 'ml-3 text-sm text-gray-400';
+        const mode = document.getElementById('collection-display-mode').value;
+        const res = await api.put('/api/profile', { collection_display_mode: mode });
+        if (res.ok) {
+            statusEl.textContent = 'Saved!';
+            statusEl.className = 'ml-3 text-sm text-green-400';
+            setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        } else {
+            statusEl.textContent = 'Error: ' + (res.data?.error || res.status);
+            statusEl.className = 'ml-3 text-sm text-red-400';
+        }
     }
 
     // Initialize
