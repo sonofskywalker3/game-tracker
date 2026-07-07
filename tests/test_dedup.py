@@ -137,7 +137,7 @@ def _full_conn():
     conn.executescript("""
         CREATE TABLE games (id INTEGER PRIMARY KEY, title TEXT NOT NULL,
             normalized_title TEXT NOT NULL UNIQUE, cover_url TEXT,
-            updated_at TIMESTAMP);
+            updated_at TIMESTAMP, parent_collection_id INTEGER);
         CREATE TABLE platforms (id INTEGER PRIMARY KEY, short_name TEXT UNIQUE);
         CREATE TABLE game_platforms (game_id INTEGER, platform_id INTEGER,
             owned BOOLEAN DEFAULT 1, psprices_id TEXT, format TEXT,
@@ -274,6 +274,25 @@ def test_merge_repoints_barcode_registry_links():
     gid = conn.execute("SELECT game_id FROM barcode_registry "
                        "WHERE upc = '045496596675'").fetchone()[0]
     assert gid == 1
+
+
+def test_merge_drop_clears_member_parent_collection_id():
+    # If the dropped duplicate was itself a compilation container, any member
+    # pointing at it via parent_collection_id must be freed — otherwise, in
+    # 'collection' display mode, the member is hidden as though its (now-gone)
+    # container still existed and silently vanishes from the library.
+    conn = _full_conn()
+    _add_game(conn, 1, "Sonic Origins")
+    _add_game(conn, 2, "Sonic Origins Plus")  # dropped duplicate; also a container
+    _add_game(conn, 3, "Sonic CD")
+    conn.execute("UPDATE games SET parent_collection_id = 2 WHERE id = 3")
+
+    merge_games(conn, survivor_id=1, drop_ids=[2])
+
+    row = conn.execute(
+        "SELECT id, parent_collection_id FROM games WHERE id = 3").fetchone()
+    assert row is not None
+    assert row["parent_collection_id"] is None
 
 
 def test_refresh_updates_keys_to_fresh_clean_title():

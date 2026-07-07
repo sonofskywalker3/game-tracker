@@ -66,7 +66,7 @@ def settings_page():
 
 @app.route('/collections')
 def collections_page():
-    """IGDB-canonical collections browser (Stage 1: additive alongside Series)."""
+    """IGDB-canonical collections browser (Stage 1)."""
     return render_template('collections.html')
 
 
@@ -1427,10 +1427,7 @@ def api_delete_game(game_id):
         conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
         # Orphaned members fall back to standalone (shown) instead of vanishing
         # from the collection-mode filter with a stale parent reference.
-        conn.execute(
-            "UPDATE games SET parent_collection_id = NULL WHERE parent_collection_id = ?",
-            (game_id,)
-        )
+        dedup.clear_parent_collection(conn, game_id)
         conn.commit()
 
         return jsonify({'success': True})
@@ -1462,6 +1459,9 @@ def api_not_a_game(game_id):
                         'normalized_title': normalized, 'title': g['title']}]
         import_scraped.add_excluded_games(entries)
         conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+        # Same cleanup as api_delete_game: a member left pointing at a now-gone
+        # container would vanish from the library in 'collection' display mode.
+        dedup.clear_parent_collection(conn, game_id)
         conn.commit()
         return jsonify({'success': True, 'excluded': len(entries)})
     finally:

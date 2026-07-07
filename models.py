@@ -942,7 +942,7 @@ def _rebuild_user_ratings_without_series(conn: sqlite3.Connection) -> None:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_priority ON user_ratings(priority DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_user_ratings_sort_order ON user_ratings(sort_order)")
             # Preserve, don't abort: orphan rows are copied through. Log for visibility.
-            orphans = conn.execute("PRAGMA foreign_key_check").fetchall()
+            orphans = conn.execute("PRAGMA foreign_key_check(user_ratings)").fetchall()
             if orphans:
                 logging.warning(
                     "user_ratings series-drop rebuild preserved %d orphan row(s) "
