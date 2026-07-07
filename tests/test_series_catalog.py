@@ -287,18 +287,6 @@ def test_apply_dry_run_writes_nothing_returns_report(monkeypatch, temp_db):
     conn.close()
 
 
-def test_from_group_stamps_manual(client, temp_db):
-    conn = models.get_db()
-    gid = _add_game(conn, "Some Game")
-    conn.close()
-    resp = client.post("/api/series/from-group", json={"name": "My Series", "game_ids": [gid]})
-    assert resp.status_code == 200
-    conn = models.get_db()
-    src = conn.execute("SELECT series_source FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()[0]
-    conn.close()
-    assert src == "manual"
-
-
 def test_cli_apply_series_catalog_dry_run(monkeypatch, temp_db):
     conn = models.get_db()
     _add_game(conn, "Mega Man")

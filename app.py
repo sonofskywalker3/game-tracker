@@ -2,7 +2,6 @@
 Game Tracker - Flask Application
 """
 import csv
-import difflib
 import io
 import json
 import logging
@@ -22,8 +21,7 @@ import barcode
 from flask import Flask, Response, render_template, request, jsonify
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
-    reclean_display_titles, DB_PATH, add_series_pattern, apply_traits_catalog,
-    apply_series_catalog,
+    reclean_display_titles, DB_PATH, apply_traits_catalog,
 )
 from recommendation import get_recommendations, get_quick_picks
 from config import (load_config, save_config, get_twitch_credentials,
@@ -67,23 +65,10 @@ def settings_page():
     return render_template('settings.html')
 
 
-@app.route('/series')
-def series_overview_page():
-    """Visual overview of all series (fanned-stack tiles)."""
-    return render_template('series_overview.html')
-
-
 @app.route('/collections')
 def collections_page():
     """IGDB-canonical collections browser (Stage 1: additive alongside Series)."""
     return render_template('collections.html')
-
-
-@app.route('/series/manage')
-@app.route('/series/<int:series_id>')
-def series_page(series_id=None):
-    """Series management/editor page."""
-    return render_template('series.html', series_id=series_id)
 
 
 # ============================================================================
@@ -245,9 +230,9 @@ MAX_BATCH_ADD = 100
 def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False):
     """Shared create core for the single and batch add endpoints: clean/normalize
     the title, dedup against normalized_title, insert game + backlog rating +
-    platform links, then apply the trait/series catalogs. Returns
+    platform links, then apply the trait catalog. Returns
     (status, game_id, clean_display_title) where status is 'exists' or 'added'.
-    Commits the insert (the catalog appliers commit internally)."""
+    Commits the insert (the catalog applier commits internally)."""
     title = clean_title(raw_title)
     normalized = normalize_title(title)
     # Atomic dedup on UNIQUE(normalized_title): DO NOTHING (rowcount 0) means a
@@ -276,7 +261,6 @@ def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False
 
     conn.commit()
     apply_traits_catalog(conn, game_id)
-    apply_series_catalog(conn, game_id)
     return 'added', game_id, title
 
 
@@ -1165,8 +1149,8 @@ def api_igdb_pick(game_id):
     try:
         igdb_id = int(igdb_id)
     except (ValueError, TypeError):
-        # A non-integer igdb_id persisted here bricks series sort-by-release and
-        # DLC refresh later — reject it at the door.
+        # A non-integer igdb_id persisted here bricks DLC refresh later — reject
+        # it at the door.
         return jsonify({'error': 'igdb_id must be an integer'}), 400
     cover_url = (data.get('cover_url') or '').strip() or None
     conn = get_db()
@@ -1232,7 +1216,6 @@ def api_pin_steam(game_id):
 
 TRAIT_ENUMS = {
     "session_length": {"short", "long"},
-    "series_role": {"mainline", "spinoff"},
 }
 
 
@@ -1245,7 +1228,7 @@ def api_update_game(game_id):
     try:
         # Update game table fields (title, cover_url, time_to_beat_override_minutes, traits)
         if ('title' in data or 'cover_url' in data or 'time_to_beat_override_minutes' in data
-                or 'session_length' in data or 'series_role' in data
+                or 'session_length' in data
                 or 'input_lag_override' in data):
             game_updates = []
             game_params = []
@@ -1270,7 +1253,7 @@ def api_update_game(game_id):
                 else:
                     game_updates.append("input_lag_override = ?")
                     game_params.append(1 if int(v) else 0)
-            for trait in ('session_length', 'series_role'):
+            for trait in ('session_length',):
                 if trait in data:
                     v = data[trait]
                     if v in (None, ""):
@@ -1609,599 +1592,6 @@ def api_reorder_games():
     return jsonify({'success': True})
 
 
-# ============================================================================
-# Series API Routes
-# ============================================================================
-
-@app.route('/api/series')
-def api_series():
-    """Get all series with their games."""
-    conn = get_db()
-    series_list = conn.execute("""
-        SELECT s.*, COUNT(ur.game_id) as game_count
-        FROM series s
-        LEFT JOIN user_ratings ur ON ur.series_id = s.id
-        GROUP BY s.id
-        ORDER BY s.name
-    """).fetchall()
-
-    result = []
-    for s in series_list:
-        series_dict = dict(s)
-        # Get games in this series
-        games = conn.execute("""
-            SELECT g.id, g.title, g.cover_url, ur.series_order
-            FROM games g
-            JOIN user_ratings ur ON ur.game_id = g.id
-            WHERE ur.series_id = ?
-            ORDER BY ur.series_order, g.title
-        """, (s['id'],)).fetchall()
-        series_dict['games'] = [dict(g) for g in games]
-        result.append(series_dict)
-
-    conn.close()
-    return jsonify(result)
-
-
-@app.route('/api/series', methods=['POST'])
-def api_create_series():
-    """Create a new series."""
-    conn = get_db()
-    data = request.json
-
-    name = data.get('name', '').strip()
-    if not name:
-        conn.close()
-        return jsonify({'error': 'Name is required'}), 400
-
-    # Check if series already exists
-    existing = conn.execute("SELECT id FROM series WHERE name = ?", (name,)).fetchone()
-    if existing:
-        conn.close()
-        return jsonify({'error': 'Series already exists', 'series_id': existing['id']}), 409
-
-    conn.execute("INSERT INTO series (name) VALUES (?)", (name,))
-    series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True, 'series_id': series_id}), 201
-
-
-@app.route('/api/series/from-group', methods=['POST'])
-def api_series_from_group():
-    """Create-or-find a series by name and assign the given games to it (in order).
-
-    {name, game_ids, remember} -> {success, series_id, created, assigned}. When
-    `remember`, the name is added to the durable per-user series-pattern table.
-    """
-    data = request.json or {}
-    name = (data.get('name') or '').strip()
-    game_ids = data.get('game_ids') or []
-    if not name or not game_ids:
-        return jsonify({'error': 'name and game_ids are required'}), 400
-
-    conn = get_db()
-    try:
-        # Intentional: case-insensitive find-or-create is the contract here (no 409
-        # like api_create_series) — the dedup modal wants idempotent assignment.
-        row = conn.execute("SELECT id FROM series WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
-        if row:
-            series_id, created = row['id'], False
-        else:
-            conn.execute("INSERT INTO series (name) VALUES (?)", (name,))
-            series_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            created = True
-
-        order = conn.execute(
-            "SELECT MAX(series_order) FROM user_ratings WHERE series_id = ?", (series_id,)
-        ).fetchone()[0] or 0
-        assigned = 0
-        for gid in game_ids:
-            cur = conn.execute("SELECT series_id FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
-            if cur and cur['series_id'] == series_id:
-                continue
-            order += 1
-            conn.execute(
-                "INSERT INTO user_ratings (game_id, series_id, series_order, series_source) "
-                "VALUES (?, ?, ?, 'manual') "
-                "ON CONFLICT(game_id) DO UPDATE SET series_id = excluded.series_id, "
-                "series_order = excluded.series_order, series_source = 'manual', "
-                "updated_at = CURRENT_TIMESTAMP",
-                (gid, series_id, order))
-            assigned += 1
-        conn.commit()
-    except sqlite3.IntegrityError as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 400
-    finally:
-        conn.close()
-
-    if data.get('remember'):
-        add_series_pattern(name, name)
-
-    return jsonify({'success': True, 'series_id': series_id,
-                    'created': created, 'assigned': assigned})
-
-
-@app.route('/api/series/<int:series_id>', methods=['DELETE'])
-def api_delete_series(series_id):
-    """Delete a series (games are kept, just unlinked)."""
-    conn = get_db()
-
-    # Unlink games from this series
-    conn.execute("UPDATE user_ratings SET series_id = NULL, series_order = NULL, "
-                 "series_source = NULL WHERE series_id = ?", (series_id,))
-    conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True})
-
-
-@app.route('/api/series/<int:series_id>', methods=['PUT'])
-def api_rename_series(series_id):
-    """Rename a series."""
-    conn = get_db()
-    data = request.json
-
-    name = data.get('name', '').strip()
-    if not name:
-        conn.close()
-        return jsonify({'error': 'Series name is required'}), 400
-
-    # Check if name already exists (for a different series)
-    existing = conn.execute(
-        "SELECT id FROM series WHERE name = ? AND id != ?",
-        (name, series_id)
-    ).fetchone()
-
-    if existing:
-        conn.close()
-        return jsonify({'error': 'A series with this name already exists'}), 409
-
-    conn.execute("UPDATE series SET name = ? WHERE id = ?", (name, series_id))
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True})
-
-
-@app.route('/api/series/suggestions')
-def api_series_suggestions():
-    """Suggest series names based on existing games in library."""
-    import re
-    from collections import Counter
-
-    conn = get_db()
-
-    # Get all game titles
-    games = conn.execute("SELECT title FROM games").fetchall()
-    titles = [g['title'] for g in games]
-
-    # Get existing series names
-    existing_series = conn.execute("SELECT name FROM series").fetchall()
-    existing_names = set(s['name'].lower() for s in existing_series)
-
-    conn.close()
-
-    # Common patterns to extract series names
-    suggestions = Counter()
-
-    for title in titles:
-        # Pattern: "Name: Subtitle" or "Name - Subtitle"
-        match = re.match(r'^([^:\-–]+)[:\-–]', title)
-        if match:
-            name = match.group(1).strip()
-            if len(name) > 2:
-                suggestions[name] += 1
-
-        # Pattern: "Name 2", "Name II", "Name 3", etc.
-        match = re.match(r'^(.+?)\s+(?:\d+|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)(?:\s|$|:)', title)
-        if match:
-            name = match.group(1).strip()
-            if len(name) > 2:
-                suggestions[name] += 1
-
-        # Pattern: "Name Remastered/Remake/HD/Definitive"
-        match = re.match(r'^(.+?)\s+(?:Remastered|Remake|HD|Definitive|GOTY|Edition|Complete|Ultimate|Enhanced)(?:\s|$)', title, re.IGNORECASE)
-        if match:
-            name = match.group(1).strip()
-            if len(name) > 2:
-                suggestions[name] += 1
-
-    # Filter out suggestions that already exist or only have 1 game
-    filtered = [
-        {'name': name, 'count': count}
-        for name, count in suggestions.most_common(20)
-        if count >= 1 and name.lower() not in existing_names
-    ]
-
-    return jsonify(filtered)
-
-
-def get_original_title(title):
-    """Strip remaster/remake suffixes to get the original game title."""
-    import re
-    # Remove common remaster/remake suffixes
-    patterns = [
-        r'\s*[-–:]\s*(Remastered|Remake|HD|Definitive|GOTY|Complete|Ultimate|Enhanced|Anniversary|Deluxe|Special|Director\'?s?\s*Cut).*$',
-        r'\s+(Remastered|Remake|HD Remaster|HD Edition|Definitive Edition|GOTY Edition|Complete Edition|Ultimate Edition|Enhanced Edition|Anniversary Edition|Deluxe Edition|Special Edition|Director\'?s?\s*Cut).*$',
-    ]
-    original = title
-    for pattern in patterns:
-        original = re.sub(pattern, '', original, flags=re.IGNORECASE)
-    return original.strip()
-
-
-# Below this similarity to the query, an IGDB result isn't a confident match.
-_IGDB_NAME_MATCH_THRESHOLD = 0.6
-
-
-def _is_word_prefix(prefix: str, text: str) -> bool:
-    """True if `prefix` spans whole leading words of `text` (case-insensitive)."""
-    p, t = prefix.lower(), text.lower()
-    return t == p or (t.startswith(p) and not t[len(p)].isalnum())
-
-
-def pick_igdb_series_name(query: str, results: list[dict]) -> str | None:
-    """Best canonical franchise/collection name from IGDB results for `query`.
-
-    Prefers an exact (case-insensitive) match, then a result that is a word-prefix
-    of the query (the franchise the series belongs to — longest wins), then the
-    highest-similarity name at or above the confidence threshold, else None. Pure.
-    """
-    q = (query or "").strip().lower()
-    names = [r["name"] for r in results if isinstance(r, dict) and r.get("name")]
-    if not q or not names:
-        return None
-    for name in names:
-        if name.lower() == q:
-            return name
-    prefixes = [name for name in names if _is_word_prefix(name, q)]
-    if prefixes:
-        return max(prefixes, key=len)
-    best, best_score = None, 0.0
-    for name in names:
-        score = difflib.SequenceMatcher(None, q, name.lower()).ratio()
-        if score > best_score:
-            best, best_score = name, score
-    return best if best_score >= _IGDB_NAME_MATCH_THRESHOLD else None
-
-
-@app.route('/api/series/igdb-suggest')
-def api_series_igdb_suggest():
-    """Suggest the canonical franchise/collection name for a series name via IGDB.
-
-    GET ?name=... -> {"suggestion": <name or null>}. Best-effort: returns
-    {"suggestion": null} when IGDB is unconfigured or nothing matches.
-    """
-    from fetch_covers import get_access_token
-    import requests
-
-    name = (request.args.get('name') or '').strip()
-    if not name:
-        return jsonify({'error': 'name is required'}), 400
-
-    client_id, client_secret = get_twitch_credentials()
-    if not client_id or not client_secret:
-        return jsonify({'suggestion': None})
-
-    try:
-        access_token = get_access_token(client_id, client_secret)
-        headers = {'Client-ID': client_id, 'Authorization': f'Bearer {access_token}',
-                   'Content-Type': 'text/plain'}
-        query = f'search "{name.replace(chr(34), "")}"; fields name; limit 5;'
-        results = []
-        for endpoint in ('franchises', 'collections'):
-            resp = requests.post(f'https://api.igdb.com/v4/{endpoint}',
-                                 headers=headers, data=query, timeout=10)
-            if resp.ok:
-                results.extend(resp.json())
-        return jsonify({'suggestion': pick_igdb_series_name(name, results)})
-    except requests.RequestException as e:
-        log.warning("igdb-suggest failed for %r: %s", name, e)
-        return jsonify({'suggestion': None})
-
-
-# Sort key for series entries with no pinned igdb_id or no IGDB release date —
-# sorts them last (chronological order is unknowable), then stable by title.
-_UNKNOWN_RELEASE_SORT = 9999999999
-
-
-def igdb_release_dates_by_id(igdb_ids, client_id, client_secret):
-    """Map {igdb_id: first_release_date (unix ts)} for the given ids in ONE IGDB
-    call. Ids with no stored date are omitted; empty/blank input returns {} without
-    a network call. Looking dates up by the game's pinned igdb_id is exact — it
-    replaces the old fuzzy title re-search that cross-matched same-franchise
-    entries (e.g. every numbered Final Fantasy is a substring of the next).
-
-    Remasters/ports carry their re-release date, so the ORIGINAL's date is taken
-    from version_parent/parent_game when present — the earliest available date
-    wins (a series sorted by release wants Tales of Symphonia Remastered at 2003,
-    not 2023)."""
-    from fetch_covers import get_access_token
-    ids = sorted({i for i in igdb_ids if i})
-    if not ids:
-        return {}
-    token = get_access_token(client_id, client_secret)
-    headers = {
-        'Client-ID': client_id,
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'text/plain',
-    }
-    query = (f"fields id, first_release_date, version_parent.first_release_date, "
-             f"parent_game.first_release_date; "
-             f"where id = ({','.join(str(i) for i in ids)}); limit {len(ids)};")
-    response = requests.post('https://api.igdb.com/v4/games', headers=headers, data=query)
-    response.raise_for_status()
-    out = {}
-    for row in response.json():
-        dates = [row.get('first_release_date'),
-                 (row.get('version_parent') or {}).get('first_release_date'),
-                 (row.get('parent_game') or {}).get('first_release_date')]
-        dates = [d for d in dates if d]
-        if dates:
-            out[row['id']] = min(dates)
-    return out
-
-
-@app.route('/api/series/<int:series_id>/sort-by-release', methods=['POST'])
-def api_sort_series_by_release(series_id):
-    """Sort a series chronologically by each game's IGDB first_release_date, looked
-    up by the game's pinned igdb_id (exact). Games with no igdb_id or no IGDB date
-    sort last, stable by title."""
-    conn = get_db()
-
-    games = conn.execute("""
-        SELECT g.id, g.title, g.igdb_id
-        FROM games g
-        JOIN user_ratings ur ON g.id = ur.game_id
-        WHERE ur.series_id = ?
-    """, (series_id,)).fetchall()
-    if not games:
-        conn.close()
-        return jsonify({'error': 'No games in series'}), 400
-
-    client_id, client_secret = get_twitch_credentials()
-    if not client_id or not client_secret:
-        conn.close()
-        return jsonify({'error': 'IGDB not configured'}), 400
-
-    try:
-        dates = igdb_release_dates_by_id(
-            [g['igdb_id'] for g in games], client_id, client_secret)
-    except requests.RequestException as exc:
-        conn.close()
-        log.warning("sort-by-release IGDB fetch failed for series %s: %s", series_id, exc)
-        return jsonify({'error': 'Failed to reach IGDB'}), 502
-
-    ordered = sorted(games, key=lambda g: (
-        dates.get(g['igdb_id'], _UNKNOWN_RELEASE_SORT) if g['igdb_id'] else _UNKNOWN_RELEASE_SORT,
-        (g['title'] or '').lower()))
-    for index, game in enumerate(ordered):
-        conn.execute("""
-            UPDATE user_ratings
-            SET series_order = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE game_id = ? AND series_id = ?
-        """, (index, game['id'], series_id))
-    conn.commit()
-    conn.close()
-    return jsonify({'success': True, 'order': [g['id'] for g in ordered]})
-
-
-@app.route('/api/series/<int:series_id>/missing')
-def api_series_missing_games(series_id):
-    """Find games in the IGDB franchise/collection that user doesn't own."""
-    from fetch_covers import get_access_token
-    import requests
-
-    conn = get_db()
-
-    # Get series name
-    series = conn.execute("SELECT name FROM series WHERE id = ?", (series_id,)).fetchone()
-    if not series:
-        conn.close()
-        return jsonify({'error': 'Series not found'}), 404
-
-    series_name = series['name']
-
-    # Get all game titles user owns (normalized for comparison)
-    all_games = conn.execute("SELECT title, normalized_title FROM games").fetchall()
-    owned_titles = set()
-    for g in all_games:
-        owned_titles.add(g['normalized_title'].lower() if g['normalized_title'] else g['title'].lower())
-        # Also add without common suffixes
-        clean = get_original_title(g['title']).lower()
-        owned_titles.add(clean)
-
-    conn.close()
-
-    # Get IGDB credentials
-    client_id, client_secret = get_twitch_credentials()
-    if not client_id or not client_secret:
-        return jsonify({'error': 'IGDB not configured'}), 400
-
-    try:
-        access_token = get_access_token(client_id, client_secret)
-
-        headers = {
-            'Client-ID': client_id,
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'text/plain'
-        }
-
-        # First, search for franchises matching the series name
-        franchise_query = f'''
-            search "{series_name.replace('"', '')}";
-            fields name, games.name, games.cover.url, games.first_release_date, games.category;
-            limit 3;
-        '''
-
-        response = requests.post(
-            'https://api.igdb.com/v4/franchises',
-            headers=headers,
-            data=franchise_query
-        )
-
-        all_franchise_games = []
-        if response.ok:
-            franchises = response.json()
-            for franchise in franchises:
-                if franchise.get('games'):
-                    for game in franchise['games']:
-                        if isinstance(game, dict):
-                            all_franchise_games.append(game)
-
-        # Also search collections
-        collection_query = f'''
-            search "{series_name.replace('"', '')}";
-            fields name, games.name, games.cover.url, games.first_release_date, games.category;
-            limit 3;
-        '''
-
-        response = requests.post(
-            'https://api.igdb.com/v4/collections',
-            headers=headers,
-            data=collection_query
-        )
-
-        if response.ok:
-            collections = response.json()
-            for collection in collections:
-                if collection.get('games'):
-                    for game in collection['games']:
-                        if isinstance(game, dict):
-                            all_franchise_games.append(game)
-
-        # Filter to main games only (category 0 = main game) and ones user doesn't own
-        missing_games = []
-        seen_names = set()
-
-        for game in all_franchise_games:
-            name = game.get('name', '')
-            if not name or name in seen_names:
-                continue
-
-            # Check if category is main game (0) or skip if no category
-            category = game.get('category', 0)
-            if category not in [0, 8, 9, 10, 11]:  # Main game, remake, remaster, expanded, port
-                continue
-
-            seen_names.add(name)
-
-            # Check if user owns this (fuzzy match)
-            name_lower = name.lower()
-            name_clean = get_original_title(name).lower()
-
-            if name_lower in owned_titles or name_clean in owned_titles:
-                continue
-
-            # Check partial matches
-            owned = False
-            for owned_title in owned_titles:
-                if name_clean in owned_title or owned_title in name_clean:
-                    owned = True
-                    break
-            if owned:
-                continue
-
-            cover_url = None
-            if game.get('cover') and isinstance(game['cover'], dict):
-                cover_url = game['cover'].get('url', '')
-                if cover_url:
-                    cover_url = cover_url.replace('t_thumb', 't_cover_big')
-                    if not cover_url.startswith('http'):
-                        cover_url = 'https:' + cover_url
-
-            missing_games.append({
-                'name': name,
-                'cover_url': cover_url,
-                'release_date': game.get('first_release_date')
-            })
-
-        # Sort by release date
-        missing_games.sort(key=lambda g: g.get('release_date') or 9999999999)
-
-        return jsonify(missing_games)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/series/<int:series_id>/games', methods=['POST'])
-def api_add_game_to_series(series_id):
-    """Add a game to a series."""
-    conn = get_db()
-    data = request.json
-
-    game_id = data.get('game_id')
-    if not game_id:
-        conn.close()
-        return jsonify({'error': 'game_id is required'}), 400
-
-    # Get the next series_order
-    max_order = conn.execute(
-        "SELECT MAX(series_order) FROM user_ratings WHERE series_id = ?",
-        (series_id,)
-    ).fetchone()[0]
-    next_order = (max_order or 0) + 1
-
-    # Update the game's series
-    conn.execute("""
-        INSERT INTO user_ratings (game_id, series_id, series_order, series_source)
-        VALUES (?, ?, ?, 'manual')
-        ON CONFLICT(game_id) DO UPDATE SET
-            series_id = excluded.series_id,
-            series_order = excluded.series_order,
-            series_source = 'manual',
-            updated_at = CURRENT_TIMESTAMP
-    """, (game_id, series_id, next_order))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True})
-
-
-@app.route('/api/series/<int:series_id>/reorder', methods=['POST'])
-def api_reorder_series(series_id):
-    """Reorder games within a series."""
-    conn = get_db()
-    data = request.json
-
-    game_ids = data.get('game_ids', [])
-
-    for index, game_id in enumerate(game_ids):
-        conn.execute("""
-            UPDATE user_ratings
-            SET series_order = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE game_id = ? AND series_id = ?
-        """, (index, game_id, series_id))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True})
-
-
-@app.route('/api/games/<int:game_id>/series', methods=['DELETE'])
-def api_remove_game_from_series(game_id):
-    """Remove a game from its series."""
-    conn = get_db()
-
-    conn.execute("""
-        UPDATE user_ratings
-        SET series_id = NULL, series_order = NULL, series_source = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE game_id = ?
-    """, (game_id,))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True})
-
-
 @app.route('/api/recommendations')
 def api_recommendations():
     """Get game recommendations."""
@@ -2248,15 +1638,14 @@ def api_create_slot():
     next_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots").fetchone()[0]
     conn.execute(
         "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
-        "min_session_minutes, streamable_only, prioritize_started, context_notes, "
-        "focus_series_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "min_session_minutes, streamable_only, prioritize_started, context_notes) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (data.get('label', 'New slot'), next_order,
          json.dumps(data.get('platforms', [])),
          data.get('max_session_minutes'), data.get('min_session_minutes'),
          1 if data.get('streamable_only') else 0,
          1 if data.get('prioritize_started', 1) else 0,
-         data.get('context_notes'), data.get('focus_series_id')))
+         data.get('context_notes')))
     conn.commit()
     conn.close()
     return jsonify({'ok': True}), 201
@@ -2268,7 +1657,7 @@ def api_update_slot(slot_id: int):
     data = request.get_json() or {}
     fields, params = [], []
     for key in ('label', 'max_session_minutes', 'min_session_minutes', 'context_notes',
-                'sort_order', 'focus_series_id'):
+                'sort_order'):
         if key in data:
             fields.append(f"{key} = ?")
             params.append(data[key])
@@ -2719,7 +2108,7 @@ def api_igdb_search():
     import requests
 
     # Strip double quotes: the query is spliced into an Apicalypse string literal,
-    # and a quote breaks out of it (same sanitization as the series IGDB routes).
+    # and a quote breaks out of it.
     query = request.args.get('q', '').strip().replace('"', '')
     if not query or len(query) < 2:
         return jsonify([])

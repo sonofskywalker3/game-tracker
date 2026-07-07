@@ -2,7 +2,7 @@
 import pytest
 
 
-@pytest.mark.parametrize("path", ["/", "/recommendations", "/series", "/settings"])
+@pytest.mark.parametrize("path", ["/", "/recommendations", "/settings"])
 def test_hero_present_on_every_page(client, path):
     resp = client.get(path)
     assert resp.status_code == 200
