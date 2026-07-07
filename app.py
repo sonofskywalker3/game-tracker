@@ -120,6 +120,7 @@ def api_games():
             COALESCE(g.needs_igdb_review, 0) AS needs_igdb_review,
             g.igdb_review_reason,
             g.created_at,
+            g.parent_collection_id,
             ur.status,
             ur.rating,
             ur.priority,
@@ -180,6 +181,28 @@ def api_games():
         query += f" ORDER BY {sort_col} {sort_order}"
 
     rows = conn.execute(query, params).fetchall()
+
+    # Collection display mode filter (Task 9's preference). Computed from the
+    # FULL games table: "is this row a container" is a global fact, independent
+    # of whatever status/platform/search filters narrowed the result set above.
+    mode_row = conn.execute(
+        "SELECT collection_display_mode FROM user_profile WHERE id = 1").fetchone()
+    display_mode = (mode_row["collection_display_mode"] if mode_row else None) \
+        or _DEFAULT_COLLECTION_DISPLAY_MODE
+    if display_mode not in COLLECTION_DISPLAY_MODES:
+        display_mode = _DEFAULT_COLLECTION_DISPLAY_MODE
+
+    if display_mode != "both":
+        container_ids = {
+            r["parent_collection_id"] for r in
+            conn.execute(
+                "SELECT DISTINCT parent_collection_id FROM games "
+                "WHERE parent_collection_id IS NOT NULL").fetchall()
+        }
+        if display_mode == "members":
+            rows = [r for r in rows if r["id"] not in container_ids]
+        elif display_mode == "collection":
+            rows = [r for r in rows if r["parent_collection_id"] is None]
 
     games = []
     for row in rows:
