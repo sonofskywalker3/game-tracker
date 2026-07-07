@@ -207,64 +207,6 @@ def group_candidates(candidates: list[dict]) -> list[dict]:
     return groups
 
 
-def _word_prefix_of(prefix: str, title: str) -> bool:
-    """True if `prefix` spans whole leading words of `title` (case-insensitive).
-
-    The boundary is end-of-string or a non-alphanumeric char, so "Final Fantasy"
-    prefixes "Final Fantasy VII" and "Final Fantasy: X" but not "Final Fantasyland".
-    """
-    p, t = prefix.lower(), title.lower()
-    if t == p:
-        return True
-    return t.startswith(p) and not t[len(p)].isalnum()
-
-
-# Trailing separators trimmed off a derived (common-prefix) series name.
-_SERIES_NAME_TRAILING = " :-–"
-
-
-def infer_series_name(titles: list[str]) -> str:
-    """Best-guess series name for a set of member titles.
-
-    1. The member title that is a word-prefix of a MAJORITY of the other members
-       ("Final Fantasy" prefixes ~all, so it wins; "SteamWorld Heist" prefixes
-       only its own sub-entries, a minority, so it does not).
-    2. Else the longest run of shared leading words ("SteamWorld").
-    3. Else the shortest title.
-
-    Pure; matching is case-insensitive, original casing kept in the result.
-    """
-    names = [t.strip() for t in titles if t and t.strip()]
-    if not names:
-        return ""
-    if len(names) == 1:
-        return names[0]
-
-    # 1. Member that word-prefixes a majority of the others (ties: shortest, alpha).
-    scored = [
-        (sum(1 for j, other in enumerate(names)
-             if j != i and _word_prefix_of(cand, other)), cand)
-        for i, cand in enumerate(names)
-    ]
-    best_count = max(count for count, _ in scored)
-    if best_count * 2 > len(names) - 1:
-        return min((cand for count, cand in scored if count == best_count),
-                   key=lambda n: (len(n), n))
-
-    # 2. Longest run of shared leading words.
-    common: list[str] = []
-    for column in zip(*(n.split() for n in names)):
-        if all(w.lower() == column[0].lower() for w in column):
-            common.append(column[0])
-        else:
-            break
-    if common:
-        return " ".join(common).rstrip(_SERIES_NAME_TRAILING)
-
-    # 3. Shortest title (ties broken alphabetically).
-    return min(names, key=lambda n: (len(n), n))
-
-
 # Status progression rank (higher = further along). "100" is a completion tier.
 _STATUS_RANK = {
     "completed": 6, "100": 6, "playing": 5, "dropped": 4,

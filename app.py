@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import sqlite3
-from collections import Counter
 from datetime import datetime, timezone
 import requests
 import dedup
@@ -696,13 +695,9 @@ def api_game(game_id):
             ur.hours_played,
             ur.notes,
             ur.started_at,
-            ur.completed_at,
-            ur.series_id,
-            ur.series_order,
-            s.name as series_name
+            ur.completed_at
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
-        LEFT JOIN series s ON s.id = ur.series_id
         WHERE g.id = ?
     """, (game_id,)).fetchone()
 
@@ -1484,27 +1479,14 @@ def api_duplicates():
             "ON p.id = gp.platform_id WHERE gp.game_id = ?", (gid,))]
         ur = conn.execute(
             "SELECT status, rating, notes, priority, hours_played, started_at, "
-            "completed_at, sort_order, series_id, series_order "
+            "completed_at, sort_order "
             "FROM user_ratings WHERE game_id = ?", (gid,)).fetchone()
         games.append({
             "id": g["id"], "title": g["title"], "cover_url": g["cover_url"],
             "platforms": platforms,
             "curation": dict(ur) if ur else {"status": "backlog"},
         })
-    titles_by_id = {game["id"]: game["title"] for game in games}
     grouped = dedup.group_candidates(groups["candidates"])
-    for g in grouped:
-        placeholders = ",".join("?" * len(g["members"]))
-        rows = conn.execute(
-            f"SELECT s.id, s.name FROM user_ratings ur JOIN series s ON s.id = ur.series_id "
-            f"WHERE ur.game_id IN ({placeholders})", g["members"]).fetchall()
-        if rows:
-            (sid, sname), _ = Counter((r["id"], r["name"]) for r in rows).most_common(1)[0]
-            g["existing_series_id"], g["existing_series_name"] = sid, sname
-        else:
-            g["existing_series_id"], g["existing_series_name"] = None, None
-        g["inferred_name"] = dedup.infer_series_name(
-            [titles_by_id[m] for m in g["members"] if m in titles_by_id])
     conn.close()
     return jsonify({"definite": groups["definite"],
                     "candidates": groups["candidates"],
