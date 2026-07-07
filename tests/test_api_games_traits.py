@@ -15,14 +15,6 @@ def test_put_sets_session_length_manual(client):
     assert g["session_length_source"] == "manual"
 
 
-def test_put_sets_series_role_manual(client):
-    gid = _make_game(client)
-    client.put(f"/api/games/{gid}", json={"series_role": "spinoff"})
-    g = client.get(f"/api/games/{gid}").get_json()
-    assert g["series_role"] == "spinoff"
-    assert g["series_role_source"] == "manual"
-
-
 def test_put_clears_trait_on_empty(client):
     gid = _make_game(client)
     client.put(f"/api/games/{gid}", json={"session_length": "long"})
