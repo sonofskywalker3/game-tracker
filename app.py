@@ -1425,6 +1425,12 @@ def api_delete_game(game_id):
 
         # Delete the game (CASCADE will handle related tables)
         conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+        # Orphaned members fall back to standalone (shown) instead of vanishing
+        # from the collection-mode filter with a stale parent reference.
+        conn.execute(
+            "UPDATE games SET parent_collection_id = NULL WHERE parent_collection_id = ?",
+            (game_id,)
+        )
         conn.commit()
 
         return jsonify({'success': True})

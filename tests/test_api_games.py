@@ -821,3 +821,27 @@ def test_games_mode_both_shows_all(client, seed_compilation):
     set_mode(client, 'both')
     ids = {g['id'] for g in client.get('/api/games').get_json()}
     assert {1, 2, 9} <= ids
+
+
+def test_delete_container_nulls_member_parent_collection_id(client, seed_compilation):
+    # Deleting the container (id=1) must not leave the member (id=2) with a
+    # stale parent_collection_id — otherwise, in 'collection' mode, the member
+    # is hidden as though it still had a container to fall back to, and it
+    # silently vanishes from the library entirely.
+    resp = client.delete('/api/games/1')
+    assert resp.status_code == 200
+
+    conn = models.get_db()
+    row = conn.execute(
+        "SELECT id, parent_collection_id FROM games WHERE id = ?", (2,)
+    ).fetchone()
+    conn.close()
+
+    assert row is not None  # member game still exists
+    assert row['parent_collection_id'] is None  # orphan reference cleared
+
+    # And it must now be visible even in 'collection' mode (no longer treated
+    # as a hidden member of a nonexistent container).
+    set_mode(client, 'collection')
+    ids = {g['id'] for g in client.get('/api/games').get_json()}
+    assert 2 in ids
