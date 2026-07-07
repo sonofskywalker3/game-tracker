@@ -157,8 +157,7 @@ def _full_conn():
         CREATE TABLE user_ratings (game_id INTEGER PRIMARY KEY, status TEXT DEFAULT 'backlog',
             rating INTEGER, notes TEXT, priority INTEGER DEFAULT 5,
             hours_played REAL DEFAULT 0, started_at DATE, completed_at DATE,
-            sort_order INTEGER, series_id INTEGER, series_order INTEGER,
-            series_source TEXT,
+            sort_order INTEGER,
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE);
         INSERT INTO platforms (id, short_name) VALUES (1, 'Switch'), (2, 'PS4');
     """)
