@@ -123,3 +123,15 @@ def test_prioritize_started_off_does_not_boost(temp_db):
     cands = slots.rank_candidates(conn, slot)
     assert cands[0]["game"]["id"] == hi_backlog   # priority wins when boost disabled
     conn.close()
+
+
+def test_rank_candidates_ignores_missing_focus_series_id(temp_db):
+    """Ranking no longer reads any series concept, so it must not blow up even when
+    a slot dict lacks focus_series_id entirely (the column is dropped in a later task)."""
+    conn = models.get_db()
+    solo = _add_game(conn, "Solo Game", "Switch", tags=("Puzzle",))
+    slot = _slot(conn, "Switch · Quick")
+    del slot["focus_series_id"]
+    ids = [c["game"]["id"] for c in slots.rank_candidates(conn, slot)]
+    assert solo in ids
+    conn.close()
