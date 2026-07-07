@@ -401,7 +401,7 @@ def _import_one(conn: sqlite3.Connection, game: dict, source: str, stats: Import
 # Curation fields whose listed values mean "untouched by the user" (uncurated).
 _DEFAULT_CURATION = {
     "status": ("backlog", "", None), "rating": (None,), "notes": ("", None),
-    "series_id": (None,), "started_at": (None,), "completed_at": (None,),
+    "started_at": (None,), "completed_at": (None,),
     "sort_order": (None,), "hours_played": (0, 0.0, None), "priority": (5, None),
 }
 
@@ -409,7 +409,7 @@ _DEFAULT_CURATION = {
 def _is_curated(conn: sqlite3.Connection, game_id: int) -> bool:
     """True if the user has touched this row (any curation field off its default)."""
     row = conn.execute(
-        "SELECT status, rating, notes, series_id, started_at, completed_at, "
+        "SELECT status, rating, notes, started_at, completed_at, "
         "sort_order, hours_played, priority FROM user_ratings WHERE game_id = ?",
         (game_id,)).fetchone()
     if not row:
