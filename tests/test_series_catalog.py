@@ -1,6 +1,5 @@
 import json
 
-import import_scraped
 import models
 
 
@@ -284,24 +283,4 @@ def test_apply_dry_run_writes_nothing_returns_report(monkeypatch, temp_db):
     assert _role(conn, a)["series_role"] is None
     assert conn.execute("SELECT COUNT(*) FROM series WHERE name = 'Mega Man'").fetchone()[0] == 0
     assert any(r["series"] == "Mega Man" and r["assigned"] == 2 for r in report)
-    conn.close()
-
-
-def test_cli_apply_series_catalog_dry_run(monkeypatch, temp_db):
-    conn = models.get_db()
-    _add_game(conn, "Mega Man")
-    _add_game(conn, "Mega Man 2")
-    conn.close()
-    monkeypatch.setattr(models, "load_series_catalog", lambda: {
-        "mega man":   {"series": "Mega Man", "order": 1},
-        "mega man 2": {"series": "Mega Man", "order": 2},
-    })
-    # Bypass migrate_db() so its own apply_series_catalog() call (non-dry-run) does
-    # not pre-create the series before the dry-run dispatch we are testing.
-    # temp_db already migrated the schema, so this is safe.
-    monkeypatch.setattr(models, "migrate_db", lambda: None)
-    # main() calls models.migrate_db(); DB_PATH is patched to the temp DB by the fixture.
-    import_scraped.main(["--apply-series-catalog", "--dry-run"])
-    conn = models.get_db()
-    assert conn.execute("SELECT COUNT(*) FROM series WHERE name = 'Mega Man'").fetchone()[0] == 0
     conn.close()

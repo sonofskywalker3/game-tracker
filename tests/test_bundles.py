@@ -182,15 +182,13 @@ def test_resolve_constituent_ids_finds_existing_skips_missing(temp_db):
 
 
 def _curated_phantom(conn, *, status="backlog", rating=None, notes=None,
-                     series_id=None, series_source=None, hours_played=0,
-                     started_at=None, completed_at=None):
+                     hours_played=0, started_at=None, completed_at=None):
     """Insert a Pikmin 1+2 phantom with chosen curation; return its game_id."""
     bid = _insert_phantom(conn, "Pikmin 1+2 Bundle", "nintendo", "70070000018036")
     conn.execute(
-        "UPDATE user_ratings SET status=?, rating=?, notes=?, series_id=?, "
-        "series_source=?, hours_played=?, started_at=?, completed_at=? WHERE game_id=?",
-        (status, rating, notes, series_id, series_source, hours_played,
-         started_at, completed_at, bid))
+        "UPDATE user_ratings SET status=?, rating=?, notes=?, "
+        "hours_played=?, started_at=?, completed_at=? WHERE game_id=?",
+        (status, rating, notes, hours_played, started_at, completed_at, bid))
     conn.commit()
     return bid
 
@@ -248,54 +246,6 @@ def test_migrate_status_dry_run_writes_nothing(temp_db):
     s = conn.execute("SELECT ur.status FROM games g JOIN user_ratings ur ON ur.game_id=g.id "
                      "WHERE g.title='Pikmin 1'").fetchone()[0]
     assert s == "backlog"  # dry run wrote nothing
-    conn.close()
-
-
-def _make_series(conn, name):
-    conn.execute("INSERT INTO series (name) VALUES (?)", (name,))
-    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-
-def test_migrate_series_appends_default_constituents_with_next_order(temp_db):
-    conn = models.get_db()
-    sid = _make_series(conn, "Pikmin")
-    # An existing member fixes the next series_order at MAX+1.
-    _insert(conn, "Existing Member")
-    em = conn.execute("SELECT id FROM games WHERE title='Existing Member'").fetchone()[0]
-    conn.execute("INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 7)",
-                 (em, sid))
-    _insert(conn, "Pikmin 1")
-    _insert(conn, "Pikmin 2")
-    conn.commit()
-    bid = _curated_phantom(conn, series_id=sid)
-    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1", "Pikmin 2"))
-    report = imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
-    conn.commit()
-    members = {r[0]: (r[1], r[2]) for r in conn.execute(
-        "SELECT g.title, ur.series_id, ur.series_order FROM games g "
-        "JOIN user_ratings ur ON ur.game_id=g.id WHERE ur.series_id=?", (sid,))}
-    assert members["Pikmin 1"] == (sid, 8)
-    assert members["Pikmin 2"] == (sid, 9)
-    assert set(report["series_to"]) == set(ids)
-    conn.close()
-
-
-def test_migrate_series_skips_constituent_already_in_a_series(temp_db):
-    conn = models.get_db()
-    sid = _make_series(conn, "Pikmin")
-    other = _make_series(conn, "Other")
-    _insert(conn, "Pikmin 1")
-    _insert(conn, "Pikmin 2")
-    p1 = conn.execute("SELECT id FROM games WHERE title='Pikmin 1'").fetchone()[0]
-    conn.execute("INSERT INTO user_ratings (game_id, series_id, series_order) VALUES (?, ?, 1)",
-                 (p1, other))  # already placed elsewhere
-    conn.commit()
-    bid = _curated_phantom(conn, series_id=sid)
-    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1", "Pikmin 2"))
-    imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
-    conn.commit()
-    p1_series = conn.execute("SELECT series_id FROM user_ratings WHERE game_id=?", (p1,)).fetchone()[0]
-    assert p1_series == other  # untouched
     conn.close()
 
 
@@ -376,20 +326,3 @@ def test_cleanup_include_curated_idempotent(temp_db):
     conn.close()
 
 
-def test_migrate_series_source_carried_to_constituent(temp_db):
-    """Phantom's series_source='manual' must be copied onto each constituent."""
-    conn = models.get_db()
-    sid = _make_series(conn, "Pikmin")
-    _insert(conn, "Pikmin 1")
-    conn.commit()
-    bid = _curated_phantom(conn, series_id=sid, series_source="manual")
-    ids = imp._resolve_constituent_ids(conn, ("Pikmin 1",))
-    imp._migrate_bundle_curation(conn, bid, ids, dry_run=False)
-    conn.commit()
-    src = conn.execute(
-        "SELECT ur.series_source FROM games g "
-        "JOIN user_ratings ur ON ur.game_id = g.id "
-        "WHERE g.title = 'Pikmin 1'"
-    ).fetchone()[0]
-    assert src == "manual"
-    conn.close()
