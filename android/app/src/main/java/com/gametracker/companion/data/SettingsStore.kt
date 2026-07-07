@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 
-const val DEFAULT_BASE_URL = "http://192.168.1.50:5000"
+const val DEFAULT_BASE_URL = "http://192.168.228.105:5150"
 
 interface SettingsStore {
     val baseUrl: Flow<String>

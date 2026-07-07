@@ -116,7 +116,7 @@ fun SettingsScreen(
         OutlinedTextField(
             value = field,
             onValueChange = { field = it },
-            label = { Text("http://192.168.1.x:5000") },
+            label = { Text("http://192.168.228.x:5150") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )

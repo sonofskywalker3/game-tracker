@@ -2949,7 +2949,10 @@ if __name__ == '__main__':
     # thread (browser -> import -> IGDB enrich -> ownership). The dev auto-reloader
     # restarts the server whenever a .py file changes, which would kill that thread
     # mid-run and reset the scrape to "idle". Keep debug error pages, drop the reloader.
-    # Bind to 127.0.0.1 by default (secure). Set HOST=0.0.0.0 to expose on the
-    # LAN for the Android companion app over Wi-Fi (trusted home network only).
+    # Bind to 0.0.0.0 by default so the Android companion app can reach it over
+    # Wi-Fi (trusted home network only). Override with HOST=127.0.0.1 for a
+    # localhost-only bind. Port defaults to 5150 (5000 collides with other apps
+    # and macOS AirPlay); override with PORT.
     app.run(debug=True, use_reloader=False,
-            host=os.environ.get("HOST", "127.0.0.1"), port=5000)
+            host=os.environ.get("HOST", "0.0.0.0"),
+            port=int(os.environ.get("PORT", "5150")))
