@@ -95,7 +95,6 @@
                     </a>
                     <div class="hidden md:flex space-x-1">
                         <a href="/" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_library %}{% endblock %}">Library</a>
-                        <a href="/series" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_series %}{% endblock %}">Series</a>
                         <a href="/collections" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_collections %}{% endblock %}">Collections</a>
                         <a href="/recommendations" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_recommendations %}{% endblock %}">Picks</a>
                         <a href="/settings" class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-surface-lighter transition-colors {% block nav_settings %}{% endblock %}">Settings</a>
@@ -182,25 +181,14 @@
                             Physical
                         </label>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-2">Session length</label>
-                            <select id="new-game-session-length"
-                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
-                                <option value="">—</option>
-                                <option value="short">Short sessions</option>
-                                <option value="long">Long sessions</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-2">Series role</label>
-                            <select id="new-game-series-role"
-                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
-                                <option value="">—</option>
-                                <option value="mainline">Mainline</option>
-                                <option value="spinoff">Spin-off</option>
-                            </select>
-                        </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Session length</label>
+                        <select id="new-game-session-length"
+                                class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                            <option value="">—</option>
+                            <option value="short">Short sessions</option>
+                            <option value="long">Long sessions</option>
+                        </select>
                     </div>
                     <div id="add-game-error" class="text-red-400 text-sm hidden"></div>
                     <button onclick="addNewGame()" class="w-full px-4 py-2 bg-accent hover:bg-accent-hover rounded-lg text-white font-medium transition-colors">
@@ -274,13 +262,6 @@
                     <div class="text-gray-400 text-sm">Loading…</div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Create / Add Series dialog -->
-    <div id="series-dialog" class="fixed inset-0 bg-black/70 z-[60] hidden items-center justify-center p-4">
-        <div class="bg-surface-light rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
-            <div class="p-6" id="series-dialog-body"></div>
         </div>
     </div>
 
@@ -445,14 +426,12 @@
             const members = activeMembers(idx);
             document.getElementById(`grp-count-${idx}`).textContent = members.length;
             const labelEl = document.getElementById(`grp-label-${idx}`);
-            if (labelEl) labelEl.textContent = inferSeriesName(members);
+            if (labelEl) labelEl.textContent = baseTitle(members);
         }
 
         function groupCard(idx) {
-            const g = dedupData.groups[idx];
             const members = activeMembers(idx);
-            const label = inferSeriesName(members);
-            const seriesLabel = g.existing_series_id ? 'Add to series' : 'Create series';
+            const label = baseTitle(members);
             return `<div class="bg-surface rounded-lg" id="grp-${idx}">
                 <div class="flex items-center justify-between p-3 gap-2">
                     <button onclick="toggleGroup(${idx})" class="flex items-center gap-2 text-left text-white text-sm font-medium min-w-0">
@@ -462,7 +441,6 @@
                     </button>
                     <div class="flex gap-2 shrink-0">
                         <button onclick="mergeWholeGroup(${idx})" class="px-2 py-1 text-xs bg-accent hover:bg-accent-hover rounded text-white whitespace-nowrap">Merge all</button>
-                        <button onclick="openSeriesDialog(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">${seriesLabel}</button>
                         <button onclick="markAllSafe(${idx})" class="px-2 py-1 text-xs bg-surface-light hover:bg-surface-lighter border border-gray-600 rounded text-white whitespace-nowrap">Mark all safe</button>
                     </div>
                 </div>
@@ -630,93 +608,6 @@
             }
         }
 
-        function openSeriesDialog(idx) {
-            const g = dedupData.groups[idx];
-            const members = activeMembers(idx);
-            const existing = g.existing_series_id;
-            const name = existing ? (g.existing_series_name || '') : inferSeriesName(members);
-            const heading = existing ? 'Add to series' : 'Create series';
-            const rememberRow = existing ? '' : `
-                <label class="flex items-center gap-2 text-sm text-gray-300 mt-3">
-                    <input type="checkbox" id="series-remember" checked> Remember for future imports
-                </label>`;
-            document.getElementById('series-dialog-body').innerHTML = `
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-bold text-white">${heading}</h2>
-                    <button onclick="closeSeriesDialog()" class="text-white/70 hover:text-white text-2xl">&times;</button>
-                </div>
-                <label class="block text-xs text-gray-400 mb-1">Series name</label>
-                <input id="series-name" type="text" value="${escapeHtml(name)}"
-                       class="w-full bg-surface border border-gray-600 rounded px-2 py-1.5 text-white text-sm mb-1">
-                <div id="igdb-suggest" class="text-xs text-gray-400 mb-3 min-h-[1rem]"></div>
-                <label class="block text-xs text-gray-400 mb-1">These ${members.length} games will be added — remove any that don't belong from the group first with ✕</label>
-                <div class="space-y-1 max-h-64 overflow-y-auto">
-                    ${members.map(id => `<div class="text-sm text-white">${escapeHtml(dedupGame(id).title)}</div>`).join('')}
-                </div>
-                <label class="flex items-center gap-2 text-sm text-gray-300 mt-3">
-                    <input type="checkbox" id="series-order-release"> Order by release date after saving
-                </label>
-                ${rememberRow}
-                <div class="flex gap-2 pt-4">
-                    <button onclick="confirmSeriesFromGroup(${idx})" class="px-3 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-white text-sm">${existing ? 'Add' : 'Create'}</button>
-                    <button onclick="closeSeriesDialog()" class="px-3 py-1.5 bg-surface hover:bg-surface-lighter border border-gray-600 rounded-lg text-white text-sm">Cancel</button>
-                </div>`;
-            showModalEl('series-dialog');
-            document.getElementById('series-name').focus();
-            if (!existing) loadIgdbSuggestion(name);
-        }
-
-        // Offer IGDB's canonical franchise name if it differs from the inferred one.
-        async function loadIgdbSuggestion(name) {
-            const el = document.getElementById('igdb-suggest');
-            if (!el || !name) return;
-            try {
-                const data = await api.get(`/api/series/igdb-suggest?name=${encodeURIComponent(name)}`);
-                const s = data && data.suggestion;
-                if (!s || s.toLowerCase() === name.toLowerCase()) return;
-                el.innerHTML = `IGDB suggests <button class="text-accent hover:underline">"${escapeHtml(s)}"</button>`;
-                el.querySelector('button').onclick = () => {
-                    document.getElementById('series-name').value = s;
-                    el.textContent = '';
-                };
-            } catch (e) { /* best-effort; leave the inferred name */ }
-        }
-
-        function closeSeriesDialog() { hideModalEl('series-dialog'); }
-
-        async function confirmSeriesFromGroup(idx) {
-            if (dedupBusy) return;
-            const name = document.getElementById('series-name').value.trim();
-            if (!name) { alert('Series name is required.'); return; }
-            const gameIds = activeMembers(idx);  // whole (cleaned) group; ✕ to exclude
-            if (!gameIds.length) { alert('No games left in this group.'); return; }
-            const rememberEl = document.getElementById('series-remember');
-            const remember = rememberEl ? rememberEl.checked : false;
-            const orderByRelease = document.getElementById('series-order-release')?.checked;
-            dedupBusy = true;
-            try {
-                const res = await api.post('/api/series/from-group', { name, game_ids: gameIds, remember });
-                if (!res.ok) { alert(res.data.error || 'Could not save series'); return; }
-                closeSeriesDialog();
-                if (orderByRelease && res.data.series_id) {
-                    await api.post(`/api/series/${res.data.series_id}/sort-by-release`, {});
-                }
-                // A series = confirmed-distinct games; dismiss the group's internal
-                // pairs so they never resurface as candidates, then drop the card.
-                const active = new Set(gameIds);
-                const pairs = dedupData.groups[idx].pairs.filter(([a, b]) => active.has(a) && active.has(b));
-                if (pairs.length) await api.post('/api/duplicates/dismiss', { pairs });
-                document.getElementById(`grp-${idx}`)?.remove();
-                if (typeof refreshGameList === 'function') refreshGameList();
-                const total = gameIds.length, added = res.data.assigned;
-                alert(added
-                    ? `Saved "${name}" — added ${added} of ${total} game${total === 1 ? '' : 's'}${res.data.created ? ' (new series)' : ''}.`
-                    : `All ${total} games were already in "${name}".`);
-            } finally {
-                dedupBusy = false;
-            }
-        }
-
         async function mergeAllDefinite() {
             for (const group of (dedupData.definite || [])) {
                 const [survivor, ...drops] = chooseSurvivor(group);
@@ -742,47 +633,12 @@
         function isCurated(c) {
             if (!c) return false;
             return (c.status && c.status !== 'backlog') || c.rating || c.notes ||
-                   c.series_id || c.sort_order != null || (c.hours_played || 0) > 0;
+                   c.sort_order != null || (c.hours_played || 0) > 0;
         }
         function baseTitle(ids) {
             // Shortest title in the group is the base/playable name default.
             return ids.map(id => dedupGame(id).title).sort((a, b) => a.length - b.length)[0];
         }
-        // Mirror of dedup.infer_series_name (keep in sync): best series-name guess
-        // for a group — the member that word-prefixes the most others, else the
-        // longest shared leading words, else the shortest title.
-        function inferSeriesName(ids) {
-            const names = ids.map(id => (dedupGame(id).title || '').trim()).filter(Boolean);
-            if (!names.length) return '';
-            if (names.length === 1) return names[0];
-            const wordPrefixOf = (prefix, title) => {
-                const p = prefix.toLowerCase(), t = title.toLowerCase();
-                if (t === p) return true;
-                return t.startsWith(p) && !/[\p{L}\p{N}]/u.test(t.charAt(p.length));
-            };
-            const byShortThenAlpha = (a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
-            // 1. Member that word-prefixes a majority of the others (ties: shortest, alpha).
-            const scored = names.map((cand, i) => [
-                names.reduce((n, other, j) => n + (j !== i && wordPrefixOf(cand, other) ? 1 : 0), 0),
-                cand]);
-            const bestCount = Math.max(...scored.map(s => s[0]));
-            if (bestCount * 2 > names.length - 1) {
-                return scored.filter(s => s[0] === bestCount).map(s => s[1]).sort(byShortThenAlpha)[0];
-            }
-            // 2. Longest run of shared leading words.
-            const wordLists = names.map(n => n.split(/\s+/));
-            const minLen = Math.min(...wordLists.map(w => w.length));
-            const common = [];
-            for (let c = 0; c < minLen; c++) {
-                const w0 = wordLists[0][c];
-                if (wordLists.every(w => w[c].toLowerCase() === w0.toLowerCase())) common.push(w0);
-                else break;
-            }
-            if (common.length) return common.join(' ').replace(/[\s:–-]+$/, '');
-            // 3. Shortest title (ties alphabetically).
-            return names.slice().sort(byShortThenAlpha)[0];
-        }
-
         const ratingOptions = [
             { value: 1, label: 'Hate it', color: 'bg-red-600/30 text-red-400 border-red-600/50' },
             { value: 2, label: 'Meh', color: 'bg-gray-600/30 text-gray-400 border-gray-600/50' },
@@ -1131,32 +987,18 @@
                                    onchange="saveTimeToBeat(${game.id}, this.value)">
                         </div>
 
-                        <!-- Session length + Series role (manual override; locks the row) -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">
-                                    Session length
-                                    <span class="text-xs text-gray-500">${game.session_length_source ? '(' + game.session_length_source + ')' : ''}</span>
-                                </label>
-                                <select onchange="saveTrait(${game.id}, 'session_length', this.value)"
-                                        class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
-                                    <option value="" ${!game.session_length ? 'selected' : ''}>—</option>
-                                    <option value="short" ${game.session_length === 'short' ? 'selected' : ''}>Short sessions</option>
-                                    <option value="long" ${game.session_length === 'long' ? 'selected' : ''}>Long sessions</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">
-                                    Series role
-                                    <span class="text-xs text-gray-500">${game.series_role_source ? '(' + game.series_role_source + ')' : ''}</span>
-                                </label>
-                                <select onchange="saveTrait(${game.id}, 'series_role', this.value)"
-                                        class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
-                                    <option value="" ${!game.series_role ? 'selected' : ''}>—</option>
-                                    <option value="mainline" ${game.series_role === 'mainline' ? 'selected' : ''}>Mainline</option>
-                                    <option value="spinoff" ${game.series_role === 'spinoff' ? 'selected' : ''}>Spin-off</option>
-                                </select>
-                            </div>
+                        <!-- Session length (manual override; locks the row) -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">
+                                Session length
+                                <span class="text-xs text-gray-500">${game.session_length_source ? '(' + game.session_length_source + ')' : ''}</span>
+                            </label>
+                            <select onchange="saveTrait(${game.id}, 'session_length', this.value)"
+                                    class="w-full bg-surface rounded-lg border border-gray-600 px-3 py-2 text-white text-sm focus:border-accent focus:outline-none">
+                                <option value="" ${!game.session_length ? 'selected' : ''}>—</option>
+                                <option value="short" ${game.session_length === 'short' ? 'selected' : ''}>Short sessions</option>
+                                <option value="long" ${game.session_length === 'long' ? 'selected' : ''}>Long sessions</option>
+                            </select>
                         </div>
 
                         <!-- Streamed-play (latency) override -->
@@ -1192,14 +1034,6 @@
                                 ${renderRating(game.rating, game.id, true)}
                             </div>
                         </div>
-
-                        <!-- Series (if any) -->
-                        ${game.series_id ? `
-                        <div class="text-sm">
-                            <span class="text-gray-400">Series:</span>
-                            <span class="text-white ml-1">${game.series_name}${game.series_order !== null ? ` (#${game.series_order})` : ''}</span>
-                        </div>
-                        ` : ''}
 
                         <!-- Tags -->
                         <div>
@@ -1590,7 +1424,6 @@
             document.getElementById('new-game-source-link').value = '';
             document.getElementById('new-game-cover-url').value = '';
             document.getElementById('new-game-session-length').value = '';
-            document.getElementById('new-game-series-role').value = '';
             document.getElementById('new-game-legacy').value = '';
             document.getElementById('new-game-physical').checked = false;
             document.getElementById('new-game-source-link-err').classList.add('hidden');
@@ -2188,11 +2021,8 @@
 
             // Persist any manually chosen traits (reuses the manual PUT path).
             const sl = document.getElementById('new-game-session-length').value;
-            const sr = document.getElementById('new-game-series-role').value;
-            if (sl || sr) {
-                const traitPayload = {};
-                if (sl) traitPayload.session_length = sl;
-                if (sr) traitPayload.series_role = sr;
+            if (sl) {
+                const traitPayload = { session_length: sl };
                 const traitRes = await api.put(`/api/games/${gameId}`, traitPayload);
                 if (!traitRes.ok) {
                     errorEl.textContent = (traitRes.data && traitRes.data.error) || 'Could not save traits';
