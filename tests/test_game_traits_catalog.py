@@ -35,7 +35,7 @@ def test_load_game_traits_malformed_is_empty(monkeypatch, tmp_path):
 
 
 TRAIT_COLUMNS = {
-    "session_length", "session_length_source", "series_role", "series_role_source",
+    "session_length", "session_length_source",
 }
 
 
@@ -65,7 +65,7 @@ def _add_game(conn, title):
 
 def _traits(conn, gid):
     r = conn.execute(
-        "SELECT session_length, session_length_source, series_role, series_role_source "
+        "SELECT session_length, session_length_source "
         "FROM games WHERE id = ?", (gid,)).fetchone()
     return dict(r)
 
@@ -78,8 +78,8 @@ def test_apply_traits_catalog_sets_session_length_only(monkeypatch, temp_db):
     models.apply_traits_catalog(conn)
     t = _traits(conn, gid)
     assert t["session_length"] == "short" and t["session_length_source"] == "catalog"
-    # series_role is now owned by the series catalog, NOT the trait catalog:
-    assert t["series_role"] is None and t["series_role_source"] is None
+    # A stray series_role key in a catalog entry is simply ignored (series retired):
+    assert set(t) == {"session_length", "session_length_source"}
     conn.close()
 
 
@@ -102,8 +102,7 @@ def test_apply_traits_catalog_absent_is_noop(monkeypatch, temp_db):
     gid = _add_game(conn, "Celeste")
     monkeypatch.setattr(models, "load_game_traits", lambda: {})
     models.apply_traits_catalog(conn)
-    assert _traits(conn, gid) == {"session_length": None, "session_length_source": None,
-                                  "series_role": None, "series_role_source": None}
+    assert _traits(conn, gid) == {"session_length": None, "session_length_source": None}
     conn.close()
 
 
