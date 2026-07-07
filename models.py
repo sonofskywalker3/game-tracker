@@ -987,23 +987,37 @@ def migrate_parent_collection(conn: sqlite3.Connection) -> None:
     """Add games.parent_collection_id and link compilation MEMBER rows to their
     CONTAINER row (title ~= collection_name, normalized). Idempotent; additive
     only. Members whose container row doesn't exist stay NULL, and no row is
-    ever linked to itself.
+    ever linked to itself. Also rejects a normalized-key collision where the
+    collection_name and candidate container title differ only by a number/roman
+    numeral token (e.g. "Dragon Quest I & II HD-2D Remake" vs "Dragon Quest III
+    HD-2D Remake" both normalize to "...iii..."): those are distinct entries,
+    not the same compilation, so the member stays unlinked.
     """
+    from dedup import titles_differ_only_by_number  # lazy: dedup imports models
+
     cols = {r[1] for r in conn.execute("PRAGMA table_info(games)")}
     if "parent_collection_id" not in cols:
         conn.execute("ALTER TABLE games ADD COLUMN parent_collection_id INTEGER")
-    # Build title -> id map for potential container rows.
+    # Build title -> id map for potential container rows, plus id -> title so
+    # a matched candidate's title is available for the differ-only-by-number check.
     by_key: dict[str, int] = {}
+    titles_by_id: dict[int, str] = {}
     for gid, title in conn.execute("SELECT id, title FROM games"):
+        titles_by_id[gid] = title
         by_key.setdefault(_normalize_collection_key(title), gid)
     for gid, cname in conn.execute(
         "SELECT id, collection_name FROM games WHERE collection_name IS NOT NULL"
     ):
         container = by_key.get(_normalize_collection_key(cname))
         # Never link a row to itself.
+        if container == gid:
+            container = None
+        # Reject a normalization collision between distinct numbered entries.
+        if container and titles_differ_only_by_number(cname, titles_by_id[container]):
+            container = None
         conn.execute(
             "UPDATE games SET parent_collection_id=? WHERE id=?",
-            (container if container and container != gid else None, gid),
+            (container, gid),
         )
     conn.commit()
 

@@ -122,6 +122,14 @@ def _differ_only_by_number(a: str, b: str) -> bool:
     return _number_seq(a) != _number_seq(b)
 
 
+def titles_differ_only_by_number(a: str, b: str) -> bool:
+    """True if two titles are the same except for a differing number/roman-numeral
+    token (e.g. 'Dragon Quest I & II HD-2D Remake' vs 'Dragon Quest III HD-2D
+    Remake') — distinct entries that must NOT be treated as the same compilation
+    despite otherwise-matching normalized keys."""
+    return _differ_only_by_number(base_key(a), base_key(b))
+
+
 def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
     """Detect duplicate games. Returns {"definite": [[id,...]], "candidates": [...]}.
 
