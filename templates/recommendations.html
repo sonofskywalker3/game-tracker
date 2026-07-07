@@ -25,17 +25,11 @@
 {% block scripts %}
 <script>
     let _slateData = [];
-    let _seriesList = [];
     const _searchTimers = {};
 
     async function loadSlate() {
-        const [slotsResp, games, series] = await Promise.all([
-            api.get('/api/slots'),
-            api.get('/api/games'),
-            api.get('/api/series'),
-        ]);
+        const [slotsResp, games] = await Promise.all([api.get('/api/slots'), api.get('/api/games')]);
         _slateData = slotsResp.slots || [];
-        _seriesList = (series || []).map(s => ({ id: s.id, name: s.name }));
         renderSlate(_slateData);
         renderRecentlyFinished(slotsResp.recently_finished || []);
         const needsRating = (games || []).filter(g =>
@@ -432,12 +426,6 @@
                     <label><input type="checkbox" data-f="prioritize_started" ${slot.prioritize_started ? 'checked' : ''} class="accent-accent"> Prioritize started games</label>
                     <label><input type="checkbox" data-f="completionist" ${slot.completionist ? 'checked' : ''} class="accent-accent"> Completionist (beaten games, chase 100%)</label>
                 </div>
-                <label class="block text-xs text-gray-400">Focus series
-                    <select data-f="focus_series_id" class="mt-1 w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white text-xs">
-                        <option value="">— none —</option>
-                        ${_seriesList.map(s => `<option value="${s.id}" ${slot.focus_series_id === s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
-                    </select>
-                </label>
                 <textarea data-f="context_notes" rows="2" placeholder="Notes (used by the AI later)"
                           class="w-full bg-surface rounded border border-gray-600 px-2 py-1 text-white text-xs">${escapeHtml(slot.context_notes || '')}</textarea>
                 <div class="flex gap-2">
@@ -464,7 +452,6 @@
             prioritize_started: val('prioritize_started').checked ? 1 : 0,
             completionist: val('completionist').checked ? 1 : 0,
             context_notes: val('context_notes').value,
-            focus_series_id: (() => { const v = val('focus_series_id').value; return v === '' ? null : parseInt(v, 10); })(),
         };
     }
 
