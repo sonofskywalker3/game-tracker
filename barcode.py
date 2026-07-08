@@ -91,6 +91,61 @@ def _strip_trailing_noise(t: str) -> str:
         if stripped == t or not stripped.strip():
             return t
         t = stripped
+
+
+# Condition/reseller/shorthand tokens SAFE to strip from the LEADING edge because
+# no real game title starts with them ("NSW - Fantasian Neo Dimension - Nintendo
+# Switch", "Refurbished Nintendo Super Mario Maker 2"). Deliberately excludes
+# platform words (wii, switch, nintendo, ps5, xbox...) and "new" — those DO start
+# real titles ("Wii Sports", "Nintendo Switch Sports", "New Super Mario Bros.")
+# and stripping them would break those matches. Extensible — add new reseller/
+# condition boilerplate here, never at call sites.
+_LEADING_NOISE_WORDS: tuple[str, ...] = (
+    "refurbished", "brand new", "factory sealed", "sealed", "used", "pre-owned",
+    "preowned", "open box", "nib", "cib", "nsw", "ns",
+)
+# Mirrors _TRAILING_NOISE_RE but anchored at the start of the string.
+_LEADING_NOISE_RE = re.compile(
+    r"^[\s\-–—:,]*\b(?:" + "|".join(re.escape(w) for w in _LEADING_NOISE_WORDS)
+    + r")\b\.?[\s\-–—:,]*",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_noise(t: str) -> str:
+    """Peel noise words off the leading edge, one at a time, stopping before the
+    title would be emptied. Mirrors _strip_trailing_noise."""
+    while True:
+        stripped = _LEADING_NOISE_RE.sub("", t)
+        if stripped == t or not stripped.strip():
+            return t
+        t = stripped
+
+
+# Publisher tokens (from _PUBLISHER_NOISE_WORDS) matched ONLY at the leading edge,
+# longest-first so "square enix" wins over any shorter partial alternative. Used by
+# _strip_leading_publisher as a guarded, last-resort IGDB search fallback (see
+# _scan_candidates) — never as part of clean_product_title's general cleanup,
+# since a leading publisher can also be the start of a real title's own search hit.
+_LEADING_PUBLISHER_RE = re.compile(
+    r"^\b(?:" + "|".join(re.escape(w) for w in
+                         sorted(_PUBLISHER_NOISE_WORDS, key=len, reverse=True))
+    + r")\b\.?[\s\-–—:,]*",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_publisher(title: str) -> str:
+    """Remove a single leading publisher token ("Nintendo Super Mario Maker 2" ->
+    "Super Mario Maker 2"), or return title unchanged when it doesn't start with
+    one. Whole-word, case-insensitive, longest phrase first."""
+    if not title:
+        return title
+    m = _LEADING_PUBLISHER_RE.match(title)
+    if not m:
+        return title
+    rest = title[m.end():].strip(" -–—:")
+    return rest or title
 # Retail platform phrase (as it appears in UPC titles) -> app short_name. Longest
 # phrases first so "nintendo switch" wins over "switch". Extensible.
 RETAIL_PLATFORM_TO_SHORT: tuple[tuple[str, str], ...] = (
@@ -160,6 +215,7 @@ def clean_product_title(raw: str | None) -> str:
     t = _VIDEO_GAME_RE.sub(" ", t)
     t = _CATALOG_NUM_RE.sub(" ", t)    # numbers first, so a publisher becomes trailing
     t = _strip_trailing_noise(t)
+    t = _strip_leading_noise(t)
     t = _SEP_DASH_RE.sub(" ", t)                 # collapse separator dashes
     t = re.sub(r"\s{2,}", " ", t).strip()
     return t.strip(" -–—:").strip()    # trim stray leading/trailing seps
@@ -343,6 +399,10 @@ def _scan_candidates(search_title: str, fallback_title: str, platform_ids: set[i
       3. fallback_title unrestricted — only when it differs from search_title
          (i.e. a trailing platform token was stripped) so a name that genuinely
          ends in a platform-like token (e.g. "Ballz 3D") still resolves.
+      4. search_title with a leading publisher token stripped ("Nintendo Super
+         Mario Maker 2" -> "Super Mario Maker 2") unrestricted — a LAST RESORT
+         tried only when steps 1-3 all missed, so a title that already matches
+         as-is ("Nintendo Switch Sports") never reaches this step.
     All steps drop fan/mod types. Returns (raw_candidates, used_platform_hint):
     used_platform_hint is False only when the match came from step 3, signalling
     the stripped-suffix platform guess was wrong."""
@@ -361,6 +421,13 @@ def _scan_candidates(search_title: str, fallback_title: str, platform_ids: set[i
                                         drop_fan_types=True, restrict_to_platform=False)
         if raw:
             return raw, False
+    publisher_stripped = _strip_leading_publisher(search_title)
+    if publisher_stripped != search_title:
+        raw = igdb_match.candidates_for(publisher_stripped, set(), None, client_id,
+                                        token, drop_fan_types=True,
+                                        restrict_to_platform=False)
+        if raw:
+            return raw, True
     return [], True
 
 

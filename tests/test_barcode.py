@@ -222,6 +222,72 @@ def test_resolve_keeps_edition_when_no_base_sibling(temp_db, monkeypatch):
     assert [c["title"] for c in result["candidates"]] == ["Some Game - Deluxe Edition"]
 
 
+def test_clean_product_title_strips_leading_reseller_condition_words():
+    # UPCitemdb often prefixes condition/reseller/platform-shorthand noise; IGDB's
+    # title search returns 0 hits when the query starts with it.
+    assert barcode.clean_product_title(
+        "NSW - FANTASIAN Neo Dimension - Nintendo Switch") == "FANTASIAN Neo Dimension"
+    assert barcode.clean_product_title(
+        "Refurbished Nintendo Super Mario Maker 2 (Nintendo Switch)"
+    ) == "Nintendo Super Mario Maker 2"
+
+
+def test_clean_product_title_leading_platform_and_new_words_protected():
+    # "new" and platform words are NOT leading noise — real titles start with them
+    # ("New Super Mario Bros.", "Wii Sports", "Nintendo Switch Sports").
+    assert barcode.clean_product_title(
+        "New Super Mario Bros. U - Nintendo Switch").startswith("New Super Mario Bros")
+    assert barcode.clean_product_title("Wii Sports") == "Wii Sports"
+    cleaned = barcode.clean_product_title("Nintendo Switch Sports - Nintendo Switch")
+    assert "Switch Sports" in cleaned
+    assert cleaned.strip()
+
+
+def test_strip_leading_publisher():
+    assert barcode._strip_leading_publisher(
+        "Nintendo Super Mario Maker 2") == "Super Mario Maker 2"
+    assert barcode._strip_leading_publisher(
+        "Square Enix Fantasian Neo Dimension") == "Fantasian Neo Dimension"
+    assert barcode._strip_leading_publisher(
+        "Super Mario Maker 2") == "Super Mario Maker 2"
+
+
+def test_scan_candidates_falls_back_to_leading_publisher_strip(monkeypatch):
+    # All normal ladder steps miss; stripping a leading publisher token and
+    # retrying unrestricted is the last resort, only reached when nothing else hit.
+    seen_titles = []
+
+    def fake_candidates_for(title, platform_ids, *a, **k):
+        seen_titles.append(title)
+        if title == "Super Mario Maker 2":
+            return [{"igdb_id": 115276, "name": "Super Mario Maker 2",
+                     "platforms": [130], "source": "search"}]
+        return []
+
+    monkeypatch.setattr(igdb_match, "candidates_for", fake_candidates_for)
+    raw, used_hint = barcode._scan_candidates(
+        "Nintendo Super Mario Maker 2", "Nintendo Super Mario Maker 2", set(),
+        "cid", "tok")
+    assert raw and raw[0]["igdb_id"] == 115276
+    assert used_hint is True
+    assert "Super Mario Maker 2" in seen_titles
+
+
+def test_scan_candidates_does_not_strip_publisher_when_plain_search_hits(monkeypatch):
+    # A title that already matches as-is must never reach the publisher fallback.
+    def fake_candidates_for(title, platform_ids, *a, **k):
+        if title == "Nintendo Switch Sports":
+            return [{"igdb_id": 1, "name": "Nintendo Switch Sports",
+                     "platforms": [130], "source": "search"}]
+        raise AssertionError(f"should not search for stripped title: {title!r}")
+
+    monkeypatch.setattr(igdb_match, "candidates_for", fake_candidates_for)
+    raw, used_hint = barcode._scan_candidates(
+        "Nintendo Switch Sports", "Nintendo Switch Sports", set(), "cid", "tok")
+    assert raw[0]["igdb_id"] == 1
+    assert used_hint is True
+
+
 def test_resolve_trailing_3d_falls_back_to_unstripped_for_other_platform(temp_db, monkeypatch):
     # "Ballz 3D" is a real Genesis game where "3D" is the NAME, not the platform.
     # Stripping finds nothing as 3DS, so resolve must retry the un-stripped title and
