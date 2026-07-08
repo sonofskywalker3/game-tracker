@@ -146,6 +146,8 @@ def _strip_leading_publisher(title: str) -> str:
         return title
     rest = title[m.end():].strip(" -–—:")
     return rest or title
+
+
 # Retail platform phrase (as it appears in UPC titles) -> app short_name. Longest
 # phrases first so "nintendo switch" wins over "switch". Extensible.
 RETAIL_PLATFORM_TO_SHORT: tuple[tuple[str, str], ...] = (
