@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import requests
 import auth
@@ -39,6 +39,23 @@ load_dotenv()  # load .env if present (no-op in prod where env vars are set dire
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GAMETRACKER_SESSION_SECRET", "dev-insecure-secret")
+
+
+def check_session_secret() -> None:
+    """Refuse to run with the insecure default signing key once auth is enabled:
+    a known key lets anyone forge an authenticated session cookie."""
+    if auth.auth_enabled() and app.secret_key in ("", "dev-insecure-secret"):
+        raise RuntimeError(
+            "GAMETRACKER_SESSION_SECRET must be set (not the dev default) when "
+            "GAMETRACKER_PASSWORD_HASH is configured")
+
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=auth.cloud_mode(),
+)
+app.permanent_session_lifetime = timedelta(days=30)
 
 log = logging.getLogger(__name__)
 
@@ -81,12 +98,15 @@ def login_page():
     token as JSON for native clients (the Android app stores it)."""
     if request.method == "GET":
         return render_template("login.html")
-    password = (request.json or {}).get("password") if request.is_json \
-        else request.form.get("password", "")
+    if request.is_json:
+        password = (request.get_json(silent=True) or {}).get("password", "")
+    else:
+        password = request.form.get("password", "")
     if not auth.check_password(password or ""):
         if request.is_json:
             return jsonify({"error": "invalid password"}), 401
         return render_template("login.html", error="Incorrect password"), 401
+    session.permanent = True
     session["authed"] = True
     if request.is_json:
         return jsonify({"token": os.environ.get("GAMETRACKER_API_TOKEN", "")})
@@ -2441,6 +2461,7 @@ def ensure_db():
 
 
 if __name__ == '__main__':
+    check_session_secret()
     ensure_db()
 
     start_enrichment_drip()

@@ -9,8 +9,10 @@ def secure_env(monkeypatch):
     monkeypatch.setenv("GAMETRACKER_API_TOKEN", "apitoken")
     monkeypatch.setenv("GAMETRACKER_SESSION_SECRET", "test-secret")
     import app as app_module
+    original = app_module.app.secret_key
     app_module.app.secret_key = "test-secret"
-    return monkeypatch
+    yield monkeypatch
+    app_module.app.secret_key = original
 
 
 def test_healthz_always_open(client):
@@ -55,3 +57,34 @@ def test_login_bad_password_401(client, secure_env):
 def test_api_token_grants_access(client, secure_env):
     res = client.get("/api/stats", headers={"Authorization": "Bearer apitoken"})
     assert res.status_code == 200
+
+
+def test_check_session_secret_rejects_default_when_auth_enabled(secure_env):
+    import app as app_module
+    app_module.app.secret_key = "dev-insecure-secret"
+    with pytest.raises(RuntimeError):
+        app_module.check_session_secret()
+
+
+def test_check_session_secret_allows_real_secret_when_auth_enabled(secure_env):
+    import app as app_module
+    app_module.app.secret_key = "a-real-secret"
+    app_module.check_session_secret()  # must not raise
+
+
+def test_check_session_secret_allows_default_when_auth_disabled(client):
+    import app as app_module
+    original = app_module.app.secret_key
+    app_module.app.secret_key = "dev-insecure-secret"
+    try:
+        app_module.check_session_secret()  # must not raise: auth is off
+    finally:
+        app_module.app.secret_key = original
+
+
+def test_login_sets_persistent_session_cookie(client, secure_env):
+    res = client.post("/login", data={"password": "pw"}, follow_redirects=False)
+    assert res.status_code == 302
+    set_cookie_headers = res.headers.get_all("Set-Cookie")
+    session_cookie = next(h for h in set_cookie_headers if h.startswith("session="))
+    assert "Max-Age" in session_cookie or "Expires" in session_cookie

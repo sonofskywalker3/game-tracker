@@ -9,6 +9,7 @@ gate or the routes that call them.
 """
 from __future__ import annotations
 
+import hmac
 import os
 from collections.abc import Mapping
 
@@ -49,16 +50,19 @@ def is_authenticated(headers: Mapping[str, str], authed_session: bool) -> bool:
     if authed_session:
         return True
     api_token = _env("GAMETRACKER_API_TOKEN")
-    return api_token is not None and bearer_token(headers) == api_token
+    tok = bearer_token(headers)
+    return api_token is not None and tok is not None and hmac.compare_digest(tok, api_token)
 
 
 def is_import_authorized(headers: Mapping[str, str]) -> bool:
     """True for the scrape-push import token (API token also accepted)."""
-    token = bearer_token(headers)
-    if token is None:
+    tok = bearer_token(headers)
+    if tok is None:
         return False
-    return token in {t for t in (_env("GAMETRACKER_IMPORT_TOKEN"),
-                                 _env("GAMETRACKER_API_TOKEN")) if t is not None}
+    for valid in (_env("GAMETRACKER_IMPORT_TOKEN"), _env("GAMETRACKER_API_TOKEN")):
+        if valid is not None and hmac.compare_digest(tok, valid):
+            return True
+    return False
 
 
 def cloud_mode() -> bool:
