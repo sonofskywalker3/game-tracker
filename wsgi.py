@@ -6,7 +6,9 @@ DB schema migration is an explicit deploy step (the systemd unit runs
 importing this module must be free of side effects so tests and tooling can
 import it safely.
 """
-from app import app, ensure_db
+from app import app, ensure_db, check_session_secret
+
+check_session_secret()
 
 if __name__ == "__main__":
     ensure_db()
