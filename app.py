@@ -9,6 +9,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 import requests
+import auth
 import dedup
 import hltb
 import import_scraped
@@ -17,7 +18,8 @@ import igdb_match
 import slots
 import slot_schedule
 import barcode
-from flask import Flask, Response, render_template, request, jsonify
+from flask import (Flask, Response, render_template, request, jsonify,
+                   session, redirect, url_for)
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
     reclean_display_titles, DB_PATH, apply_traits_catalog,
@@ -33,7 +35,66 @@ import enrichment
 import scrape_service
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("GAMETRACKER_SESSION_SECRET", "dev-insecure-secret")
+
 log = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Auth gate + login/logout/health routes
+# ============================================================================
+
+# Paths reachable without authentication (login flow, health, static assets).
+_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz"})
+
+
+@app.before_request
+def _require_auth():
+    """Gate every request when auth is configured. No-op when the password hash
+    is unset (local dev / tests behave exactly as before hosting)."""
+    if not auth.auth_enabled():
+        return None
+    path = request.path
+    if path in _PUBLIC_PATHS or path.startswith("/static/"):
+        return None
+    if auth.is_authenticated(request.headers, bool(session.get("authed"))):
+        return None
+    if path == "/api/import/scrape" and auth.is_import_authorized(request.headers):
+        return None
+    if path.startswith("/api/"):
+        return jsonify({"error": "authentication required"}), 401
+    return redirect(url_for("login_page"))
+
+
+@app.route("/healthz")
+def healthz():
+    """Unauthenticated liveness check for uptime monitors / the proxy."""
+    return jsonify({"status": "ok"})
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    """Password login. Sets a session cookie for the web; returns the API bearer
+    token as JSON for native clients (the Android app stores it)."""
+    if request.method == "GET":
+        return render_template("login.html")
+    password = (request.json or {}).get("password") if request.is_json \
+        else request.form.get("password", "")
+    if not auth.check_password(password or ""):
+        if request.is_json:
+            return jsonify({"error": "invalid password"}), 401
+        return render_template("login.html", error="Incorrect password"), 401
+    session["authed"] = True
+    if request.is_json:
+        return jsonify({"token": os.environ.get("GAMETRACKER_API_TOKEN", "")})
+    return redirect(url_for("index"))
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    """Clear the session and return to the login page."""
+    session.clear()
+    return redirect(url_for("login_page"))
 
 
 # ============================================================================
