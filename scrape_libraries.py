@@ -13,7 +13,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import threading
+
+import requests
 
 from scrapers import nintendo, playstation, steam, xbox
 from scrapers.base import (
@@ -73,7 +76,23 @@ def run_recon(vendor: str) -> None:
                     vendor, len(captured), out.name)
 
 
-def run_scrape(vendor: str) -> None:
+# Timeout for the cloud import POST (the server runs enrichment; give it room).
+_PUSH_TIMEOUT_S = 600
+
+
+def push_scrape(payload: dict, base_url: str, token: str) -> dict:
+    """POST a scrape payload to the cloud app's import endpoint. Returns the
+    parsed JSON response; raises requests.HTTPError on a non-2xx status."""
+    url = base_url.rstrip("/") + "/api/import/scrape"
+    resp = requests.post(url, json=payload,
+                         headers={"Authorization": f"Bearer {token}"},
+                         timeout=_PUSH_TIMEOUT_S)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def run_scrape(vendor: str, *, push_url: str | None = None,
+               push_token: str | None = None) -> None:
     mod = SCRAPERS[vendor]
     if not hasattr(mod, "collect"):
         raise SystemExit(f"{vendor} scraper not implemented yet (no collect()).")
@@ -82,8 +101,12 @@ def run_scrape(vendor: str) -> None:
         _wait_for_user(page, f"Log in if needed, open your {mod.SOURCE} library / full "
                              f"purchase history, then press Enter here... ")
         games = mod.collect(page, captured)
-    write_scrape(vendor, games)
+    out_path = write_scrape(vendor, games)
     logger.info("scraped %d %s games", len(games), vendor)
+    if push_url:
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        result = push_scrape(payload, push_url, push_token or "")
+        logger.info("pushed %s -> %s", vendor, result.get("summary"))
 
 
 def main(argv=None) -> None:
@@ -91,10 +114,19 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="Scrape vendor libraries to normalized JSON")
     parser.add_argument("--vendor", required=True, choices=[*SCRAPERS, "all"])
     parser.add_argument("--recon", action="store_true", help="save raw library HTML to .recon/")
+    parser.add_argument("--push", metavar="URL", default=None,
+                        help="POST the scrape to a cloud app's /api/import/scrape "
+                             "(token from GAMETRACKER_IMPORT_TOKEN)")
     args = parser.parse_args(argv)
+    push_token = os.environ.get("GAMETRACKER_IMPORT_TOKEN", "")
+    if args.push and not push_token:
+        parser.error("--push requires GAMETRACKER_IMPORT_TOKEN in the environment")
     vendors = list(SCRAPERS) if args.vendor == "all" else [args.vendor]
     for vendor in vendors:
-        (run_recon if args.recon else run_scrape)(vendor)
+        if args.recon:
+            run_recon(vendor)
+        else:
+            run_scrape(vendor, push_url=args.push, push_token=push_token)
 
 
 if __name__ == "__main__":
