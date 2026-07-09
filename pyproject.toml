@@ -9,6 +9,7 @@ dependencies = [
     "flask>=3.1.3",
     "playwright>=1.60.0",
     "pytest>=9.0.3",
+    "python-dotenv>=1.2.2",
     "requests>=2.34.2",
 ]
 
@@ -16,3 +17,8 @@ dependencies = [
 dev = [
     "pytest-xdist>=3.8.0",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# dotenv must load before the project imports it configures (some read env
+# vars at import time), which pycodestyle/ruff otherwise flags as E402.
+"app.py" = ["E402"]
