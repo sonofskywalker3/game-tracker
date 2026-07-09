@@ -6,10 +6,9 @@ import io
 import json
 import logging
 import os
-from dotenv import load_dotenv
-load_dotenv()  # load .env if present (no-op in prod where env vars are set directly)
 import sqlite3
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 import requests
 import auth
 import dedup
@@ -35,6 +34,8 @@ from background_tasks import (
 )
 import enrichment
 import scrape_service
+
+load_dotenv()  # load .env if present (no-op in prod where env vars are set directly)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GAMETRACKER_SESSION_SECRET", "dev-insecure-secret")
