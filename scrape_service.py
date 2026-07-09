@@ -235,7 +235,8 @@ def _psn_addon_targets(games: list) -> list[str]:
 
 def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
                   visited_pids: list[str] | None = None,
-                  parent_map: dict | None = None) -> dict:
+                  parent_map: dict | None = None,
+                  *, store_resolvers: bool = True) -> dict:
     """Back up the DB, import games, then populate DLC + ownership per vendor.
 
     Steam uses the id-based deep-fetch (steam_dlc: catalogue + appid ownership);
@@ -279,7 +280,9 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         _set(phase="matching", message="matching DLC ownership...")
         import addon_parent
         platform = _PLATFORM_BY_VENDOR.get(vendor, vendor.title())
-        if parent_map is not None:
+        if not store_resolvers:
+            resolver = None            # v1 push path: name-based mark_ownership only
+        elif parent_map is not None:
             # Nintendo: parent links discovered live during the per-game DLC pass
             # (see _run); feed them through the same resolve_and_link machinery.
             def resolver(ids):
@@ -374,6 +377,23 @@ def _run_pipeline(conn: sqlite3.Connection, vendor: str, games: list,
         "newly_owned": newly_owned,
         "review": review,
     }
+
+
+def import_pushed(source: str, games: list[dict]) -> dict:
+    """Import a scrape payload pushed from the home machine (v1 fidelity).
+
+    Runs the full pipeline (import + IGDB/Steam DLC enrichment + collections
+    sync) but with vendor store resolvers DISABLED, so DLC ownership uses the
+    name-based fallback and no store-page lookups run from the cloud IP. Returns
+    the pipeline summary. Raises ValueError for an unknown source.
+    """
+    if source not in VENDORS:
+        raise ValueError(f"unknown source: {source}")
+    conn = models.get_db()
+    try:
+        return _run_pipeline(conn, source, games, store_resolvers=False)
+    finally:
+        conn.close()
 
 
 def start(vendor: str, *, browser_factory=None, collect=None,
