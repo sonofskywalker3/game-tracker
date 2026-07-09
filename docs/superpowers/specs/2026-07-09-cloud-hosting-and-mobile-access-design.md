@@ -55,9 +55,13 @@ Runs everything the owner *looks at*, independent of the home PC.
   current `games.db` is copied up once. Backups: nightly `sqlite3 .backup` on a
   cron, retaining N days, plus a weekly copy off-box (DO Spaces or scp to another
   location) so a dead droplet never loses the library.
-- **Secrets:** IGDB creds, Anthropic key, the app password hash, and the import
-  token live in a server-side `.env` (loaded via `python-dotenv`). Never committed.
-  A `.env.example` with empty values is added to the repo (currently missing).
+- **Secrets (decided 2026-07-09):** existing vendor/Anthropic creds stay in
+  `config.json` (already gitignored; the settings UI writes it) — not churned. The
+  **two new auth secrets** (app password hash, import token) plus the Flask session
+  secret are read from **environment variables** on the server (the natural
+  deployment fit and the project's security rule for new secrets), with optional
+  `python-dotenv` loading of a local `.env` for dev. A `config.example.json` and an
+  `.env.example` (env var names, empty values) are added to the repo.
 
 ### Home half (best-effort, only when the PC is up)
 
@@ -100,9 +104,18 @@ Public hosting requires a gate. Single-user for now, designed as B's first brick
 
 ## Endpoint changes
 
-- **New:** `POST /api/import/scrape` (or adapt existing `/api/data/import`) —
-  authenticated by the import token, accepts a normalized scrape JSON payload, runs
-  the existing `import_scraped` pipeline, returns an import summary.
+- **New:** `POST /api/import/scrape` — authenticated by the import token, accepts
+  a normalized scrape JSON payload, runs the import pipeline cloud-side, returns an
+  import summary.
+  - **v1 fidelity (decided 2026-07-09):** the push carries only the base scrape
+    JSON that `write_scrape` already produces (games + add-ons). The cloud runs
+    import + IGDB DLC enrichment + Steam DLC + collections sync at full quality,
+    but **DLC ownership uses the pipeline's existing name-based `mark_ownership`
+    fallback** — the browser-derived PS/Nintendo authoritative parent links
+    (`parent_map`/`visited_pids`) are NOT serialized in v1. Implemented by running
+    the pipeline with **store resolvers disabled** (no vendor store-page lookups
+    from the datacenter IP). A future v2 may serialize the parent links for full
+    authoritative-source DLC precision.
 - **New:** `GET /login`, `POST /login`, `POST /logout`, and a lightweight
   `GET /healthz` (unauthenticated, for uptime checks / Caddy).
 - **Disabled in the cloud deployment:** the in-app scrape controller
