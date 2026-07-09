@@ -11,3 +11,8 @@ dependencies = [
     "pytest>=9.0.3",
     "requests>=2.34.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-xdist>=3.8.0",
+]
