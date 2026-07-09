@@ -12,6 +12,7 @@
 
 - `uv` for all package/env management (`uv add`, never `pip install`). — from CLAUDE.md
 - Run tests with `uv run python -m pytest` (plain `uv run pytest` fails: `ModuleNotFoundError: models`). — from memory
+- **Test runner:** single-test steps run plain (fast). **Full-suite** steps use `-n auto` (pytest-xdist; ~35s vs ~134s serial). Never add `-n auto` to a single-test run — spawning workers costs ~8s for one test. — build-speed decision 2026-07-09
 - Lint gate is `ruff check` only; never run `ruff format` (codebase is hand-aligned). — from memory
 - Type hints on all function signatures (params and return). — from CLAUDE.md
 - Use `logging`, not `print()`, for operational output. — from CLAUDE.md
@@ -412,7 +413,7 @@ Expected: PASS (8 tests).
 
 - [ ] **Step 7: Verify the full suite is still green (the critical backward-compat check)**
 
-Run: `uv run python -m pytest -q`
+Run: `uv run python -m pytest -q -n auto`
 Expected: PASS — all pre-existing tests plus the new ones. If any pre-existing test now fails, the gate is leaking when `auth_enabled()` is False; fix before continuing.
 
 - [ ] **Step 8: Lint + commit**
@@ -641,7 +642,7 @@ Expected: PASS (4 tests).
 
 - [ ] **Step 7: Full suite green**
 
-Run: `uv run python -m pytest -q`
+Run: `uv run python -m pytest -q -n auto`
 Expected: PASS (existing pipeline tests unaffected — `store_resolvers` defaults to True).
 
 - [ ] **Step 8: Lint + commit**
@@ -888,7 +889,7 @@ GAMETRACKER_CLOUD=
 
 - [ ] **Step 8: Run tests + full suite**
 
-Run: `uv run python -m pytest tests/test_importable.py -v && uv run python -m pytest -q`
+Run: `uv run python -m pytest tests/test_importable.py -v && uv run python -m pytest -q -n auto`
 Expected: PASS (both new tests; full suite green).
 
 - [ ] **Step 9: Verify `.env`/`config.json` stay gitignored (must NOT be staged)**
@@ -908,7 +909,7 @@ git commit -m "chore(deploy): dotenv load, wsgi entrypoint, config/env templates
 
 ## Definition of done (Plan 1)
 
-- `uv run python -m pytest -q` fully green (972 existing + new tests).
+- `uv run python -m pytest -q -n auto` fully green (972 existing + new tests).
 - `uv run ruff check .` clean.
 - With no auth env vars set, the app runs exactly as before (verified: existing suite passes).
 - With `GAMETRACKER_PASSWORD_HASH` set: `/healthz` open; every other route requires a session cookie or bearer token; `/login` issues both.
