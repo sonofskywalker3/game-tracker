@@ -2362,9 +2362,16 @@ def api_enrichment_review_reject(rid):
     return jsonify({'success': True})
 
 
+# Message returned by the scrape routes when the app is the cloud deployment
+# (scraping needs a real browser + vendor logins, which live on the home PC).
+_SCRAPE_CLOUD_DISABLED = "scraping runs on the home machine in cloud mode"
+
+
 @app.route('/api/scrape/start', methods=['POST'])
 def api_scrape_start():
     """Start a web-driven vendor library scrape in the background."""
+    if auth.cloud_mode():
+        return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     vendor = (request.json or {}).get('vendor', '')
     if vendor not in scrape_service.VENDORS:
         return jsonify({'error': f'unknown vendor: {vendor}'}), 400
@@ -2377,6 +2384,8 @@ def api_scrape_start():
 @app.route('/api/scrape/continue', methods=['POST'])
 def api_scrape_continue():
     """Signal that the user has logged in and the scrape may proceed."""
+    if auth.cloud_mode():
+        return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     scrape_service.signal_continue()
     return jsonify({'success': True})
 
@@ -2384,6 +2393,8 @@ def api_scrape_continue():
 @app.route('/api/scrape/cancel', methods=['POST'])
 def api_scrape_cancel():
     """Request cancellation of the running scrape."""
+    if auth.cloud_mode():
+        return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     scrape_service.cancel()
     return jsonify({'success': True})
 
@@ -2391,6 +2402,8 @@ def api_scrape_cancel():
 @app.route('/api/scrape/status')
 def api_scrape_status():
     """Current scrape phase/progress for the UI poller."""
+    if auth.cloud_mode():
+        return jsonify({"phase": "disabled", "message": _SCRAPE_CLOUD_DISABLED})
     return jsonify(scrape_service.status())
 
 

@@ -33,3 +33,11 @@ def test_scrape_continue_and_cancel(client, monkeypatch):
     assert client.post("/api/scrape/continue").status_code == 200
     assert client.post("/api/scrape/cancel").status_code == 200
     assert calls == {"continue": 1, "cancel": 1}
+
+
+def test_scrape_disabled_in_cloud_mode(client, monkeypatch):
+    monkeypatch.setenv("GAMETRACKER_CLOUD", "1")
+    assert client.post("/api/scrape/start", json={"vendor": "xbox"}).status_code == 409
+    assert client.post("/api/scrape/continue").status_code == 409
+    assert client.post("/api/scrape/cancel").status_code == 409
+    assert client.get("/api/scrape/status").get_json()["phase"] == "disabled"
