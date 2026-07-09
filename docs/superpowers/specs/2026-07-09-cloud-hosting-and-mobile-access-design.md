@@ -51,6 +51,19 @@ Runs everything the owner *looks at*, independent of the home PC.
 - **App process:** **gunicorn** under a **systemd** service (`--workers 1` to keep
   SQLite writes and any in-process state consistent), replacing the Flask dev
   server. Auto-restarts on crash and on droplet reboot.
+  - **Migration is an explicit deploy step, NOT an import side effect** (decided
+    2026-07-09 in review): `wsgi.py` only exposes `app`. The systemd unit must run
+    the schema migration before gunicorn starts, e.g.
+    `ExecStartPre=/usr/bin/env uv run python -c "from app import ensure_db; ensure_db()"`.
+  - **`--timeout` must exceed a scrape-push import** (review finding #3): the
+    `POST /api/import/scrape` handler runs the import + IGDB/Steam enrichment +
+    collections sync **synchronously in the request thread**, which can take
+    minutes. With `--workers 1`, a push briefly makes the whole app (incl.
+    `/healthz`) unresponsive — acceptable for infrequent single-user manual pushes,
+    but gunicorn's default 30s `--timeout` would SIGKILL the worker mid-import.
+    Set a generous timeout (e.g. `--timeout 900`). A future improvement is to run
+    the import on a background thread and return a job id (as the in-app scraper
+    already does); deferred for v1.
 - **Database:** **SQLite stays** (single-user, low concurrency — ideal). The
   current `games.db` is copied up once. Backups: nightly `sqlite3 .backup` on a
   cron, retaining N days, plus a weekly copy off-box (DO Spaces or scp to another
@@ -101,6 +114,13 @@ Public hosting requires a gate. Single-user for now, designed as B's first brick
 - **Path to B:** adding Google auth later is a new OAuth login route + a `users`
   table populated from Google identities (email/`sub`) + per-user data scoping —
   an extension of the gate, not a rewrite of it.
+- **Hardening applied in review (2026-07-09):** the app fails closed at startup if
+  auth is enabled while the session secret is the committed dev default (prevents a
+  forged-cookie bypass); session cookies are `HttpOnly`/`SameSite=Lax` and `Secure`
+  in cloud mode; the session is long-lived (30-day permanent); bearer/import tokens
+  are compared with `hmac.compare_digest`. **Deferred:** login rate-limiting
+  (Werkzeug's slow password hash + a strong password is adequate for single-user
+  v1; add a limiter before opening real signups in B).
 
 ## Endpoint changes
 
