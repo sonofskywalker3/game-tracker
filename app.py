@@ -2407,6 +2407,22 @@ def api_scrape_status():
     return jsonify(scrape_service.status())
 
 
+@app.route('/api/import/scrape', methods=['POST'])
+def api_import_scrape():
+    """Ingest a scrape JSON payload pushed from the home machine and run the
+    import pipeline cloud-side. Auth: the import token (handled by the gate)."""
+    payload = request.get_json(silent=True) or {}
+    source = payload.get('source', '')
+    games = payload.get('games')
+    if not isinstance(games, list):
+        return jsonify({'error': 'payload must include a games list'}), 400
+    try:
+        summary = scrape_service.import_pushed(source, games)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, 'summary': summary})
+
+
 # ============================================================================
 # Startup
 # ============================================================================
