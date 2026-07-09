@@ -86,8 +86,17 @@ Public hosting requires a gate. Single-user for now, designed as B's first brick
 - **Import endpoint auth:** the home scraper-push uses a separate long **import
   token** (also in the server `.env`) so it can post scrape JSON without the
   interactive password flow.
-- **Path to B:** the single password/token becomes a real `users` table + per-user
-  sessions later without rearchitecting the gate.
+- **Pluggable identity (decided 2026-07-09):** the gate is built around an
+  abstract "authenticated identity" — the app asks *"is this request
+  authenticated, and as whom,"* and *how* identity is proven sits behind that.
+  For now that is the shared password; for **B the intended mechanism is Google
+  OAuth / OIDC ("Sign in with Google")**, which avoids password storage, reset,
+  and email-verification entirely. Chosen "now" auth is therefore the **plain
+  shared password** (a one-row password `users` table would be wasted work since
+  Google-authenticated users have no local password).
+- **Path to B:** adding Google auth later is a new OAuth login route + a `users`
+  table populated from Google identities (email/`sub`) + per-user data scoping —
+  an extension of the gate, not a rewrite of it.
 
 ## Endpoint changes
 
@@ -136,7 +145,9 @@ Windows** and are exempt. Package/env management via `uv` on the droplet.
 
 ## Out of scope (future / B)
 
-- Multi-user accounts, signup, per-user data isolation.
+- Multi-user accounts, **Google OAuth/OIDC login**, signup, per-user data
+  isolation. (Google auth is the intended B mechanism — see Authentication — but
+  is deliberately not built now; the gate is only made forward-compatible with it.)
 - A purchased domain / branded URL.
 - Running scrapers in the cloud (residential proxies, remote-desktop login).
 - Migrating off SQLite (only needed at real multi-user scale).
