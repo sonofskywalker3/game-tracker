@@ -6,6 +6,8 @@ import io
 import json
 import logging
 import os
+from dotenv import load_dotenv
+load_dotenv()  # load .env if present (no-op in prod where env vars are set directly)
 import sqlite3
 from datetime import datetime, timezone
 import requests
