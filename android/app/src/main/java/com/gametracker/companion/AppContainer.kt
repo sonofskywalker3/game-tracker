@@ -7,6 +7,7 @@ import com.gametracker.companion.data.Repository
 import com.gametracker.companion.data.ScheduleSnapshotStore
 import com.gametracker.companion.data.SettingsStore
 import com.gametracker.companion.data.appJson
+import com.gametracker.companion.data.authInterceptor
 import com.gametracker.companion.data.buildApi
 import com.gametracker.companion.data.dynamicHostInterceptor
 import com.gametracker.companion.vpn.VpnController
@@ -19,6 +20,7 @@ class AppContainer(private val appContext: Context) {
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(dynamicHostInterceptor(settings))
+        .addInterceptor(authInterceptor(settings))
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 

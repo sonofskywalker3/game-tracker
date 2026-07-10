@@ -10,6 +10,8 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
+@Serializable data class LoginBody(val password: String)
+@Serializable data class LoginResponse(val token: String)
 @Serializable data class StatusBody(val status: String)
 @Serializable data class PinBody(val game_id: Int, val goal: String? = null)
 @Serializable data class OutcomeBody(val outcome: String, val chase: Boolean? = null, val new_goal: String? = null)
@@ -32,6 +34,9 @@ import retrofit2.http.Query
 )
 
 interface GameTrackerApi {
+    @POST("login")
+    suspend fun login(@Body body: LoginBody): LoginResponse
+
     @GET("api/games")
     suspend fun games(
         @Query("status") status: String? = null,

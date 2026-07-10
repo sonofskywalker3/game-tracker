@@ -3,6 +3,7 @@ package com.gametracker.companion.ui
 import com.gametracker.companion.data.GameSummary
 import com.gametracker.companion.data.Repository
 import com.gametracker.companion.data.SettingsStore
+import com.gametracker.companion.ui.settings.LoginState
 import com.gametracker.companion.ui.settings.SettingsViewModel
 import com.gametracker.companion.ui.settings.TestResult
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +17,13 @@ import org.junit.Test
 
 private class FakeSettings(initial: String) : SettingsStore {
     val state = MutableStateFlow(initial)
+    val token = MutableStateFlow("")
     override val baseUrl: Flow<String> = state
     override fun baseUrlBlocking() = state.value
     override suspend fun setBaseUrl(url: String) { state.value = url.trimEnd('/') }
+    override val authToken: Flow<String> = token
+    override fun authTokenBlocking() = token.value
+    override suspend fun setAuthToken(t: String) { token.value = t.trim() }
 }
 
 class SettingsViewModelTest {
@@ -44,5 +49,30 @@ class SettingsViewModelTest {
         val vm = SettingsViewModel(FakeSettings("http://h:5000"), FakeRepo(false).asRepository())
         vm.test(); advanceUntilIdle()
         assertEquals(TestResult.Failed, vm.testResult.value)
+    }
+
+    @Test fun login_success_stores_token_and_sets_ok() = runTest {
+        val settings = FakeSettings("http://h:5000")
+        val vm = SettingsViewModel(settings, FakeRepo(reachable = true).asRepository())
+        vm.login("pw"); advanceUntilIdle()
+        assertEquals(LoginState.Ok, vm.loginState.value)
+        assertEquals("fake-token-123", settings.token.value)
+        assertEquals(true, vm.loggedIn.value)
+    }
+
+    @Test fun login_failure_sets_failed_and_stores_no_token() = runTest {
+        val settings = FakeSettings("http://h:5000")
+        val vm = SettingsViewModel(settings, FakeRepo(reachable = false).asRepository())
+        vm.login("bad"); advanceUntilIdle()
+        assertEquals(LoginState.Failed, vm.loginState.value)
+        assertEquals("", settings.token.value)
+    }
+
+    @Test fun logout_clears_token() = runTest {
+        val settings = FakeSettings("http://h:5000")
+        settings.token.value = "existing"
+        val vm = SettingsViewModel(settings, FakeRepo(true).asRepository())
+        vm.logout(); advanceUntilIdle()
+        assertEquals("", settings.token.value)
     }
 }
