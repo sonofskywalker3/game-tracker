@@ -21,8 +21,6 @@ class FakeRepo(
     val linked = mutableListOf<BarcodeLinkBody>()
 
     private val api = object : BacklogQuestApi {
-        override suspend fun login(body: LoginBody): LoginResponse =
-            if (reachable) LoginResponse("fake-token-123") else throw RuntimeException("bad password")
         override suspend fun games(status: String?, platform: String?, search: String?, sort: String?) =
             if (reachable) gamesList else throw RuntimeException("unreachable")
         override suspend fun game(id: Int) =

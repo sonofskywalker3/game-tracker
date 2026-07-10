@@ -2,11 +2,6 @@ package com.backlogquest.companion.data
 
 class Repository(private val api: BacklogQuestApi) {
 
-    /** Exchange the password for a bearer token. Failure = wrong password /
-     *  unreachable (the caller decides what to show). */
-    suspend fun login(password: String): Result<String> =
-        runCatching { api.login(LoginBody(password)).token }
-
     suspend fun games(status: String? = null, platform: String? = null,
                       search: String? = null): Result<List<GameSummary>> =
         runCatching { api.games(status = status, platform = platform, search = search) }

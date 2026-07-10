@@ -7,14 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import com.backlogquest.companion.App
 import com.backlogquest.companion.AppContainer
-import com.backlogquest.companion.ui.settings.SettingsViewModel
 
 class AppViewModelFactory(private val c: AppContainer) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
         when {
-            modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
-                SettingsViewModel(c.settings, c.repository) as T
             modelClass.isAssignableFrom(com.backlogquest.companion.ui.picks.PicksViewModel::class.java) ->
                 com.backlogquest.companion.ui.picks.PicksViewModel(c.repository) as T
             modelClass.isAssignableFrom(com.backlogquest.companion.ui.library.LibraryViewModel::class.java) ->
