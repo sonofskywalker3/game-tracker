@@ -17,6 +17,7 @@ import os
 import threading
 
 import requests
+from dotenv import load_dotenv
 
 from scrapers import nintendo, playstation, steam, xbox
 from scrapers.base import (
@@ -111,6 +112,7 @@ def run_scrape(vendor: str, *, push_url: str | None = None,
 
 def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    load_dotenv()  # pick up GAMETRACKER_IMPORT_TOKEN from .env (same as app.py)
     parser = argparse.ArgumentParser(description="Scrape vendor libraries to normalized JSON")
     parser.add_argument("--vendor", required=True, choices=[*SCRAPERS, "all"])
     parser.add_argument("--recon", action="store_true", help="save raw library HTML to .recon/")
