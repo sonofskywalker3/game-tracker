@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-color silhouette of the sword+stack mark for Android 13+ themed icons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.66"
+        android:scaleY="0.66"
+        android:translateX="21"
+        android:translateY="21">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M21,52 L79,52 A5,5 0 0 1 84,57 L84,60 A5,5 0 0 1 79,65 L21,65 A5,5 0 0 1 16,60 L16,57 A5,5 0 0 1 21,52 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M27,71 L73,71 A5,5 0 0 1 78,76 L78,79 A5,5 0 0 1 73,84 L27,84 A5,5 0 0 1 22,79 L22,76 A5,5 0 0 1 27,71 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M47,3 L53,3 A4,4 0 0 1 57,7 L57,22 A4,4 0 0 1 53,26 L47,26 A4,4 0 0 1 43,22 L43,7 A4,4 0 0 1 47,3 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M20,30 C20,27 23,26 26,26 L74,26 C77,26 80,27 80,30 L80,34 C80,37 77,38 74,38 L26,38 C23,38 20,37 20,34 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M20,33 C18.5,27.5 18.5,21 22,15 C25.5,18.5 27.5,23 28,29 C25,27.5 22.5,29.5 20,33 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M80,33 C81.5,27.5 81.5,21 78,15 C74.5,18.5 72.5,23 72,29 C75,27.5 77.5,29.5 80,33 Z"/>
+        <path android:fillColor="#FFFFFF" android:pathData="M41,38 L59,38 L59,75 L41,75 Z"/>
+        <path android:fillColor="#FFFFFF" android:pathData="M41,75 L41,78 L50,91 L59,78 L59,75 Z"/>
+    </group>
+</vector>
