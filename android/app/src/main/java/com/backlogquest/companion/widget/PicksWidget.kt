@@ -11,12 +11,14 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.background
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
@@ -55,6 +57,9 @@ const val EXTRA_OPEN_TAB = "open_tab"
 private val OpenTabParam = ActionParameters.Key<String>(EXTRA_OPEN_TAB)
 
 class PicksWidget : GlanceAppWidget() {
+    /** Recompose per exact size so the card scales to fill tall/wide placements. */
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val store = (context.applicationContext as App).container.scheduleSnapshotStore
         val snapshot = store.load()
@@ -85,6 +90,11 @@ class PicksWidget : GlanceAppWidget() {
 
 @Composable
 private fun WidgetBody(card: WidgetCard?, cover: Bitmap?) {
+    // Scale the 3:4 cover to fill the placement's height (SizeMode.Exact), bounded
+    // so a 2-cell row still fits and a very tall placement doesn't get comical.
+    val coverHeight = (LocalSize.current.height - 24.dp).coerceIn(96.dp, 168.dp)
+    val coverWidth = coverHeight * 3 / 4
+    val tall = coverHeight >= 128.dp
     Row(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -99,29 +109,29 @@ private fun WidgetBody(card: WidgetCard?, cover: Bitmap?) {
             Image(
                 provider = ImageProvider(cover),
                 contentDescription = card?.title ?: "Pick",
-                modifier = GlanceModifier.width(72.dp).height(96.dp),
+                modifier = GlanceModifier.width(coverWidth).height(coverHeight),
             )
             Spacer(GlanceModifier.width(12.dp))
         }
         Column {
             Text(
                 text = card?.title ?: "No picks scheduled",
-                style = TextStyle(fontSize = 16.sp, color = TitleColor),
+                style = TextStyle(fontSize = if (tall) 18.sp else 16.sp, color = TitleColor),
             )
             if (card != null && card.slotLabel.isNotEmpty()) {
                 Text(
                     text = card.slotLabel,
-                    style = TextStyle(fontSize = 13.sp, color = SlotColor),
+                    style = TextStyle(fontSize = if (tall) 14.sp else 13.sp, color = SlotColor),
                 )
             }
             Text(
                 text = card?.hint ?: "Set windows on the web",
-                style = TextStyle(fontSize = 13.sp, color = BodyColor),
+                style = TextStyle(fontSize = if (tall) 14.sp else 13.sp, color = BodyColor),
             )
             if (card?.goal != null) {
                 Text(
                     text = "Goal: ${card.goal}",
-                    style = TextStyle(fontSize = 12.sp, color = BodyColor),
+                    style = TextStyle(fontSize = if (tall) 13.sp else 12.sp, color = BodyColor),
                 )
             }
         }
