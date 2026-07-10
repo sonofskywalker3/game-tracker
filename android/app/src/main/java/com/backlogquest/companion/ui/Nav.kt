@@ -31,7 +31,7 @@ private val TABS = listOf(
 )
 
 @Composable
-fun AppNav(initialTab: String? = null) {
+fun AppNav(initialTab: String? = null, initialSlotId: Int? = null) {
     val nav = rememberNavController()
     LaunchedEffect(initialTab) {
         if (initialTab != null) nav.navigate(initialTab) { launchSingleTop = true }
@@ -65,7 +65,10 @@ fun AppNav(initialTab: String? = null) {
     ) { padding ->
         NavHost(nav, startDestination = "picks", modifier = Modifier.padding(padding)) {
             composable("picks") {
-                com.backlogquest.companion.ui.picks.PicksScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
+                com.backlogquest.companion.ui.picks.PicksScreen(
+                    onOpenGame = { id -> nav.navigate("detail/$id") },
+                    initialSlotId = initialSlotId,
+                )
             }
             composable("library") {
                 com.backlogquest.companion.ui.library.LibraryScreen(onOpenGame = { id -> nav.navigate("detail/$id") })
