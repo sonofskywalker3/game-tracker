@@ -6,6 +6,7 @@ import com.backlogquest.companion.data.DataStoreSettings
 import com.backlogquest.companion.data.Repository
 import com.backlogquest.companion.data.ScheduleSnapshotStore
 import com.backlogquest.companion.data.SettingsStore
+import com.backlogquest.companion.data.TokenAuthenticator
 import com.backlogquest.companion.data.appJson
 import com.backlogquest.companion.data.authInterceptor
 import com.backlogquest.companion.data.buildApi
@@ -18,6 +19,7 @@ class AppContainer(private val appContext: Context) {
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authInterceptor(settings))
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        .authenticator(TokenAuthenticator(settings, BuildConfig.APP_PASSWORD))
         .build()
 
     val repository: Repository = Repository(buildApi(client, appJson()))
