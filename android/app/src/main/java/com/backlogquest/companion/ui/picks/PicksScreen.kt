@@ -24,8 +24,15 @@ import com.backlogquest.companion.ui.common.CoverImage
 import com.backlogquest.companion.ui.common.UiState
 import com.backlogquest.companion.ui.common.rememberAppFactory
 
+/** Pager page for a deep-linked slot id; first page when null/unknown. */
+fun slotPageIndex(slots: List<Slot>, slotId: Int?): Int {
+    if (slotId == null) return 0
+    val index = slots.indexOfFirst { it.id == slotId }
+    return if (index >= 0) index else 0
+}
+
 @Composable
-fun PicksScreen(onOpenGame: (Int) -> Unit) {
+fun PicksScreen(onOpenGame: (Int) -> Unit, initialSlotId: Int? = null) {
     val vm: PicksViewModel = viewModel(factory = rememberAppFactory())
     LaunchedEffect(Unit) { vm.load() }
     AppScaffold(title = "Picks") { pad ->
@@ -39,14 +46,14 @@ fun PicksScreen(onOpenGame: (Int) -> Unit) {
                         Button(onClick = { vm.load() }) { Text("Retry") }
                     }
                 }
-                is UiState.Success -> PicksContent(s.data, vm, onOpenGame)
+                is UiState.Success -> PicksContent(s.data, vm, onOpenGame, initialSlotId)
             }
         }
     }
 }
 
 @Composable
-private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (Int) -> Unit) {
+private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (Int) -> Unit, initialSlotId: Int? = null) {
     if (data.slots.isEmpty()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No slots yet") }
         return
@@ -105,7 +112,10 @@ private fun PicksContent(data: SlotsResponse, vm: PicksViewModel, onOpenGame: (I
         )
     }
 
-    val pager = rememberPagerState(pageCount = { data.slots.size })
+    val pager = rememberPagerState(
+        initialPage = slotPageIndex(data.slots, initialSlotId),
+        pageCount = { data.slots.size },
+    )
     val currentSlot = data.slots[pager.currentPage]
 
     Column(Modifier.fillMaxSize()) {
