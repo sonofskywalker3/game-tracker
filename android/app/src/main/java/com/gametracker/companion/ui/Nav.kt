@@ -88,11 +88,8 @@ fun AppNav(initialTab: String? = null) {
                     onLinked = { nav.popBackStack() },
                 )
             }
-            composable("settings") { backStackEntry ->
-                com.gametracker.companion.ui.settings.SettingsScreen(
-                    backStackEntry = backStackEntry,
-                    onNavigateToQrScan = { nav.navigate("vpn-scan") }
-                )
+            composable("settings") {
+                com.gametracker.companion.ui.settings.SettingsScreen()
             }
             composable(
                 "detail/{id}?added={added}",
@@ -118,16 +115,6 @@ fun AppNav(initialTab: String? = null) {
                         }
                     },
                 )
-            }
-            composable("vpn-scan") {
-                com.gametracker.companion.ui.vpn.QrScanScreen(onConfig = { conf ->
-                    // Pass the raw conf text back to the Settings back-stack entry,
-                    // then pop back to Settings. SettingsScreen reads + validates it.
-                    nav.previousBackStackEntry
-                        ?.savedStateHandle
-                        ?.set("scanned_conf", conf)
-                    nav.popBackStack()
-                })
             }
         }
     }

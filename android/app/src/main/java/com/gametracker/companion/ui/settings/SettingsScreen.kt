@@ -27,15 +27,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavBackStackEntry
 import com.gametracker.companion.ui.common.AppScaffold
 import com.gametracker.companion.ui.common.rememberAppFactory
 
 @Composable
-fun SettingsScreen(
-    backStackEntry: NavBackStackEntry? = null,
-    onNavigateToQrScan: () -> Unit = {},
-) {
+fun SettingsScreen() {
     val vm: SettingsViewModel = viewModel(factory = rememberAppFactory())
     val saved by vm.baseUrl.collectAsState()
     val result by vm.testResult.collectAsState()

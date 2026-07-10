@@ -35,7 +35,7 @@ fun PicksScreen(onOpenGame: (Int) -> Unit) {
                 is UiState.Empty -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No slots yet") }
                 is UiState.Error -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Can't reach Game Tracker — VPN connected?")
+                        Text("Can't reach Game Tracker")
                         Button(onClick = { vm.load() }) { Text("Retry") }
                     }
                 }
