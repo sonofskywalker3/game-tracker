@@ -10,8 +10,6 @@ import com.gametracker.companion.data.appJson
 import com.gametracker.companion.data.authInterceptor
 import com.gametracker.companion.data.buildApi
 import com.gametracker.companion.data.dynamicHostInterceptor
-import com.gametracker.companion.vpn.VpnController
-import com.gametracker.companion.vpn.WgConfigStore
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 
@@ -26,7 +24,4 @@ class AppContainer(private val appContext: Context) {
 
     val repository: Repository = Repository(buildApi(client, appJson()))
     val scheduleSnapshotStore: ScheduleSnapshotStore = DataStoreScheduleSnapshotStore(appContext)
-
-    val wgConfigStore: WgConfigStore = WgConfigStore(appContext)
-    val vpnController: VpnController = VpnController(appContext, wgConfigStore)
 }
