@@ -4,7 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Game Tracker — Sign in</title>
+  <title>BacklogQuest — Sign in</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     body { font-family: system-ui, sans-serif; background: #14141f; color: #eee;
            display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
@@ -19,7 +20,7 @@
 </head>
 <body>
   <form method="post" action="/login">
-    <h1>Game Tracker</h1>
+    <h1>BacklogQuest</h1>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <input type="password" name="password" placeholder="Password" autofocus>
     <button type="submit">Sign in</button>
