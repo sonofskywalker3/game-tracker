@@ -10,7 +10,7 @@
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.GameTracker">
+        android:theme="@style/Theme.BacklogQuest">
 
         <activity
             android:name=".MainActivity"

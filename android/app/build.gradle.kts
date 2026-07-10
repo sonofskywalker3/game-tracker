@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.gametracker.companion"
+    namespace = "com.backlogquest.companion"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.gametracker.companion"
+        applicationId = "com.backlogquest.companion"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
