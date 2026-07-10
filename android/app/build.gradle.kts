@@ -1,9 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
 }
+
+// Zero-touch login: the owner's password is baked at build time from the
+// gitignored android/local.properties (key backlogquest.password). Personal
+// single-user build — never commit or log it.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val appPassword: String = localProperties.getProperty("backlogquest.password")?.takeIf { it.isNotBlank() }
+    ?: error("backlogquest.password is missing from android/local.properties — add it before building (it is never committed).")
 
 android {
     namespace = "com.backlogquest.companion"
@@ -16,6 +28,10 @@ android {
         versionCode = 1
         versionName = "0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String", "APP_PASSWORD",
+            "\"${appPassword.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
     }
     buildTypes {
         release {
@@ -27,7 +43,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
