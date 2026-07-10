@@ -4,12 +4,14 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.background
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
@@ -26,12 +28,21 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.backlogquest.companion.App
 import com.backlogquest.companion.MainActivity
+import com.backlogquest.companion.R
 import com.backlogquest.companion.ui.picks.deviceNowWeekdayMinute
+
+/** Widget card colors = the app's dark palette (ui/theme/Theme.kt): OnSurface
+ *  title, indigo primary for the slot label, OnSurfaceVariant secondary text,
+ *  on the #181A22 surface card drawable. */
+private val TitleColor = ColorProvider(Color(0xFFE6E6EC))   // OnSurface
+private val SlotColor = ColorProvider(Color(0xFF8B93FF))    // Indigo (primary)
+private val BodyColor = ColorProvider(Color(0xFFB7B9C6))    // OnSurfaceVariant
 
 /** Intent extra key used by MainActivity to open the Picks tab on launch (consumed by Task 8). */
 const val EXTRA_OPEN_TAB = "open_tab"
@@ -77,6 +88,7 @@ private fun WidgetBody(card: WidgetCard?, cover: Bitmap?) {
     Row(
         modifier = GlanceModifier
             .fillMaxSize()
+            .background(ImageProvider(R.drawable.widget_bg))
             .padding(12.dp)
             .clickable(
                 actionStartActivity<MainActivity>(actionParametersOf(OpenTabParam to "picks")),
@@ -94,22 +106,22 @@ private fun WidgetBody(card: WidgetCard?, cover: Bitmap?) {
         Column {
             Text(
                 text = card?.title ?: "No picks scheduled",
-                style = TextStyle(fontSize = 16.sp),
+                style = TextStyle(fontSize = 16.sp, color = TitleColor),
             )
             if (card != null && card.slotLabel.isNotEmpty()) {
                 Text(
                     text = card.slotLabel,
-                    style = TextStyle(fontSize = 13.sp),
+                    style = TextStyle(fontSize = 13.sp, color = SlotColor),
                 )
             }
             Text(
                 text = card?.hint ?: "Set windows on the web",
-                style = TextStyle(fontSize = 13.sp),
+                style = TextStyle(fontSize = 13.sp, color = BodyColor),
             )
             if (card?.goal != null) {
                 Text(
                     text = "Goal: ${card.goal}",
-                    style = TextStyle(fontSize = 12.sp),
+                    style = TextStyle(fontSize = 12.sp, color = BodyColor),
                 )
             }
         }
