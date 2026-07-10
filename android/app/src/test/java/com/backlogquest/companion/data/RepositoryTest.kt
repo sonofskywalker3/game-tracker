@@ -12,12 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-private class FakeSettings(initial: String, initialToken: String = "") : SettingsStore {
-    private val state = MutableStateFlow(initial)
+private class FakeSettings(initialToken: String = "") : SettingsStore {
     private val tokenState = MutableStateFlow(initialToken)
-    override val baseUrl: Flow<String> = state
-    override fun baseUrlBlocking(): String = state.value
-    override suspend fun setBaseUrl(url: String) { state.value = url }
     override val authToken: Flow<String> = tokenState
     override fun authTokenBlocking(): String = tokenState.value
     override suspend fun setAuthToken(token: String) { tokenState.value = token }
@@ -30,11 +26,8 @@ class RepositoryTest {
     @Before fun setUp() {
         server = MockWebServer()
         server.start()
-        val settings = FakeSettings(server.url("/").toString().trimEnd('/'))
-        val client = OkHttpClient.Builder()
-            .addInterceptor(dynamicHostInterceptor(settings))
-            .build()
-        repo = Repository(buildApi(client, appJson()))
+        val client = OkHttpClient.Builder().build()
+        repo = Repository(buildApi(client, appJson(), server.url("/").toString()))
     }
 
     @After fun tearDown() { server.shutdown() }
@@ -52,14 +45,6 @@ class RepositoryTest {
         assertEquals("Halo", games[0].title)
         assertEquals(null, games[0].coverUrl)
         assertEquals(listOf("xbox"), games[0].platforms)
-    }
-
-    @Test fun dynamic_host_uses_current_setting() = runTest {
-        // The request must hit the MockWebServer host:port from settings, not a baked URL.
-        server.enqueue(MockResponse().setBody("[]"))
-        repo.games()
-        val recorded = server.takeRequest()
-        assertEquals("/api/games", recorded.path)
     }
 
     @Test fun slots_parses_wrapper_and_nullable_current_game() = runTest {
@@ -185,24 +170,18 @@ class RepositoryTest {
     }
 
     @Test fun auth_interceptor_adds_bearer_header_when_token_present() = runTest {
-        val settings = FakeSettings(server.url("/").toString().trimEnd('/'), initialToken = "tok-xyz")
-        val client = OkHttpClient.Builder()
-            .addInterceptor(dynamicHostInterceptor(settings))
-            .addInterceptor(authInterceptor(settings))
-            .build()
-        val authedRepo = Repository(buildApi(client, appJson()))
+        val settings = FakeSettings(initialToken = "tok-xyz")
+        val client = OkHttpClient.Builder().addInterceptor(authInterceptor(settings)).build()
+        val authedRepo = Repository(buildApi(client, appJson(), server.url("/").toString()))
         server.enqueue(MockResponse().setBody("[]"))
         authedRepo.games()
         assertEquals("Bearer tok-xyz", server.takeRequest().getHeader("Authorization"))
     }
 
     @Test fun auth_interceptor_omits_header_when_no_token() = runTest {
-        val settings = FakeSettings(server.url("/").toString().trimEnd('/'), initialToken = "")
-        val client = OkHttpClient.Builder()
-            .addInterceptor(dynamicHostInterceptor(settings))
-            .addInterceptor(authInterceptor(settings))
-            .build()
-        val plainRepo = Repository(buildApi(client, appJson()))
+        val settings = FakeSettings(initialToken = "")
+        val client = OkHttpClient.Builder().addInterceptor(authInterceptor(settings)).build()
+        val plainRepo = Repository(buildApi(client, appJson(), server.url("/").toString()))
         server.enqueue(MockResponse().setBody("[]"))
         plainRepo.games()
         assertEquals(null, server.takeRequest().getHeader("Authorization"))
