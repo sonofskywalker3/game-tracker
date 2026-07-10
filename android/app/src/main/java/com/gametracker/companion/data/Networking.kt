@@ -23,6 +23,19 @@ fun dynamicHostInterceptor(settings: SettingsStore): Interceptor = Interceptor {
     chain.proceed(req.newBuilder().url(newUrl).build())
 }
 
+/** Attaches the stored bearer token as `Authorization: Bearer <token>` to every
+ *  request when signed in, so the authenticated cloud backend accepts the app's
+ *  calls. When no token is stored the request is sent unchanged (the backend's
+ *  /login is the only route reachable unauthenticated). */
+fun authInterceptor(settings: SettingsStore): Interceptor = Interceptor { chain ->
+    val token = settings.authTokenBlocking()
+    val req = chain.request()
+    val authed = if (token.isNotEmpty())
+        req.newBuilder().header("Authorization", "Bearer $token").build()
+    else req
+    chain.proceed(authed)
+}
+
 fun buildApi(client: OkHttpClient, json: Json): GameTrackerApi =
     Retrofit.Builder()
         // Placeholder base; the interceptor swaps host/port per request.

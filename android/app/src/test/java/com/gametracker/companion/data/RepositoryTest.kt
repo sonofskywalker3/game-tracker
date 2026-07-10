@@ -12,11 +12,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-private class FakeSettings(initial: String) : SettingsStore {
+private class FakeSettings(initial: String, initialToken: String = "") : SettingsStore {
     private val state = MutableStateFlow(initial)
+    private val tokenState = MutableStateFlow(initialToken)
     override val baseUrl: Flow<String> = state
     override fun baseUrlBlocking(): String = state.value
     override suspend fun setBaseUrl(url: String) { state.value = url }
+    override val authToken: Flow<String> = tokenState
+    override fun authTokenBlocking(): String = tokenState.value
+    override suspend fun setAuthToken(token: String) { tokenState.value = token }
 }
 
 class RepositoryTest {
@@ -178,5 +182,45 @@ class RepositoryTest {
         assertTrue(sent.contains("\"title\":\"Celeste\""))
         assertTrue(sent.contains("\"cover_url\":\"cov\""))
         assertTrue(sent.contains("\"platform\":\"Switch\""))
+    }
+
+    @Test fun login_posts_password_and_returns_token() = runTest {
+        server.enqueue(MockResponse().setBody("""{"token":"abc123"}"""))
+        val result = repo.login("hunter2")
+        assertTrue(result.isSuccess)
+        assertEquals("abc123", result.getOrThrow())
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/login", recorded.path)
+        assertTrue(recorded.body.readUtf8().contains("\"password\":\"hunter2\""))
+    }
+
+    @Test fun login_wrong_password_is_failure() = runTest {
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid password"}"""))
+        assertTrue(repo.login("nope").isFailure)
+    }
+
+    @Test fun auth_interceptor_adds_bearer_header_when_token_present() = runTest {
+        val settings = FakeSettings(server.url("/").toString().trimEnd('/'), initialToken = "tok-xyz")
+        val client = OkHttpClient.Builder()
+            .addInterceptor(dynamicHostInterceptor(settings))
+            .addInterceptor(authInterceptor(settings))
+            .build()
+        val authedRepo = Repository(buildApi(client, appJson()))
+        server.enqueue(MockResponse().setBody("[]"))
+        authedRepo.games()
+        assertEquals("Bearer tok-xyz", server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test fun auth_interceptor_omits_header_when_no_token() = runTest {
+        val settings = FakeSettings(server.url("/").toString().trimEnd('/'), initialToken = "")
+        val client = OkHttpClient.Builder()
+            .addInterceptor(dynamicHostInterceptor(settings))
+            .addInterceptor(authInterceptor(settings))
+            .build()
+        val plainRepo = Repository(buildApi(client, appJson()))
+        server.enqueue(MockResponse().setBody("[]"))
+        plainRepo.games()
+        assertEquals(null, server.takeRequest().getHeader("Authorization"))
     }
 }
