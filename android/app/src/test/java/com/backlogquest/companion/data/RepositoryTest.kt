@@ -184,22 +184,6 @@ class RepositoryTest {
         assertTrue(sent.contains("\"platform\":\"Switch\""))
     }
 
-    @Test fun login_posts_password_and_returns_token() = runTest {
-        server.enqueue(MockResponse().setBody("""{"token":"abc123"}"""))
-        val result = repo.login("hunter2")
-        assertTrue(result.isSuccess)
-        assertEquals("abc123", result.getOrThrow())
-        val recorded = server.takeRequest()
-        assertEquals("POST", recorded.method)
-        assertEquals("/login", recorded.path)
-        assertTrue(recorded.body.readUtf8().contains("\"password\":\"hunter2\""))
-    }
-
-    @Test fun login_wrong_password_is_failure() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid password"}"""))
-        assertTrue(repo.login("nope").isFailure)
-    }
-
     @Test fun auth_interceptor_adds_bearer_header_when_token_present() = runTest {
         val settings = FakeSettings(server.url("/").toString().trimEnd('/'), initialToken = "tok-xyz")
         val client = OkHttpClient.Builder()

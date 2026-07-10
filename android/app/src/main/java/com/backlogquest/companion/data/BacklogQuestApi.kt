@@ -10,6 +10,8 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
+// Used by TokenAuthenticator's raw OkHttp /login call (the endpoint is
+// deliberately absent from the Retrofit interface — auth is automatic).
 @Serializable data class LoginBody(val password: String)
 @Serializable data class LoginResponse(val token: String)
 @Serializable data class StatusBody(val status: String)
@@ -34,9 +36,6 @@ import retrofit2.http.Query
 )
 
 interface BacklogQuestApi {
-    @POST("login")
-    suspend fun login(@Body body: LoginBody): LoginResponse
-
     @GET("api/games")
     suspend fun games(
         @Query("status") status: String? = null,

@@ -6,7 +6,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -29,7 +28,6 @@ private val TABS = listOf(
     Tab("picks", "Picks", Icons.Filled.Home),
     Tab("library", "Library", Icons.AutoMirrored.Filled.List),
     Tab("add", "Add", Icons.Filled.Add),
-    Tab("settings", "Settings", Icons.Filled.Settings),
 )
 
 @Composable
@@ -87,9 +85,6 @@ fun AppNav(initialTab: String? = null) {
                     onOpenGame = { id -> nav.navigate("detail/$id?added=true") },
                     onLinked = { nav.popBackStack() },
                 )
-            }
-            composable("settings") {
-                com.backlogquest.companion.ui.settings.SettingsScreen()
             }
             composable(
                 "detail/{id}?added={added}",
