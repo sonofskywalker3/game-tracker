@@ -9,7 +9,6 @@ import com.backlogquest.companion.data.SettingsStore
 import com.backlogquest.companion.data.appJson
 import com.backlogquest.companion.data.authInterceptor
 import com.backlogquest.companion.data.buildApi
-import com.backlogquest.companion.data.dynamicHostInterceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 
@@ -17,7 +16,6 @@ class AppContainer(private val appContext: Context) {
     val settings: SettingsStore = DataStoreSettings(appContext)
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(dynamicHostInterceptor(settings))
         .addInterceptor(authInterceptor(settings))
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
