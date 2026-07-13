@@ -25,8 +25,17 @@ def _setup_logging(data_dir: Path) -> None:
 
 
 def _exe_dir() -> Path:
+    """Directory the .exe itself lives in (where a user drops backlogquest.json)."""
     if getattr(sys, "frozen", False):          # PyInstaller onedir
         return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _resource_dir() -> Path:
+    """Bundled read-only resources (ui/). PyInstaller 6.x onedir builds unpack
+    datas into a `_internal` subfolder (sys._MEIPASS), not next to the exe."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", _exe_dir()))
     return Path(__file__).resolve().parent
 
 
@@ -35,8 +44,7 @@ def main() -> None:
     _setup_logging(data_dir)
     import webview
     api = Api(data_dir=data_dir, exe_dir=_exe_dir())
-    ui = _exe_dir() / "ui" / "index.html" if getattr(sys, "frozen", False) \
-        else Path(__file__).resolve().parent / "ui" / "index.html"
+    ui = _resource_dir() / "ui" / "index.html"
     api.window = webview.create_window(
         "BacklogQuest Scraper", url=str(ui), js_api=api,
         width=560, height=680, background_color=_BG)
