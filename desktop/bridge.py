@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from desktop import config as cfg
-from desktop.csv_export import write_csv
+from desktop.csv_export import write_vendor_csvs
 from desktop.runner import ScrapeRunner
 from desktop.sync import sync_payloads
 from desktop.versioncheck import APP_VERSION, check_for_update
@@ -33,6 +33,7 @@ class Api:
         self._runner: ScrapeRunner | None = None
         self._thread: threading.Thread | None = None
         self._payload_paths: dict[str, str] = {}
+        self._sync_thread: threading.Thread | None = None
         self.window = None          # set by main.py (needed for the save dialog)
 
     def _default_runner(self, vendors: list[str], sink: Callable[[dict], None]) -> ScrapeRunner:
@@ -73,7 +74,19 @@ class Api:
     def _on_event(self, event: dict) -> None:
         if event["type"] == "finished":
             self._payload_paths = event["results"]
+            self._events.put(event)
+            # Sync is automatic whenever a token is configured; runs on its own
+            # thread (server-side import can take minutes) and reports back
+            # through the same event queue the UI already polls.
+            if self._config.token and self._payload_paths:
+                self._events.put({"type": "syncing"})
+                self._sync_thread = threading.Thread(target=self._auto_sync, daemon=True)
+                self._sync_thread.start()
+            return
         self._events.put(event)
+
+    def _auto_sync(self) -> None:
+        self._events.put({"type": "synced", "results": self.sync()})
 
     def continue_login(self) -> None:
         if self._runner:
@@ -97,15 +110,13 @@ class Api:
 
     def export_csv(self) -> str | None:
         import webview
-        paths = self.window.create_file_dialog(
-            webview.SAVE_DIALOG, save_filename="backlogquest_library.csv",
-            file_types=("CSV file (*.csv)",))
+        paths = self.window.create_file_dialog(webview.FOLDER_DIALOG)
         if not paths:
             return None
-        out = Path(paths if isinstance(paths, str) else paths[0])
-        rows = write_csv(self._payloads(), out)
-        logger.info("exported %d rows to %s", rows, out)
-        return str(out)
+        folder = Path(paths if isinstance(paths, str) else paths[0])
+        counts = write_vendor_csvs(self._payloads(), folder)
+        logger.info("exported %s to %s", counts, folder)
+        return str(folder)
 
     def sync(self) -> list[dict]:
         results = sync_payloads(self._payloads(), self._config.server_url, self._config.token)

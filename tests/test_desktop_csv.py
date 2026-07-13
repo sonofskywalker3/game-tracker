@@ -26,6 +26,16 @@ def test_combined_rows_and_columns(tmp_path: Path) -> None:
     assert rows[1]["external_id"] == ""     # None -> empty cell, not "None"
 
 
+def test_one_csv_per_vendor(tmp_path: Path) -> None:
+    from desktop.csv_export import write_vendor_csvs
+    counts = write_vendor_csvs([_PS, _XB], tmp_path)
+    assert counts == {"playstation": 1, "xbox": 1}
+    with (tmp_path / "backlogquest_playstation.csv").open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1 and rows[0]["title"] == "Stray"
+    assert (tmp_path / "backlogquest_xbox.csv").exists()
+
+
 def test_excel_bom(tmp_path: Path) -> None:
     out = tmp_path / "library.csv"
     write_csv([_PS], out)
