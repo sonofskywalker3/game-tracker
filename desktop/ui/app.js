@@ -26,6 +26,14 @@ function renderChip() {
   chip.textContent = hasToken ? "✓ Sync configured"
                               : "CSV only — add a token to sync";
   chip.classList.toggle("ok", hasToken);
+  // With a baked-in/saved token the server fields are just noise — hide them.
+  // They come back via showSettings() if the server ever rejects the token.
+  $("settings").classList.toggle("hidden", hasToken);
+}
+
+function showSettings() {
+  $("settings").classList.remove("hidden");
+  $("settings").open = true;
 }
 
 async function saveSettings() {
@@ -99,6 +107,8 @@ $("sync").onclick = async () => {
   const results = await window.pywebview.api.sync();
   $("action-status").textContent = results.map((r) =>
     `${VENDOR_LABELS[r.source] || r.source}: ${r.summary}`).join("\n");
+  // A rejected token needs a way back to the (normally hidden) settings.
+  if (results.some((r) => !r.ok && !r.retryable)) showSettings();
 };
 $("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
 window.addEventListener("pywebviewready", init);
