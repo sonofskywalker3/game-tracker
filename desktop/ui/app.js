@@ -170,4 +170,28 @@ $("retry-sync").onclick = async () => {
   $("retry-sync").disabled = false;
 };
 $("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
-window.addEventListener("pywebviewready", init);
+
+// Boot resiliently: the pywebviewready event can fire BEFORE this script
+// attaches its listener (warm WebView2), and the bridge can glitch during
+// startup — so poll for the api and retry init instead of trusting one event.
+let booted = false, bootAttempts = 0;
+async function boot() {
+  if (booted) return;
+  if (!(window.pywebview && window.pywebview.api)) {
+    if (++bootAttempts > 100) {   // ~10s: bridge never came up
+      $("sync-chip").textContent = "Couldn't start — please close and reopen the app.";
+      return;
+    }
+    setTimeout(boot, 100);
+    return;
+  }
+  booted = true;
+  try {
+    await init();
+  } catch (err) {
+    booted = false;               // bridge answered but flaked — retry
+    setTimeout(boot, 500);
+  }
+}
+window.addEventListener("pywebviewready", boot);
+boot();
