@@ -11,7 +11,17 @@ const VENDOR_STEPS = {
   xbox: [
     "Sign in to your Microsoft account if asked — Xbox usually opens straight to your order history",
   ],
+  nintendo: [
+    'Click "Log in" in the top right corner of the browser that just opened',
+    "Login with your Nintendo Account",
+  ],
 };
+// Closing line under the bullets; some vendors don't need a library page open.
+const VENDOR_THEN = {
+  xbox: "Then click Continue here.",
+  nintendo: "Then click Continue here.",
+};
+const DEFAULT_THEN = "When your library is showing, click Continue.";
 const genericSteps = (label) => [
   `Login to your ${label} account on the browser that just opened`,
   "Open your game library / full purchase history",
@@ -79,7 +89,7 @@ function handleEvent(e) {
     const steps = VENDOR_STEPS[e.vendor] || genericSteps(VENDOR_LABELS[e.vendor]);
     $("scrape-instruction").innerHTML =
       `<ul>${steps.map((s) => `<li>${s}</li>`).join("")}</ul>` +
-      `<p class="then">When your library is showing, click Continue.</p>`;
+      `<p class="then">${VENDOR_THEN[e.vendor] || DEFAULT_THEN}</p>`;
     $("scrape-instruction").classList.remove("hidden");
     $("scrape-progress").classList.add("hidden");
     $("continue").disabled = false;
