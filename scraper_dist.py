@@ -67,6 +67,22 @@ _TOKEN_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
 _HOST_CHARS = re.compile(r"^[A-Za-z0-9.-]+$")
 
 
+def artifact_version() -> str:
+    """Published version string from version.txt, or "" when unpublished."""
+    path = scraper_dir() / VERSION_FILE
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _setup_base() -> str:
+    """Installer base name, version-stamped when a version is published (so a
+    re-download doesn't collide in the browser's Downloads folder)."""
+    version = artifact_version()
+    return f"BacklogQuest-Scraper-Setup-{version}" if version else "BacklogQuest-Scraper-Setup"
+
+
 def installer_download_name(server_url: str, token: str) -> str:
     """Installer download filename with the sidecar config embedded as markers.
 
@@ -79,15 +95,23 @@ def installer_download_name(server_url: str, token: str) -> str:
     token, a charset would be ambiguous to parse, or the name would overflow
     the filename budget.
     """
+    base = _setup_base()
     if not token or not _TOKEN_CHARS.fullmatch(token):
-        return INSTALLER_EXE
+        return f"{base}.exe"
     host = urlsplit(server_url).netloc
     if not host or not _HOST_CHARS.fullmatch(host) or ".c-" in f".h-{host}":
-        return INSTALLER_EXE
-    name = f"BacklogQuest-Scraper-Setup.h-{host}.c-{token}.exe"
+        return f"{base}.exe"
+    name = f"{base}.h-{host}.c-{token}.exe"
     if len(name) > MAX_DOWNLOAD_NAME_CHARS:
-        return INSTALLER_EXE
+        return f"{base}.exe"
     return name
+
+
+def portable_download_name() -> str:
+    """Portable zip download name, version-stamped when published."""
+    version = artifact_version()
+    return (f"backlogquest-scraper-portable-{version}.zip" if version
+            else PORTABLE_ZIP)
 
 
 def personalized_zip(src: Path, server_url: str, token: str) -> io.BytesIO:

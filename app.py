@@ -2471,7 +2471,8 @@ def download_scraper():
     if not src.exists():
         return jsonify({"error": "portable build not available"}), 404
     buf = scraper_dist.personalized_zip(src, server_url, token)
-    return send_file(buf, as_attachment=True, download_name=scraper_dist.PORTABLE_ZIP,
+    return send_file(buf, as_attachment=True,
+                     download_name=scraper_dist.portable_download_name(),
                      mimetype="application/zip")
 
 
