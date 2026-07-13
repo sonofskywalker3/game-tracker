@@ -57,3 +57,32 @@ def test_version_endpoint_public(client, monkeypatch) -> None:
     assert client.get("/api/scraper/version").get_json() == {"version": "0.1.0"}
     # ...while the downloads are gated.
     assert client.get("/download/scraper?flavor=portable").status_code in (302, 401)
+
+
+def test_sidecar_lands_in_root_folder_even_with_leading_toplevel_file(client, artifacts: Path) -> None:
+    src = io.BytesIO()
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("README.txt", b"readme first")           # top-level entry FIRST
+        z.writestr("BacklogQuest Scraper/app.exe", b"exe")
+    (artifacts / "backlogquest-scraper-portable.zip").write_bytes(src.getvalue())
+    resp = client.get("/download/scraper?flavor=portable")
+    with zipfile.ZipFile(io.BytesIO(resp.data)) as z:
+        assert "backlogquest.json" in z.namelist()           # mixed roots -> zip root is correct
+    # And the pure-rooted case still nests it:
+    src2 = io.BytesIO()
+    with zipfile.ZipFile(src2, "w") as z:
+        z.writestr("BacklogQuest Scraper/app.exe", b"exe")
+        z.writestr("BacklogQuest Scraper/ui/index.html", b"<html>")
+    (artifacts / "backlogquest-scraper-portable.zip").write_bytes(src2.getvalue())
+    resp2 = client.get("/download/scraper?flavor=portable")
+    with zipfile.ZipFile(io.BytesIO(resp2.data)) as z:
+        assert "BacklogQuest Scraper/backlogquest.json" in z.namelist()
+
+
+def test_public_url_env_overrides_request_url_root(client, monkeypatch) -> None:
+    monkeypatch.setenv("BACKLOGQUEST_PUBLIC_URL", "https://backlogquest.xyz")
+    resp = client.get("/download/scraper?flavor=portable")
+    with zipfile.ZipFile(io.BytesIO(resp.data)) as z:
+        names = [n for n in z.namelist() if n.endswith("backlogquest.json")]
+        sidecar = json.loads(z.read(names[0]))
+    assert sidecar["server_url"] == "https://backlogquest.xyz"

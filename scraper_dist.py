@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 SCRAPER_DIR_ENV = "BACKLOGQUEST_SCRAPER_DIR"
+PUBLIC_URL_ENV = "BACKLOGQUEST_PUBLIC_URL"
 SCRAPER_DIR_DEFAULT = "/opt/backlogquest/scraper"
 PORTABLE_ZIP = "backlogquest-scraper-portable.zip"
 INSTALLER_EXE = "BacklogQuest-Scraper-Setup.exe"
@@ -22,6 +23,34 @@ def scraper_dir() -> Path:
     return Path(os.environ.get(SCRAPER_DIR_ENV) or SCRAPER_DIR_DEFAULT)
 
 
+def common_zip_root(names: list[str]) -> str:
+    """Common first-path-segment across ALL zip entries, or "" if there isn't one.
+
+    A single top-level entry with no "/" (e.g. a stray README.txt) means the
+    entries don't all share one app folder, so the correct root is "".
+    """
+    if not names:
+        return ""
+    segments = {name.split("/")[0] for name in names if "/" in name}
+    all_share_root = len(segments) == 1 and all("/" in name for name in names)
+    if all_share_root:
+        return next(iter(segments)) + "/"
+    return ""
+
+
+def public_server_url(fallback: str) -> str:
+    """Public base URL for the sidecar's server_url.
+
+    BACKLOGQUEST_PUBLIC_URL (deploy-time, set behind the Caddy proxy) wins
+    verbatim; otherwise fall back to the caller-supplied request URL root
+    (keeps local dev + tests working).
+    """
+    public_url = os.environ.get(PUBLIC_URL_ENV)
+    if public_url:
+        return public_url.rstrip("/")
+    return fallback.rstrip("/")
+
+
 def personalized_zip(src: Path, server_url: str, token: str) -> io.BytesIO:
     """Copy the portable zip, adding backlogquest.json beside the exe (zip root dir)."""
     buf = io.BytesIO()
@@ -29,7 +58,7 @@ def personalized_zip(src: Path, server_url: str, token: str) -> io.BytesIO:
         names = zin.namelist()
         for item in zin.infolist():
             zout.writestr(item, zin.read(item.filename))
-        root = names[0].split("/")[0] + "/" if names and "/" in names[0] else ""
+        root = common_zip_root(names)
         sidecar = json.dumps({"server_url": server_url, "token": token})
         zout.writestr(f"{root}backlogquest.json", sidecar)
     buf.seek(0)
