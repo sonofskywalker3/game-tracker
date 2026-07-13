@@ -34,7 +34,13 @@ class Api:
         self._thread: threading.Thread | None = None
         self._payload_paths: dict[str, str] = {}
         self._sync_thread: threading.Thread | None = None
-        self.window = None          # set by main.py (needed for the save dialog)
+        # Set by main.py (needed for the folder dialog). MUST stay underscore-
+        # private: pywebview serializes the js_api object's public attributes,
+        # and a Window here sends it into window.native.AccessibilityObject.
+        # Bounds.Empty.Empty... infinite recursion the moment any accessibility
+        # client (OBS capture, PowerToys, Narrator) probes the window — wedging
+        # the UI thread. See r0x0r/pywebview#1815.
+        self._window = None
 
     def _default_runner(self, vendors: list[str], sink: Callable[[dict], None]) -> ScrapeRunner:
         return ScrapeRunner(vendors, self._data_dir / "scraped",
@@ -110,7 +116,7 @@ class Api:
 
     def export_csv(self) -> str | None:
         import webview
-        paths = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        paths = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         if not paths:
             return None
         folder = Path(paths if isinstance(paths, str) else paths[0])

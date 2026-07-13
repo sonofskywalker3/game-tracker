@@ -107,3 +107,12 @@ def test_finished_event_skips_sync_without_token(tmp_path: Path) -> None:
     api._on_event({"type": "finished", "results": {}})
     assert [e["type"] for e in api.poll()["events"]] == ["finished"]
     assert api._sync_thread is None
+
+
+def test_no_public_window_attribute(tmp_path: Path) -> None:
+    # pywebview serializes the js_api's PUBLIC attributes; a Window attr recurses
+    # through window.native.AccessibilityObject.Bounds.Empty... and wedges the UI
+    # thread when an accessibility client probes the window (pywebview#1815).
+    api, _ = _api(tmp_path)
+    assert not hasattr(api, "window")
+    assert hasattr(api, "_window")

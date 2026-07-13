@@ -45,7 +45,9 @@ def main() -> None:
     import webview
     api = Api(data_dir=data_dir, exe_dir=_exe_dir())
     ui = _resource_dir() / "ui" / "index.html"
-    api.window = webview.create_window(
+    # Private attr on purpose — a public one gets serialized into the JS bridge
+    # and recurses through AccessibilityObject (see bridge.py / pywebview#1815).
+    api._window = webview.create_window(
         "BacklogQuest Scraper", url=str(ui), js_api=api,
         width=560, height=680, background_color=_BG)
     try:
