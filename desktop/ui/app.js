@@ -4,6 +4,8 @@ const VENDOR_LABELS = {playstation: "PlayStation", xbox: "Xbox",
 let doneCounts = {}, skippedNotes = {}, hasToken = false, pollTimer = null;
 
 const $ = (id) => document.getElementById(id);
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g,
+    (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const show = (id) => ["state-setup", "state-scraping", "state-results"]
     .forEach((s) => $(s).classList.toggle("hidden", s !== id));
 
@@ -59,6 +61,7 @@ function handleEvent(e) {
     skippedNotes[e.vendor] = e.note;
   } else if (e.type === "finished") {
     clearInterval(pollTimer);
+    $("start").disabled = false;
     renderResults();
   }
 }
@@ -68,16 +71,17 @@ function renderResults() {
   const rows = Object.entries(doneCounts).map(([v, n]) =>
       `<tr><td>${VENDOR_LABELS[v]}</td><td>${n} titles</td></tr>`)
     .concat(Object.entries(skippedNotes).map(([v, note]) =>
-      `<tr><td>${VENDOR_LABELS[v]}</td><td>skipped—${note === "skipped" ? "" : " " + note}
+      `<tr><td>${VENDOR_LABELS[v]}</td><td>skipped—${note === "skipped" ? "" : " " + escapeHtml(note)}
        ${note !== "skipped" ? "(site changed? check for an update)" : ""}</td></tr>`));
   $("results-table").innerHTML = rows.join("");
   $("sync").classList.toggle("hidden", !hasToken);
 }
 
 $("start").onclick = () => {
+  $("start").disabled = true;
   doneCounts = {}; skippedNotes = {};
   const vendors = [...document.querySelectorAll("#vendors input:checked")].map((i) => i.value);
-  if (!vendors.length) return;
+  if (!vendors.length) { $("start").disabled = false; return; }
   window.pywebview.api.start_scrape(vendors);
   startPolling();
 };
@@ -94,5 +98,5 @@ $("sync").onclick = async () => {
   $("action-status").textContent = results.map((r) =>
     `${VENDOR_LABELS[r.source] || r.source}: ${r.summary}`).join("\n");
 };
-$("again").onclick = () => { show("state-setup"); };
+$("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
 window.addEventListener("pywebviewready", init);

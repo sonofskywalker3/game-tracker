@@ -49,3 +49,28 @@ def test_start_scrape_wires_controls_and_events(tmp_path: Path) -> None:
     polled = api.poll()
     assert polled["captured"] == 7
     assert isinstance(polled["events"], list)
+
+
+def test_start_scrape_ignores_reentrant_calls(tmp_path: Path) -> None:
+    import threading
+
+    release = threading.Event()
+
+    class _BlockingRunner(_FakeRunner):
+        def run(self) -> dict:
+            release.wait(timeout=5)
+            return {}
+
+    runners: list[_BlockingRunner] = []
+
+    def factory(vendors, sink):
+        r = _BlockingRunner()
+        runners.append(r)
+        return r
+
+    api = Api(data_dir=tmp_path, exe_dir=tmp_path / "exe", runner_factory=factory)
+    api.start_scrape(["playstation"])
+    api.start_scrape(["playstation"])   # second click while first is running
+    release.set()
+    api._thread.join(timeout=5)
+    assert len(runners) == 1

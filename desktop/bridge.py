@@ -55,6 +55,11 @@ class Api:
 
     # -- scraping ---------------------------------------------------------------
     def start_scrape(self, vendors: list[str]) -> None:
+        # Re-entrancy guard: the GUI also disables the Start button while a
+        # scrape is running, but double-clicks (or a slow disable) could
+        # still reach here before the button updates, so guard here too.
+        if self._thread is not None and self._thread.is_alive():
+            return
         chosen = [v for v in VENDOR_CHOICES if v in vendors]
         self._runner = self._runner_factory(chosen, self._on_event)
         self._thread = threading.Thread(target=self._runner.run, daemon=True)
