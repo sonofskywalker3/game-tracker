@@ -39,6 +39,8 @@ def sync_payloads(payloads: list[dict], server_url: str, token: str,
         source = str(payload.get("source", "?"))
         try:
             response = push(payload, server_url, token)
+            if not isinstance(response, dict):
+                raise ValueError(f"unexpected response shape: {type(response).__name__}")
             results.append(SyncResult(source, True, str(response.get("summary", "done")),
                                       retryable=False))
         except (requests.RequestException, OSError, ValueError) as exc:
