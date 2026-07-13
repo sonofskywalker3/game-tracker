@@ -11,10 +11,15 @@ dependencies = [
     "playwright>=1.60.0",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
+    "pywebview>=6.2.1",
     "requests>=2.34.2",
 ]
 
 [dependency-groups]
+desktop-build = [
+    "pillow>=12.3.0",
+    "pyinstaller>=6.21.0",
+]
 dev = [
     "pytest-xdist>=3.8.0",
 ]
