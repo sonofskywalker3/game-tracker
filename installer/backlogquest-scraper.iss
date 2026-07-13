@@ -17,6 +17,7 @@ UninstallDisplayIcon={app}\BacklogQuest Scraper.exe
 
 [Files]
 Source: "..\dist\BacklogQuest Scraper\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist; Check: not IsWebView2Installed
 
 [Icons]
 Name: "{userprograms}\BacklogQuest Scraper"; Filename: "{app}\BacklogQuest Scraper.exe"
