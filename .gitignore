@@ -6,6 +6,7 @@ config.json
 !.env.example
 *.key
 *.pem
+desktop/backlogquest.json
 
 # ---- Personal library data (kept local-only) ----
 series_patterns.json

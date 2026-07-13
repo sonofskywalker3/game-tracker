@@ -28,11 +28,18 @@ def common_zip_root(names: list[str]) -> str:
 
     A single top-level entry with no "/" (e.g. a stray README.txt) means the
     entries don't all share one app folder, so the correct root is "".
+
+    Names are normalized to forward slashes before checking: Windows
+    PowerShell 5.1's Compress-Archive writes BACKSLASH zip entry names
+    (e.g. "BacklogQuest Scraper\\app.exe"), and CPython's zipfile only
+    auto-fixes that to "/" on read when the reading host's os.sep is "\\"
+    (i.e. never on the Linux server), so raw backslashes can reach here.
     """
     if not names:
         return ""
-    segments = {name.split("/")[0] for name in names if "/" in name}
-    all_share_root = len(segments) == 1 and all("/" in name for name in names)
+    normalized = [name.replace("\\", "/") for name in names]
+    segments = {name.split("/")[0] for name in normalized if "/" in name}
+    all_share_root = len(segments) == 1 and all("/" in name for name in normalized)
     if all_share_root:
         return next(iter(segments)) + "/"
     return ""

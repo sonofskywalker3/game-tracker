@@ -1,3 +1,4 @@
+#Requires -Version 7
 # release_scraper.ps1 — build both flavors and publish to the droplet.
 #
 # -SkipPublish: build both flavors locally (portable zip + Inno Setup exe) but

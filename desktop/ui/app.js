@@ -69,7 +69,9 @@ function handleEvent(e) {
 function renderResults() {
   show("state-results");
   const rows = Object.entries(doneCounts).map(([v, n]) =>
-      `<tr><td>${VENDOR_LABELS[v]}</td><td>${n} titles</td></tr>`)
+      `<tr><td>${VENDOR_LABELS[v]}</td><td>${n === 0
+        ? "0 found — vendor may have changed their site; check for an update"
+        : n + " titles"}</td></tr>`)
     .concat(Object.entries(skippedNotes).map(([v, note]) =>
       `<tr><td>${VENDOR_LABELS[v]}</td><td>skipped—${note === "skipped" ? "" : " " + escapeHtml(note)}
        ${note !== "skipped" ? "(site changed? check for an update)" : ""}</td></tr>`));
