@@ -28,7 +28,11 @@ def appdata_dir() -> Path:
 
 def _read_json(path: Path) -> dict | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(parsed, dict):
+            logger.warning("config %s is not a JSON object", path)
+            return None
+        return parsed
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:

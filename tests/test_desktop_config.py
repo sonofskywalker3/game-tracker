@@ -40,6 +40,13 @@ def test_corrupt_files_fall_back_to_defaults(tmp_path: Path) -> None:
     assert cfg == AppConfig()
 
 
+def test_valid_json_wrong_shape_falls_back_to_defaults(tmp_path: Path) -> None:
+    exe, data = tmp_path / "exe", tmp_path / "data"
+    data.mkdir()
+    (data / "config.json").write_text("42", encoding="utf-8")
+    assert load_config(exe, data) == AppConfig()
+
+
 def test_save_round_trips(tmp_path: Path) -> None:
     save_config(AppConfig(server_url="https://z.example", token="t"), tmp_path / "d")
     cfg = load_config(tmp_path / "exe", tmp_path / "d")
