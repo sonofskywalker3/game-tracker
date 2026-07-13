@@ -49,7 +49,8 @@ def main() -> None:
     # and recurses through AccessibilityObject (see bridge.py / pywebview#1815).
     api._window = webview.create_window(
         "BacklogQuest Scraper", url=str(ui), js_api=api,
-        width=560, height=680, background_color=_BG)
+        width=560, height=680, background_color=_BG,
+        text_select=True)   # pywebview defaults to no text selection anywhere
     try:
         webview.start()
     except Exception:
