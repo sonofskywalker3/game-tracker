@@ -1,6 +1,18 @@
 // Polls the Python bridge (window.pywebview.api) and drives the three states.
 const VENDOR_LABELS = {playstation: "PlayStation", xbox: "Xbox",
                        nintendo: "Nintendo", steam: "Steam"};
+// Per-vendor login walkthroughs (code-controlled strings — safe for innerHTML).
+const VENDOR_STEPS = {
+  playstation: [
+    "Login to your PlayStation account on the browser that just opened",
+    "Click on your profile icon in the top right corner",
+    "Click on Game Library",
+  ],
+};
+const genericSteps = (label) => [
+  `Login to your ${label} account on the browser that just opened`,
+  "Open your game library / full purchase history",
+];
 let doneCounts = {}, skippedNotes = {}, hasToken = false, pollTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -54,6 +66,10 @@ function handleEvent(e) {
   if (e.type === "login") {
     show("state-scraping");
     $("scrape-vendor").textContent = VENDOR_LABELS[e.vendor];
+    const steps = VENDOR_STEPS[e.vendor] || genericSteps(VENDOR_LABELS[e.vendor]);
+    $("scrape-instruction").innerHTML =
+      `<ul>${steps.map((s) => `<li>${s}</li>`).join("")}</ul>` +
+      `<p class="then">When your library is showing, click Continue.</p>`;
     $("scrape-instruction").classList.remove("hidden");
     $("scrape-progress").classList.add("hidden");
     $("continue").disabled = false;
