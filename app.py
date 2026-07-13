@@ -20,7 +20,7 @@ import slots
 import slot_schedule
 import barcode
 from flask import (Flask, Response, render_template, request, jsonify,
-                   session, redirect, url_for)
+                   session, redirect, url_for, send_file)
 from models import (
     get_db, init_db, migrate_db, normalize_title, clean_title,
     reclean_display_titles, DB_PATH, apply_traits_catalog,
@@ -34,6 +34,7 @@ from background_tasks import (
 )
 import enrichment
 import scrape_service
+import scraper_dist
 
 load_dotenv()  # load .env if present (no-op in prod where env vars are set directly)
 
@@ -65,7 +66,7 @@ log = logging.getLogger(__name__)
 # ============================================================================
 
 # Paths reachable without authentication (login flow, health, static assets).
-_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz"})
+_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz", "/api/scraper/version"})
 
 
 @app.before_request
@@ -2444,6 +2445,39 @@ def api_import_scrape():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'success': True, 'summary': summary})
+
+
+# ============================================================================
+# Desktop scraper distribution
+# ============================================================================
+
+@app.route("/download/scraper")
+def download_scraper():
+    """Personalized (portable) or generic (installer) desktop-app download."""
+    flavor = request.args.get("flavor", scraper_dist.FLAVOR_PORTABLE)
+    if flavor not in (scraper_dist.FLAVOR_PORTABLE, scraper_dist.FLAVOR_INSTALLER):
+        return jsonify({"error": "unknown flavor"}), 400
+    if flavor == scraper_dist.FLAVOR_INSTALLER:
+        path = scraper_dist.scraper_dir() / scraper_dist.INSTALLER_EXE
+        if not path.exists():
+            return jsonify({"error": "installer not available"}), 404
+        return send_file(path, as_attachment=True, download_name=scraper_dist.INSTALLER_EXE)
+    src = scraper_dist.scraper_dir() / scraper_dist.PORTABLE_ZIP
+    if not src.exists():
+        return jsonify({"error": "portable build not available"}), 404
+    token = os.environ.get("BACKLOGQUEST_IMPORT_TOKEN", "")
+    buf = scraper_dist.personalized_zip(src, request.url_root.rstrip("/"), token)
+    return send_file(buf, as_attachment=True, download_name=scraper_dist.PORTABLE_ZIP,
+                     mimetype="application/zip")
+
+
+@app.route("/api/scraper/version")
+def scraper_version():
+    """Public: latest desktop-app version (read from the artifacts dir)."""
+    path = scraper_dist.scraper_dir() / scraper_dist.VERSION_FILE
+    if not path.exists():
+        return jsonify({"error": "no version published"}), 404
+    return jsonify({"version": path.read_text(encoding="utf-8").strip()})
 
 
 # ============================================================================
