@@ -179,3 +179,10 @@ def test_settings_page_offers_both_downloads(client) -> None:
     assert "Get the scraper" in html
     assert "/download/scraper?flavor=installer" in html
     assert "/download/scraper?flavor=portable" in html
+
+
+def test_download_names_carry_published_version(client) -> None:
+    disp = client.get("/download/scraper?flavor=installer").headers["Content-Disposition"]
+    assert "BacklogQuest-Scraper-Setup-0.1.0.h-" in disp
+    disp2 = client.get("/download/scraper?flavor=portable").headers["Content-Disposition"]
+    assert "backlogquest-scraper-portable-0.1.0.zip" in disp2
