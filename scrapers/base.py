@@ -40,12 +40,13 @@ LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled", "--start-maximiz
 IGNORE_DEFAULT_ARGS = ("--enable-automation",)
 
 
-def _launch_context(p, headless: bool):
+def _launch_context(p, headless: bool, profile_dir: Path | None = None):
     """Launch a persistent context, trying real browser channels first."""
+    user_data_dir = str(profile_dir or PROFILE_DIR)
     for channel in BROWSER_CHANNELS:
         try:
             return p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), headless=headless,
+                user_data_dir=user_data_dir, headless=headless,
                 channel=channel, args=list(LAUNCH_ARGS),
                 ignore_default_args=list(IGNORE_DEFAULT_ARGS),
             )
@@ -53,7 +54,7 @@ def _launch_context(p, headless: bool):
             logger.debug("browser channel %s unavailable: %s", channel, exc)
     logger.info("falling back to bundled Chromium (no installed Chrome/Edge found)")
     return p.chromium.launch_persistent_context(
-        user_data_dir=str(PROFILE_DIR), headless=headless, args=list(LAUNCH_ARGS),
+        user_data_dir=user_data_dir, headless=headless, args=list(LAUNCH_ARGS),
         ignore_default_args=list(IGNORE_DEFAULT_ARGS),
     )
 
@@ -137,7 +138,7 @@ def autoscroll(page: Page, max_rounds: int = 60, pause_ms: int = 500) -> None:
 
 
 @contextmanager
-def capturing_browser(headless: bool = False):
+def capturing_browser(headless: bool = False, profile_dir: Path | None = None):
     """Persistent browser that records JSON XHR/fetch responses seen in the session.
 
     Yields ``(page, captured)`` where ``captured`` is a growing list of
@@ -148,7 +149,7 @@ def capturing_browser(headless: bool = False):
     """
     from playwright.sync_api import sync_playwright
 
-    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    (profile_dir or PROFILE_DIR).mkdir(parents=True, exist_ok=True)
     captured: list[dict] = []
 
     def _on_response(response) -> None:
@@ -172,7 +173,7 @@ def capturing_browser(headless: bool = False):
             logger.debug("skip response %s: %s", getattr(response, "url", "?"), exc)
 
     with sync_playwright() as p:
-        context = _launch_context(p, headless)
+        context = _launch_context(p, headless, profile_dir)
         context.on("response", _on_response)
         try:
             page = context.pages[0] if context.pages else context.new_page()
