@@ -1,7 +1,7 @@
 # auth.py
 """Env-driven auth helpers for the single-user cloud deployment.
 
-Auth is enforced ONLY when GAMETRACKER_PASSWORD_HASH is set; with it unset the
+Auth is enforced ONLY when BACKLOGQUEST_PASSWORD_HASH is set; with it unset the
 app behaves exactly as it did before hosting (keeps the local dev + test suite
 unauthenticated). Identity is deliberately abstract here so a future multi-user
 "Sign in with Google" (OIDC) path replaces these helpers without touching the
@@ -25,12 +25,12 @@ def _env(name: str) -> str | None:
 
 def auth_enabled() -> bool:
     """True when a password hash is configured (turns the whole gate on)."""
-    return _env("GAMETRACKER_PASSWORD_HASH") is not None
+    return _env("BACKLOGQUEST_PASSWORD_HASH") is not None
 
 
 def check_password(candidate: str) -> bool:
     """True iff auth is enabled and `candidate` matches the configured hash."""
-    hashed = _env("GAMETRACKER_PASSWORD_HASH")
+    hashed = _env("BACKLOGQUEST_PASSWORD_HASH")
     if hashed is None:
         return False
     return check_password_hash(hashed, candidate)
@@ -49,7 +49,7 @@ def is_authenticated(headers: Mapping[str, str], authed_session: bool) -> bool:
     """True for a logged-in web session or a valid API bearer token."""
     if authed_session:
         return True
-    api_token = _env("GAMETRACKER_API_TOKEN")
+    api_token = _env("BACKLOGQUEST_API_TOKEN")
     tok = bearer_token(headers)
     return api_token is not None and tok is not None and hmac.compare_digest(tok, api_token)
 
@@ -59,7 +59,7 @@ def is_import_authorized(headers: Mapping[str, str]) -> bool:
     tok = bearer_token(headers)
     if tok is None:
         return False
-    for valid in (_env("GAMETRACKER_IMPORT_TOKEN"), _env("GAMETRACKER_API_TOKEN")):
+    for valid in (_env("BACKLOGQUEST_IMPORT_TOKEN"), _env("BACKLOGQUEST_API_TOKEN")):
         if valid is not None and hmac.compare_digest(tok, valid):
             return True
     return False
@@ -67,4 +67,4 @@ def is_import_authorized(headers: Mapping[str, str]) -> bool:
 
 def cloud_mode() -> bool:
     """True when running as the cloud deployment (disables the in-app scraper)."""
-    return _env("GAMETRACKER_CLOUD") == "1"
+    return _env("BACKLOGQUEST_CLOUD") == "1"

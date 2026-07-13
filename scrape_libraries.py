@@ -112,17 +112,17 @@ def run_scrape(vendor: str, *, push_url: str | None = None,
 
 def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    load_dotenv()  # pick up GAMETRACKER_IMPORT_TOKEN from .env (same as app.py)
+    load_dotenv()  # pick up BACKLOGQUEST_IMPORT_TOKEN from .env (same as app.py)
     parser = argparse.ArgumentParser(description="Scrape vendor libraries to normalized JSON")
     parser.add_argument("--vendor", required=True, choices=[*SCRAPERS, "all"])
     parser.add_argument("--recon", action="store_true", help="save raw library HTML to .recon/")
     parser.add_argument("--push", metavar="URL", default=None,
                         help="POST the scrape to a cloud app's /api/import/scrape "
-                             "(token from GAMETRACKER_IMPORT_TOKEN)")
+                             "(token from BACKLOGQUEST_IMPORT_TOKEN)")
     args = parser.parse_args(argv)
-    push_token = os.environ.get("GAMETRACKER_IMPORT_TOKEN", "")
+    push_token = os.environ.get("BACKLOGQUEST_IMPORT_TOKEN", "")
     if args.push and not push_token:
-        parser.error("--push requires GAMETRACKER_IMPORT_TOKEN in the environment")
+        parser.error("--push requires BACKLOGQUEST_IMPORT_TOKEN in the environment")
     vendors = list(SCRAPERS) if args.vendor == "all" else [args.vendor]
     for vendor in vendors:
         if args.recon:

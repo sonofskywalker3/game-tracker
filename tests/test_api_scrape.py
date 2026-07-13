@@ -36,7 +36,7 @@ def test_scrape_continue_and_cancel(client, monkeypatch):
 
 
 def test_scrape_disabled_in_cloud_mode(client, monkeypatch):
-    monkeypatch.setenv("GAMETRACKER_CLOUD", "1")
+    monkeypatch.setenv("BACKLOGQUEST_CLOUD", "1")
     assert client.post("/api/scrape/start", json={"vendor": "xbox"}).status_code == 409
     assert client.post("/api/scrape/continue").status_code == 409
     assert client.post("/api/scrape/cancel").status_code == 409
