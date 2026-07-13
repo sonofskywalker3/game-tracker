@@ -8,12 +8,15 @@ const VENDOR_STEPS = {
     "Click on your profile icon in the top right corner",
     "Click on Game Library",
   ],
+  xbox: [
+    "Sign in to your Microsoft account if asked — Xbox usually opens straight to your order history",
+  ],
 };
 const genericSteps = (label) => [
   `Login to your ${label} account on the browser that just opened`,
   "Open your game library / full purchase history",
 ];
-let doneCounts = {}, skippedNotes = {}, hasToken = false, pollTimer = null;
+let doneCounts = {}, skippedNotes = {}, hasToken = false, pollTimer = null, collectStart = 0;
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g,
@@ -56,8 +59,15 @@ async function saveSettings() {
 function startPolling() {
   pollTimer = setInterval(async () => {
     const {events, captured} = await window.pywebview.api.poll();
-    if (!$("scrape-progress").classList.contains("hidden"))
-      $("scrape-progress").textContent = `collecting… ${captured} responses captured`;
+    if (!$("scrape-progress").classList.contains("hidden")) {
+      // Liveness beats numbers: big vendors (Xbox order history) work for
+      // minutes between captured responses, so show a spinner + ticking clock.
+      const secs = Math.floor((Date.now() - collectStart) / 1000);
+      const mmss = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+      $("scrape-progress").innerHTML =
+        `<span class="spinner"></span>Collecting your library — this can take a few minutes` +
+        `<span class="dim"> · ${mmss} elapsed · ${captured} network responses</span>`;
+    }
     for (const e of events) handleEvent(e);
   }, 500);
 }
@@ -75,6 +85,7 @@ function handleEvent(e) {
     $("continue").disabled = false;
     $("skip").disabled = false;
   } else if (e.type === "collecting") {
+    collectStart = Date.now();
     $("scrape-instruction").classList.add("hidden");
     $("scrape-progress").classList.remove("hidden");
     $("continue").disabled = true;
