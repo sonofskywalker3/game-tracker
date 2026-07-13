@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -22,7 +23,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.state.getAppWidgetState
+import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -34,7 +35,6 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
-import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
@@ -44,6 +44,7 @@ import coil.request.SuccessResult
 import com.backlogquest.companion.App
 import com.backlogquest.companion.MainActivity
 import com.backlogquest.companion.R
+import com.backlogquest.companion.data.ScheduleSnapshot
 import com.backlogquest.companion.ui.picks.deviceNowWeekdayMinute
 
 /** Widget card colors = the app's dark palette (ui/theme/Theme.kt): OnSurface
@@ -75,19 +76,17 @@ class PicksWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val store = (context.applicationContext as App).container.scheduleSnapshotStore
         val snapshot = store.load()
-        val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-        var cycleSize = 0
-        val card: WidgetCard? = snapshot?.let {
+        // Preload every cycle slot's cover up front: the composable below re-runs on each
+        // prev/next press (via currentState) and cannot suspend to fetch a bitmap then.
+        val covers: Map<String, Bitmap> = snapshot?.let { snap ->
             val (weekday, minute) = deviceNowWeekdayMinute()
-            cycleSize = buildCycleList(it.slots.slots, weekday, minute).size
-            val index = effectiveIndex(
-                prefs[SelIndexKey] ?: 0, prefs[SelAtKey] ?: 0L,
-                System.currentTimeMillis(), cycleSize,
-            )
-            buildWidgetCard(it.slots, weekday, minute, index)
-        }
-        val cover: Bitmap? = card?.coverUrl?.let { loadCoverBitmap(context, it) }
-        provideContent { WidgetBody(card, cover, cycleSize) }
+            buildCycleList(snap.slots.slots, weekday, minute)
+                .mapNotNull { it.currentGame?.coverUrl }
+                .distinct()
+                .mapNotNull { url -> loadCoverBitmap(context, url)?.let { url to it } }
+                .toMap()
+        } ?: emptyMap()
+        provideContent { WidgetContent(snapshot, covers) }
     }
 
     /** Best-effort cover load → Bitmap for ImageProvider; null on any failure. */
@@ -107,6 +106,27 @@ class PicksWidget : GlanceAppWidget() {
     }
 }
 
+/**
+ * Reads the manual selection via [currentState] so a CycleAction press recomposes with the
+ * NEW index. (Computing the card in provideGlance froze the widget: while the Glance session
+ * is warm, update() only recomposes — code before provideContent never re-runs.)
+ */
+@Composable
+private fun WidgetContent(snapshot: ScheduleSnapshot?, covers: Map<String, Bitmap>) {
+    val prefs = currentState<Preferences>()
+    val (weekday, minute) = deviceNowWeekdayMinute()
+    var cycleSize = 0
+    val card: WidgetCard? = snapshot?.let {
+        cycleSize = buildCycleList(it.slots.slots, weekday, minute).size
+        val index = effectiveIndex(
+            prefs[SelIndexKey] ?: 0, prefs[SelAtKey] ?: 0L,
+            System.currentTimeMillis(), cycleSize,
+        )
+        buildWidgetCard(it.slots, weekday, minute, index)
+    }
+    WidgetBody(card, card?.coverUrl?.let(covers::get), cycleSize)
+}
+
 @Composable
 private fun WidgetBody(card: WidgetCard?, cover: Bitmap?, cycleSize: Int) {
     val openPicks: Action = if (card?.deepLinkSlotId != null) {
@@ -116,8 +136,9 @@ private fun WidgetBody(card: WidgetCard?, cover: Bitmap?, cycleSize: Int) {
     } else {
         actionStartActivity<MainActivity>(actionParametersOf(OpenTabParam to "picks"))
     }
-    // Scale the 3:4 cover to the height left above the button row (SizeMode.Exact).
-    val coverHeight = (LocalSize.current.height - 68.dp).coerceIn(96.dp, 168.dp)
+    // Scale the 3:4 cover to the height left above the button row (32dp buttons + 24dp
+    // vertical padding), so the card fits a 2-row placement (SizeMode.Exact).
+    val coverHeight = (LocalSize.current.height - 56.dp).coerceIn(48.dp, 168.dp)
     val coverWidth = coverHeight * 3 / 4
     val tall = coverHeight >= 128.dp
     Column(
@@ -161,38 +182,26 @@ private fun WidgetBody(card: WidgetCard?, cover: Bitmap?, cycleSize: Int) {
                 }
             }
         }
-        if (cycleSize > 1 || card?.deepLinkSlotId != null) {
+        if (cycleSize > 1) {
             Row(
                 modifier = GlanceModifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (cycleSize > 1) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_widget_prev),
-                        contentDescription = "Previous pick",
-                        modifier = GlanceModifier.size(36.dp).clickable(
-                            actionRunCallback<CycleAction>(actionParametersOf(DirectionParam to -1)),
-                        ),
-                    )
-                }
+                Image(
+                    provider = ImageProvider(R.drawable.ic_widget_prev),
+                    contentDescription = "Previous pick",
+                    modifier = GlanceModifier.size(32.dp).clickable(
+                        actionRunCallback<CycleAction>(actionParametersOf(DirectionParam to -1)),
+                    ),
+                )
                 Box(modifier = GlanceModifier.defaultWeight()) {}
-                if (card?.deepLinkSlotId != null) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_widget_checklist),
-                        contentDescription = "Open in Picks",
-                        modifier = GlanceModifier.size(36.dp).clickable(openPicks),
-                    )
-                }
-                Box(modifier = GlanceModifier.defaultWeight()) {}
-                if (cycleSize > 1) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_widget_next),
-                        contentDescription = "Next pick",
-                        modifier = GlanceModifier.size(36.dp).clickable(
-                            actionRunCallback<CycleAction>(actionParametersOf(DirectionParam to +1)),
-                        ),
-                    )
-                }
+                Image(
+                    provider = ImageProvider(R.drawable.ic_widget_next),
+                    contentDescription = "Next pick",
+                    modifier = GlanceModifier.size(32.dp).clickable(
+                        actionRunCallback<CycleAction>(actionParametersOf(DirectionParam to +1)),
+                    ),
+                )
             }
         }
     }
