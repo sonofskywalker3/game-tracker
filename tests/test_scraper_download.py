@@ -86,3 +86,10 @@ def test_public_url_env_overrides_request_url_root(client, monkeypatch) -> None:
         names = [n for n in z.namelist() if n.endswith("backlogquest.json")]
         sidecar = json.loads(z.read(names[0]))
     assert sidecar["server_url"] == "https://backlogquest.xyz"
+
+
+def test_settings_page_offers_both_downloads(client) -> None:
+    html = client.get("/settings").data.decode()
+    assert "Get the scraper" in html
+    assert "/download/scraper?flavor=installer" in html
+    assert "/download/scraper?flavor=portable" in html
