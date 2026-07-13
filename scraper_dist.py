@@ -5,8 +5,10 @@ import token) so a downloaded copy talks to the right server out of the box.
 import io
 import json
 import os
+import re
 import zipfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SCRAPER_DIR_ENV = "BACKLOGQUEST_SCRAPER_DIR"
 PUBLIC_URL_ENV = "BACKLOGQUEST_PUBLIC_URL"
@@ -56,6 +58,36 @@ def public_server_url(fallback: str) -> str:
     if public_url:
         return public_url.rstrip("/")
     return fallback.rstrip("/")
+
+
+# Windows caps a filename component at 255 chars; stay comfortably under so a
+# browser's duplicate-download suffix (" (1)") can't push the name over.
+MAX_DOWNLOAD_NAME_CHARS = 240
+_TOKEN_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
+_HOST_CHARS = re.compile(r"^[A-Za-z0-9.-]+$")
+
+
+def installer_download_name(server_url: str, token: str) -> str:
+    """Installer download filename with the sidecar config embedded as markers.
+
+    `BacklogQuest-Scraper-Setup.h-<host>.c-<token>.exe` — the Inno installer
+    parses its own filename at install time ([Code] in
+    backlogquest-scraper.iss) and writes backlogquest.json into {app}, which
+    the app's first-run sidecar seeding then consumes. The served binary is
+    untouched (survives a future Authenticode signature). https is assumed.
+    Falls back to the plain name (paste-the-token flow) when there is no
+    token, a charset would be ambiguous to parse, or the name would overflow
+    the filename budget.
+    """
+    if not token or not _TOKEN_CHARS.fullmatch(token):
+        return INSTALLER_EXE
+    host = urlsplit(server_url).netloc
+    if not host or not _HOST_CHARS.fullmatch(host) or ".c-" in f".h-{host}":
+        return INSTALLER_EXE
+    name = f"BacklogQuest-Scraper-Setup.h-{host}.c-{token}.exe"
+    if len(name) > MAX_DOWNLOAD_NAME_CHARS:
+        return INSTALLER_EXE
+    return name
 
 
 def personalized_zip(src: Path, server_url: str, token: str) -> io.BytesIO:

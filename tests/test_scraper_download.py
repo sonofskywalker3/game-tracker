@@ -65,6 +65,52 @@ def test_installer_served_as_is(client) -> None:
     assert resp.status_code == 200 and resp.data == b"fake-installer"
 
 
+def _config_from_name(name: str) -> dict:
+    """Parse the host/token markers embedded in an installer download name
+    (mirrors the Inno [Code] parser in installer/backlogquest-scraper.iss)."""
+    host = name.split(".h-", 1)[1].split(".c-", 1)[0]
+    tail = name.split(".c-", 1)[1]
+    token = ""
+    for ch in tail:
+        if not (ch.isalnum() or ch in "_-"):
+            break
+        token += ch
+    return {"server_url": f"https://{host}", "token": token}
+
+
+def test_installer_download_name_embeds_config() -> None:
+    from scraper_dist import installer_download_name
+    name = installer_download_name("https://backlogquest.xyz", "a" * 64)
+    assert name.startswith("BacklogQuest-Scraper-Setup.h-") and name.endswith(".exe")
+    cfg = _config_from_name(name)
+    assert cfg == {"server_url": "https://backlogquest.xyz", "token": "a" * 64}
+
+
+def test_installer_download_name_survives_browser_duplicate_suffix() -> None:
+    from scraper_dist import installer_download_name
+    name = installer_download_name("https://backlogquest.xyz", "abc123")
+    renamed = name.replace(".exe", " (1).exe")   # Chrome duplicate-download rename
+    assert _config_from_name(renamed)["token"] == "abc123"
+
+
+def test_installer_download_name_falls_back_plain() -> None:
+    from scraper_dist import INSTALLER_EXE, installer_download_name
+    assert installer_download_name("https://s", "") == INSTALLER_EXE            # no token
+    assert installer_download_name("https://" + "x" * 250, "a" * 64) == INSTALLER_EXE  # too long
+    assert installer_download_name("https://evil/path", "tok en") == INSTALLER_EXE     # bad token charset
+    assert installer_download_name("https://x.c-y.com", "abc") == INSTALLER_EXE        # ambiguous host
+
+
+def test_installer_route_personalizes_filename(client) -> None:
+    resp = client.get("/download/scraper?flavor=installer")
+    disposition = resp.headers["Content-Disposition"]
+    assert ".c-" in disposition
+    name = disposition.split("filename=")[-1].strip('"')
+    cfg = _config_from_name(name)
+    assert cfg["token"] == "sekrit"
+    assert cfg["server_url"].startswith("http")
+
+
 def test_unknown_flavor_400_and_missing_artifact_404(client, artifacts: Path) -> None:
     assert client.get("/download/scraper?flavor=weird").status_code == 400
     (artifacts / "backlogquest-scraper-portable.zip").unlink()
