@@ -5,9 +5,9 @@ from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def secure_env(monkeypatch):
-    monkeypatch.setenv("GAMETRACKER_PASSWORD_HASH", generate_password_hash("pw"))
-    monkeypatch.setenv("GAMETRACKER_API_TOKEN", "apitoken")
-    monkeypatch.setenv("GAMETRACKER_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", generate_password_hash("pw"))
+    monkeypatch.setenv("BACKLOGQUEST_API_TOKEN", "apitoken")
+    monkeypatch.setenv("BACKLOGQUEST_SESSION_SECRET", "test-secret")
     import app as app_module
     original = app_module.app.secret_key
     app_module.app.secret_key = "test-secret"

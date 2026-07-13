@@ -36,8 +36,8 @@ def test_import_scrape_rejects_missing_games(client):
 
 def test_import_scrape_requires_import_token_when_secured(client, monkeypatch):
     from werkzeug.security import generate_password_hash
-    monkeypatch.setenv("GAMETRACKER_PASSWORD_HASH", generate_password_hash("pw"))
-    monkeypatch.setenv("GAMETRACKER_IMPORT_TOKEN", "imp")
+    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", generate_password_hash("pw"))
+    monkeypatch.setenv("BACKLOGQUEST_IMPORT_TOKEN", "imp")
     import app as app_module
     app_module.app.secret_key = "s"
     # No token -> blocked by the gate.

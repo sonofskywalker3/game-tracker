@@ -38,7 +38,7 @@ import scrape_service
 load_dotenv()  # load .env if present (no-op in prod where env vars are set directly)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("GAMETRACKER_SESSION_SECRET", "dev-insecure-secret")
+app.secret_key = os.environ.get("BACKLOGQUEST_SESSION_SECRET", "dev-insecure-secret")
 
 
 def check_session_secret() -> None:
@@ -46,8 +46,8 @@ def check_session_secret() -> None:
     a known key lets anyone forge an authenticated session cookie."""
     if auth.auth_enabled() and app.secret_key in ("", "dev-insecure-secret"):
         raise RuntimeError(
-            "GAMETRACKER_SESSION_SECRET must be set (not the dev default) when "
-            "GAMETRACKER_PASSWORD_HASH is configured")
+            "BACKLOGQUEST_SESSION_SECRET must be set (not the dev default) when "
+            "BACKLOGQUEST_PASSWORD_HASH is configured")
 
 
 app.config.update(
@@ -109,7 +109,7 @@ def login_page():
     session.permanent = True
     session["authed"] = True
     if request.is_json:
-        return jsonify({"token": os.environ.get("GAMETRACKER_API_TOKEN", "")})
+        return jsonify({"token": os.environ.get("BACKLOGQUEST_API_TOKEN", "")})
     return redirect(url_for("index"))
 
 
