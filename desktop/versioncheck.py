@@ -9,7 +9,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 _TIMEOUT_S = 5
 
 Fetcher = Callable[[str, int], str]
