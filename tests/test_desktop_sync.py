@@ -39,3 +39,13 @@ def test_timeout_and_5xx_are_retryable() -> None:
     assert sync_payloads([_P1], "https://s", "t", push=push_timeout)[0].retryable
     r = sync_payloads([_P1], "https://s", "t", push=push_500)[0]
     assert r.retryable and r.summary.startswith("server busy")
+
+
+def test_non_dict_response_does_not_abort_the_loop() -> None:
+    def push(payload: dict, base_url: str, token: str) -> dict:
+        if payload["source"] == "playstation":
+            return ["unexpected"]  # type: ignore[return-value]
+        return {"summary": "ok"}
+    r1, r2 = sync_payloads([_P1, _P2], "https://s", "t", push=push)
+    assert r1.ok is False and r1.retryable is True
+    assert r2.ok is True
