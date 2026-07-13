@@ -87,3 +87,23 @@ def test_start_scrape_ignores_reentrant_calls(tmp_path: Path) -> None:
     release.set()
     api._thread.join(timeout=5)
     assert len(runners) == 1
+
+
+def test_finished_event_auto_syncs_when_token_configured(tmp_path: Path, monkeypatch) -> None:
+    api, _ = _api(tmp_path)
+    api.save_settings("https://s.example", "tok")
+    payload = tmp_path / "playstation.json"
+    payload.write_text(json.dumps({"source": "playstation", "games": []}), encoding="utf-8")
+    monkeypatch.setattr(Api, "sync", lambda self: [
+        {"source": "playstation", "ok": True, "summary": "added 1", "retryable": False}])
+    api._on_event({"type": "finished", "results": {"playstation": str(payload)}})
+    api._sync_thread.join(timeout=5)
+    types = [e["type"] for e in api.poll()["events"]]
+    assert types == ["finished", "syncing", "synced"]
+
+
+def test_finished_event_skips_sync_without_token(tmp_path: Path) -> None:
+    api, _ = _api(tmp_path)
+    api._on_event({"type": "finished", "results": {}})
+    assert [e["type"] for e in api.poll()["events"]] == ["finished"]
+    assert api._sync_thread is None

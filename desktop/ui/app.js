@@ -15,6 +15,9 @@ const VENDOR_STEPS = {
     'Click "Log in" in the top right corner of the browser that just opened',
     "Login with your Nintendo Account",
   ],
+  steam: [
+    "Login to your Steam account in the browser that just opened",
+  ],
 };
 // Closing line under the bullets; some vendors don't need a library page open.
 const VENDOR_THEN = {
@@ -105,10 +108,30 @@ function handleEvent(e) {
   } else if (e.type === "skipped") {
     skippedNotes[e.vendor] = e.note;
   } else if (e.type === "finished") {
-    clearInterval(pollTimer);
     $("start").disabled = false;
     renderResults();
+    // With a token, sync starts automatically — keep polling for its events.
+    if (!hasToken) clearInterval(pollTimer);
+  } else if (e.type === "syncing") {
+    document.querySelectorAll(".sync-cell").forEach((c) => {
+      if (c.dataset.syncable) c.innerHTML = `<span class="spinner"></span>`;
+    });
+  } else if (e.type === "synced") {
+    clearInterval(pollTimer);
+    applySyncResults(e.results);
   }
+}
+
+function applySyncResults(results) {
+  for (const r of results) {
+    const cell = $(`sync-${r.source}`);
+    if (!cell) continue;
+    cell.innerHTML = r.ok ? `<span class="sync-ok">✓ synced</span>`
+                          : `<span class="sync-fail" title="${escapeHtml(r.summary)}">sync failed</span>`;
+  }
+  const failed = results.filter((r) => !r.ok);
+  $("retry-sync").classList.toggle("hidden", !failed.length);
+  if (failed.some((r) => !r.retryable)) showSettings();
 }
 
 function renderResults() {
@@ -116,12 +139,11 @@ function renderResults() {
   const rows = Object.entries(doneCounts).map(([v, n]) =>
       `<tr><td>${VENDOR_LABELS[v]}</td><td>${n === 0
         ? "0 found — vendor may have changed their site; check for an update"
-        : n + " titles"}</td></tr>`)
+        : n + " titles"}</td><td id="sync-${v}" class="sync-cell" data-syncable="1"></td></tr>`)
     .concat(Object.entries(skippedNotes).map(([v, note]) =>
       `<tr><td>${VENDOR_LABELS[v]}</td><td>skipped—${note === "skipped" ? "" : " " + escapeHtml(note)}
-       ${note !== "skipped" ? "(site changed? check for an update)" : ""}</td></tr>`));
+       ${note !== "skipped" ? "(site changed? check for an update)" : ""}</td><td class="sync-cell">—</td></tr>`));
   $("results-table").innerHTML = rows.join("");
-  $("sync").classList.toggle("hidden", !hasToken);
 }
 
 $("start").onclick = () => {
@@ -136,16 +158,16 @@ $("continue").onclick = () => window.pywebview.api.continue_login();
 $("skip").onclick = () => window.pywebview.api.skip_vendor();
 $("save-settings").onclick = saveSettings;
 $("save-csv").onclick = async () => {
-  const path = await window.pywebview.api.export_csv();
-  if (path) $("action-status").textContent = "Saved: " + path;
+  const folder = await window.pywebview.api.export_csv();
+  if (folder) $("action-status").textContent = "Saved one CSV per platform in " + folder;
 };
-$("sync").onclick = async () => {
-  $("action-status").textContent = "Syncing…";
-  const results = await window.pywebview.api.sync();
-  $("action-status").textContent = results.map((r) =>
-    `${VENDOR_LABELS[r.source] || r.source}: ${r.summary}`).join("\n");
-  // A rejected token needs a way back to the (normally hidden) settings.
-  if (results.some((r) => !r.ok && !r.retryable)) showSettings();
+$("retry-sync").onclick = async () => {
+  $("retry-sync").disabled = true;
+  document.querySelectorAll(".sync-cell[data-syncable]").forEach((c) => {
+    c.innerHTML = `<span class="spinner"></span>`;
+  });
+  applySyncResults(await window.pywebview.api.sync());
+  $("retry-sync").disabled = false;
 };
 $("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
 window.addEventListener("pywebviewready", init);

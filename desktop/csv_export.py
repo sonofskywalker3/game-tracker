@@ -1,4 +1,4 @@
-"""Flatten normalized scrape payloads into one combined, Excel-friendly CSV."""
+"""Flatten normalized scrape payloads into Excel-friendly CSVs (one per vendor)."""
 from __future__ import annotations
 
 import csv
@@ -7,6 +7,16 @@ from pathlib import Path
 COLUMNS: tuple[str, ...] = (
     "title", "platform", "source", "kind", "external_id", "source_title", "cover_url",
 )
+
+
+def write_vendor_csvs(payloads: list[dict], out_dir: Path) -> dict[str, int]:
+    """One CSV per vendor (backlogquest_<source>.csv) in out_dir; returns
+    per-source row counts."""
+    counts: dict[str, int] = {}
+    for payload in payloads:
+        source = str(payload.get("source", "unknown"))
+        counts[source] = write_csv([payload], out_dir / f"backlogquest_{source}.csv")
+    return counts
 
 
 def write_csv(payloads: list[dict], out_path: Path) -> int:

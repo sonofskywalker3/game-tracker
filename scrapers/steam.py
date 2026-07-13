@@ -62,16 +62,18 @@ def collect(page, captured: list | None = None,
     session via page.request (cookies carry auth).
     """
     api_key, steam_id = config.get_steam_credentials()
-    games: list[ScrapedGame] = []
-    if api_key and steam_id:
-        params = {"key": api_key, "steamid": steam_id, "include_appinfo": "true",
-                  "include_played_free_games": "true", "format": "json"}
-        resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        games = parse_owned_games(resp.json())
-        logger.info("steam: %d owned games via GetOwnedGames", len(games))
-    else:
-        logger.warning("steam: no API key / SteamID in config.json; skipping owned-games fetch")
+    if not (api_key and steam_id):
+        # Without the Web API key there are no named games at all — fail loudly
+        # (the desktop app shows this note) instead of writing a confusing 0-row.
+        raise RuntimeError(
+            "Steam needs your Steam Web API key + SteamID64 (Settings page on the "
+            "web app); Steam sync from this app isn't supported yet")
+    params = {"key": api_key, "steamid": steam_id, "include_appinfo": "true",
+              "include_played_free_games": "true", "format": "json"}
+    resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
+    resp.raise_for_status()
+    games = parse_owned_games(resp.json())
+    logger.info("steam: %d owned games via GetOwnedGames", len(games))
 
     owned: list[ScrapedGame] = []
     resp = page.request.get(USERDATA_URL)
