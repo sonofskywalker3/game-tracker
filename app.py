@@ -2453,20 +2453,23 @@ def api_import_scrape():
 
 @app.route("/download/scraper")
 def download_scraper():
-    """Personalized (portable) or generic (installer) desktop-app download."""
+    """Personalized desktop-app download: the portable zip carries a sidecar
+    config inside; the installer carries the same config hex-embedded in its
+    download FILENAME (the generic binary itself is served untouched)."""
     flavor = request.args.get("flavor", scraper_dist.FLAVOR_PORTABLE)
     if flavor not in (scraper_dist.FLAVOR_PORTABLE, scraper_dist.FLAVOR_INSTALLER):
         return jsonify({"error": "unknown flavor"}), 400
+    token = os.environ.get("BACKLOGQUEST_IMPORT_TOKEN", "")
+    server_url = scraper_dist.public_server_url(request.url_root)
     if flavor == scraper_dist.FLAVOR_INSTALLER:
         path = scraper_dist.scraper_dir() / scraper_dist.INSTALLER_EXE
         if not path.exists():
             return jsonify({"error": "installer not available"}), 404
-        return send_file(path, as_attachment=True, download_name=scraper_dist.INSTALLER_EXE)
+        return send_file(path, as_attachment=True,
+                         download_name=scraper_dist.installer_download_name(server_url, token))
     src = scraper_dist.scraper_dir() / scraper_dist.PORTABLE_ZIP
     if not src.exists():
         return jsonify({"error": "portable build not available"}), 404
-    token = os.environ.get("BACKLOGQUEST_IMPORT_TOKEN", "")
-    server_url = scraper_dist.public_server_url(request.url_root)
     buf = scraper_dist.personalized_zip(src, server_url, token)
     return send_file(buf, as_attachment=True, download_name=scraper_dist.PORTABLE_ZIP,
                      mimetype="application/zip")
