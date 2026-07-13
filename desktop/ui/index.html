@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BacklogQuest Scraper</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <svg id="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#8B93FF"
+    d="M11 2h2v10h3l-4 6-4-6h3z"/><rect x="6" y="19" width="12" height="2" fill="#B7B9C6"/></svg>
+  <h1>BacklogQuest Scraper</h1>
+  <span id="version"></span>
+</header>
+<div id="update-banner" class="hidden">Update available — <span id="update-version"></span>
+  from your BacklogQuest server's Settings page.</div>
+
+<section id="state-setup">
+  <p class="lead">Pick the stores to scrape. Your logins stay on this PC.</p>
+  <div id="vendors"></div>
+  <button id="start" class="primary">Start scraping</button>
+  <div id="sync-chip" class="chip"></div>
+  <details id="settings">
+    <summary>Server settings</summary>
+    <label>Server URL <input id="server-url" type="text"></label>
+    <label>Import token <input id="token" type="password"
+           placeholder="paste your token to enable sync"></label>
+    <button id="save-settings">Save</button>
+  </details>
+</section>
+
+<section id="state-scraping" class="hidden">
+  <h2 id="scrape-vendor"></h2>
+  <p id="scrape-instruction">Log into your account in the browser window, open your
+     game library / purchase history, then click Continue.</p>
+  <p id="scrape-progress" class="hidden"></p>
+  <div class="row">
+    <button id="continue" class="primary">Continue</button>
+    <button id="skip">Skip this store</button>
+  </div>
+</section>
+
+<section id="state-results" class="hidden">
+  <h2>Done!</h2>
+  <table id="results-table"></table>
+  <div class="row">
+    <button id="save-csv" class="primary">Save CSV</button>
+    <button id="sync" class="hidden">Sync to BacklogQuest</button>
+  </div>
+  <p id="action-status"></p>
+  <button id="again" class="linkish">Scrape again</button>
+</section>
+<script src="app.js"></script>
+</body>
+</html>
