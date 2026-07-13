@@ -1,12 +1,32 @@
 """Personalized scraper downloads + public version endpoint."""
 import io
 import json
+import os
 import zipfile
 from pathlib import Path
 
 import pytest
 
 import app as app_module
+
+
+class _PosixSepOs:
+    """Proxies the real `os` module but reports sep="/" like Linux.
+
+    zipfile's ZipInfo constructor normalizes backslash-joined names to
+    forward slashes only when the running interpreter's `os.sep` is "\\"
+    (Windows). The production server is Linux, where that auto-fixup never
+    fires. Swapping zipfile's module-level `os` binding for this proxy lets
+    a Windows dev/test machine reproduce the real Linux-server read
+    behavior for a zip built with raw backslash entry names (as
+    PowerShell 5.1's Compress-Archive writes them), without touching the
+    real `os` module used by the rest of the process.
+    """
+
+    sep = "/"
+
+    def __getattr__(self, name):
+        return getattr(os, name)
 
 
 @pytest.fixture
@@ -77,6 +97,26 @@ def test_sidecar_lands_in_root_folder_even_with_leading_toplevel_file(client, ar
     resp2 = client.get("/download/scraper?flavor=portable")
     with zipfile.ZipFile(io.BytesIO(resp2.data)) as z:
         assert "BacklogQuest Scraper/backlogquest.json" in z.namelist()
+
+
+def test_sidecar_lands_correctly_with_windows_backslash_entries(
+    client, artifacts: Path, monkeypatch
+) -> None:
+    # PowerShell 5.1's Compress-Archive writes BACKSLASH zip entry names
+    # (e.g. "BacklogQuest Scraper\\app.exe"); see _PosixSepOs above for why
+    # this must run with zipfile's os.sep spoofed to "/" to reproduce the
+    # real (Linux) server condition.
+    monkeypatch.setattr(zipfile, "os", _PosixSepOs())
+    src = io.BytesIO()
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("BacklogQuest Scraper\\app.exe", b"exe")
+        z.writestr("BacklogQuest Scraper\\ui\\index.html", b"<html>")
+    (artifacts / "backlogquest-scraper-portable.zip").write_bytes(src.getvalue())
+    resp = client.get("/download/scraper?flavor=portable")
+    with zipfile.ZipFile(io.BytesIO(resp.data)) as z:
+        names = z.namelist()
+    normalized = [n.replace("\\", "/") for n in names]
+    assert "BacklogQuest Scraper/backlogquest.json" in normalized
 
 
 def test_public_url_env_overrides_request_url_root(client, monkeypatch) -> None:

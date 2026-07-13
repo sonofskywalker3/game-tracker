@@ -1,4 +1,5 @@
 """Api bridge logic with an injected fake runner factory (no webview, no Playwright)."""
+import json
 from pathlib import Path
 
 from desktop.bridge import Api
@@ -37,6 +38,18 @@ def test_save_settings_persists(tmp_path: Path) -> None:
     api.save_settings("https://s.example", "tok")
     assert Api(data_dir=tmp_path, exe_dir=tmp_path / "e",
                runner_factory=lambda v, s: None).get_state()["has_token"] is True
+
+
+def test_save_settings_keeps_existing_token_when_submitted_blank(tmp_path: Path) -> None:
+    # The UI never round-trips the real token back into the token field, so a
+    # blank submission must be treated as "unchanged", not "clear it" -- else
+    # editing just the server URL silently wipes a portable user's token.
+    api, _ = _api(tmp_path)
+    api.save_settings("https://a", "tok1")
+    api.save_settings("https://b", "")
+    assert api.get_state()["has_token"] is True
+    persisted = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert persisted["token"] == "tok1"
 
 
 def test_start_scrape_wires_controls_and_events(tmp_path: Path) -> None:

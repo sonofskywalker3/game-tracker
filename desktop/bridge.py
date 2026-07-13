@@ -48,8 +48,13 @@ class Api:
                 "update": check_for_update(self._config.server_url)}
 
     def save_settings(self, server_url: str, token: str) -> dict:
+        # The token field never round-trips the real token back into the UI
+        # (it's always blank), so a blank submission means "unchanged", not
+        # "clear it" -- keep the existing token in that case. This means v1
+        # has no way to intentionally clear a saved token.
+        new_token = token.strip() or self._config.token
         self._config = cfg.AppConfig(server_url=server_url.strip() or cfg.DEFAULT_SERVER_URL,
-                                     token=token.strip())
+                                     token=new_token)
         cfg.save_config(self._config, self._data_dir)
         return self.get_state()
 
