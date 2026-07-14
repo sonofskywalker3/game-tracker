@@ -8,6 +8,9 @@ parsers are unit-tested; `collect` drives the live calls and is verified manuall
 """
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import logging
 from collections.abc import Callable
 
@@ -24,6 +27,7 @@ PLATFORM = "Steam"
 
 OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
 USERDATA_URL = "https://store.steampowered.com/dynamicstore/userdata/"
+TOKEN_CONFIG_URL = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
 CAPSULE_URL = "https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 
@@ -51,6 +55,27 @@ def parse_userdata(payload: dict) -> list[ScrapedGame]:
     return [ScrapedGame(title=str(appid), platform=PLATFORM, source=SOURCE,
                         external_id=str(appid), kind="addon")
             for appid in owned]
+
+
+def parse_webapi_token(payload: dict) -> str:
+    """Extract data.webapi_token from the pointssummary config; '' when absent/malformed."""
+    data = (payload or {}).get("data") if isinstance(payload, dict) else None
+    token = data.get("webapi_token") if isinstance(data, dict) else None
+    return token if isinstance(token, str) else ""
+
+
+def steamid_from_token(token: str) -> str:
+    """SteamID64 from the JWT's `sub` claim; '' on any parse issue.
+
+    No signature verification -- we only read our own token back."""
+    try:
+        seg = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
+        sub = claims.get("sub")
+    except (IndexError, ValueError, binascii.Error) as exc:
+        logger.debug("steam: webapi_token not parseable (%s)", exc)
+        return ""
+    return sub if isinstance(sub, str) else ""
 
 
 def collect(page, captured: list | None = None,
