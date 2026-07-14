@@ -1,10 +1,13 @@
-"""Steam library scraper (hybrid: Web API key for owned games + session for owned DLC).
+"""Steam library scraper (3-tier: config Web API creds -> session-minted token -> error).
 
-Owned games come from IPlayerService/GetOwnedGames (key + SteamID64 from config).
-Owned-DLC ownership comes from the logged-in store session's dynamicstore/userdata
-(`rgOwnedApps` -- every owned appid incl. DLC), carried as id-only kind="addon" rows.
-The DLC catalogue itself is fetched later by steam_dlc (keyless appdetails). The pure
-parsers are unit-tested; `collect` drives the live calls and is verified manually.
+Owned games come from the official IPlayerService/GetOwnedGames -- keyed when the
+user configured a Web API key + SteamID64, otherwise via a webapi_token the
+logged-in store session mints for itself (pointssummary/ajaxgetasyncconfig; the
+JWT's `sub` claim is the SteamID64). Owned-DLC ownership comes from the session's
+dynamicstore/userdata `rgOwnedApps`, fetched after the games step with one
+cache-busted retry (flaky right after login), carried as id-only kind="addon"
+rows. The DLC catalogue itself is fetched later by steam_dlc (keyless appdetails).
+Pure parsers are unit-tested; `collect` wiring is tested with a fake page.
 """
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ import base64
 import binascii
 import json
 import logging
+import time
 from collections.abc import Callable
 
 import requests
@@ -28,6 +32,9 @@ PLATFORM = "Steam"
 OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
 USERDATA_URL = "https://store.steampowered.com/dynamicstore/userdata/"
 TOKEN_CONFIG_URL = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
+
+LOGIN_REQUIRED_MSG = "Log into Steam in the browser window first, then press Continue"
+_USERDATA_RETRY_WAIT_MS = 2000
 CAPSULE_URL = "https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 
@@ -78,35 +85,67 @@ def steamid_from_token(token: str) -> str:
     return sub if isinstance(sub, str) else ""
 
 
+def _games_via_session(page) -> list[ScrapedGame]:
+    """Tier 2: mint a webapi_token from the logged-in store session, then call the
+    official GetOwnedGames with access_token= (no Web API key involved)."""
+    resp = page.request.get(TOKEN_CONFIG_URL)
+    token = ""
+    if resp.ok:
+        try:
+            token = parse_webapi_token(resp.json())
+        except ValueError as exc:
+            logger.warning("steam: token config not JSON (%s)", exc)
+    steam_id = steamid_from_token(token)
+    if not (token and steam_id):
+        raise RuntimeError(LOGIN_REQUIRED_MSG)
+    resp = page.request.get(OWNED_GAMES_URL, params={
+        "access_token": token, "steamid": steam_id, "include_appinfo": "true",
+        "include_played_free_games": "true", "format": "json"})
+    if not resp.ok:
+        raise RuntimeError(f"{LOGIN_REQUIRED_MSG} (GetOwnedGames HTTP {resp.status})")
+    return parse_owned_games(resp.json())
+
+
+def _fetch_userdata(page) -> list[ScrapedGame]:
+    """Owned-appid carriers, fetched AFTER the games step; one cache-busted retry
+    when empty (userdata is flaky right after login). Best-effort, never fatal."""
+    for attempt, url in enumerate((USERDATA_URL,
+                                   f"{USERDATA_URL}?v={time.monotonic_ns()}")):
+        if attempt:
+            page.wait_for_timeout(_USERDATA_RETRY_WAIT_MS)
+        resp = page.request.get(url)
+        if not resp.ok:
+            logger.warning("steam: userdata fetch failed (%s)", resp.status)
+            continue
+        owned = parse_userdata(resp.json())
+        if owned:
+            logger.info("steam: %d owned appids (games+DLC) via userdata", len(owned))
+            return owned
+    logger.warning("steam: userdata empty after retry; owned DLC will be empty")
+    return []
+
+
 def collect(page, captured: list | None = None,
             progress: Callable[[int], None] | None = None) -> list[ScrapedGame]:
-    """Owned Steam games (via Web API key) + owned-appid carriers (via session).
+    """Owned Steam games + owned-appid carriers, via a three-tier ladder:
 
-    GetOwnedGames needs the key + SteamID64 from config; if absent, no games are
-    returned (logged, not fatal). rgOwnedApps is read from the logged-in store
-    session via page.request (cookies carry auth).
+    1. Config creds (Web API key + SteamID64) -> keyed GetOwnedGames (CLI back-compat).
+    2. Logged-in session mints its own webapi_token -> GetOwnedGames (zero config).
+    3. Neither -> honest RuntimeError telling the user to log into Steam first.
     """
     api_key, steam_id = config.get_steam_credentials()
-    if not (api_key and steam_id):
-        # Without the Web API key there are no named games at all — fail loudly
-        # (the desktop app shows this note) instead of writing a confusing 0-row.
-        raise RuntimeError(
-            "Steam needs your Steam Web API key + SteamID64 (Settings page on the "
-            "web app); Steam sync from this app isn't supported yet")
-    params = {"key": api_key, "steamid": steam_id, "include_appinfo": "true",
-              "include_played_free_games": "true", "format": "json"}
-    resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
-    resp.raise_for_status()
-    games = parse_owned_games(resp.json())
-    logger.info("steam: %d owned games via GetOwnedGames", len(games))
-
-    owned: list[ScrapedGame] = []
-    resp = page.request.get(USERDATA_URL)
-    if resp.ok:
-        owned = parse_userdata(resp.json())
-        logger.info("steam: %d owned appids (games+DLC) via userdata", len(owned))
+    if api_key and steam_id:
+        params = {"key": api_key, "steamid": steam_id, "include_appinfo": "true",
+                  "include_played_free_games": "true", "format": "json"}
+        resp = requests.get(OWNED_GAMES_URL, params=params, timeout=30)
+        resp.raise_for_status()
+        games = parse_owned_games(resp.json())
+        logger.info("steam: %d owned games via GetOwnedGames (config creds)", len(games))
     else:
-        logger.warning("steam: userdata fetch failed (%s); owned DLC will be empty", resp.status)
+        games = _games_via_session(page)
+        logger.info("steam: %d owned games via session token", len(games))
+
+    owned = _fetch_userdata(page)
     if progress:
         progress(len(games))  # owned base games (accurate "N games"; carriers are DLC)
     return games + owned
