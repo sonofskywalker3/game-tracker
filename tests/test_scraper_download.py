@@ -186,3 +186,41 @@ def test_download_names_carry_published_version(client) -> None:
     assert "BacklogQuest-Scraper-Setup-0.1.0.h-" in disp
     disp2 = client.get("/download/scraper?flavor=portable").headers["Content-Disposition"]
     assert "backlogquest-scraper-portable-0.1.0.zip" in disp2
+
+
+# --- stub + payload distribution (stub installer feature) -----------------
+
+def test_installer_flavor_serves_stub_when_published(client, artifacts: Path) -> None:
+    (artifacts / "BacklogQuest-Scraper-Stub.exe").write_bytes(b"tiny-stub")
+    resp = client.get("/download/scraper?flavor=installer")
+    assert resp.status_code == 200 and resp.data == b"tiny-stub"
+    # Download NAME is unchanged (markers + version) — only the bytes shrink.
+    name = resp.headers["Content-Disposition"].split("filename=")[-1].strip('"')
+    assert name.startswith("BacklogQuest-Scraper-Setup-0.1.0.h-")
+    assert _config_from_name(name)["token"] == "sekrit"
+
+
+def test_installer_flavor_falls_back_to_full_exe_without_stub(client) -> None:
+    resp = client.get("/download/scraper?flavor=installer")
+    assert resp.status_code == 200 and resp.data == b"fake-installer"
+
+
+def test_payload_route_serves_full_installer_plain(client, artifacts: Path) -> None:
+    (artifacts / "BacklogQuest-Scraper-Stub.exe").write_bytes(b"tiny-stub")
+    resp = client.get("/download/scraper/payload")
+    assert resp.status_code == 200 and resp.data == b"fake-installer"   # never the stub
+    disposition = resp.headers["Content-Disposition"]
+    assert "BacklogQuest-Scraper-Setup.exe" in disposition
+    assert ".h-" not in disposition and ".c-" not in disposition        # no markers
+
+
+def test_payload_route_404_when_unpublished(client, artifacts: Path) -> None:
+    (artifacts / "BacklogQuest-Scraper-Setup.exe").unlink()
+    assert client.get("/download/scraper/payload").status_code == 404
+
+
+def test_payload_route_public_under_auth(client, monkeypatch) -> None:
+    # The stub runs on a fresh machine and the self-updater has no browser
+    # session — the payload route must bypass the auth gate.
+    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", "pbkdf2:sha256:x$y$z")
+    assert client.get("/download/scraper/payload").status_code == 200

@@ -66,7 +66,8 @@ log = logging.getLogger(__name__)
 # ============================================================================
 
 # Paths reachable without authentication (login flow, health, static assets).
-_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz", "/api/scraper/version"})
+_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz", "/api/scraper/version",
+                           "/download/scraper/payload"})
 
 
 @app.before_request
@@ -2462,8 +2463,8 @@ def download_scraper():
     token = os.environ.get("BACKLOGQUEST_IMPORT_TOKEN", "")
     server_url = scraper_dist.public_server_url(request.url_root)
     if flavor == scraper_dist.FLAVOR_INSTALLER:
-        path = scraper_dist.scraper_dir() / scraper_dist.INSTALLER_EXE
-        if not path.exists():
+        path = scraper_dist.installer_artifact()
+        if path is None:
             return jsonify({"error": "installer not available"}), 404
         return send_file(path, as_attachment=True,
                          download_name=scraper_dist.installer_download_name(server_url, token))
@@ -2474,6 +2475,18 @@ def download_scraper():
     return send_file(buf, as_attachment=True,
                      download_name=scraper_dist.portable_download_name(),
                      mimetype="application/zip")
+
+
+@app.route("/download/scraper/payload")
+def download_scraper_payload():
+    """The full installer, served plain (no marker filename). Fetched by the
+    stub installer and the desktop app's self-updater — machines without a
+    browser session, hence public. The binary is generic (no token inside)."""
+    path = scraper_dist.scraper_dir() / scraper_dist.INSTALLER_EXE
+    if not path.exists():
+        return jsonify({"error": "installer not available"}), 404
+    return send_file(path, as_attachment=True,
+                     download_name=scraper_dist.INSTALLER_EXE)
 
 
 @app.route("/api/scraper/version")
