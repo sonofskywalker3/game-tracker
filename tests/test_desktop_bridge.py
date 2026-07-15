@@ -116,3 +116,76 @@ def test_no_public_window_attribute(tmp_path: Path) -> None:
     api, _ = _api(tmp_path)
     assert not hasattr(api, "window")
     assert hasattr(api, "_window")
+
+
+def _drain(api):
+    return api.poll()["events"]
+
+
+def test_start_update_downloads_installs_and_closes_window(tmp_path: Path, monkeypatch) -> None:
+    from desktop import bridge as bridge_mod
+
+    api, _ = _api(tmp_path)
+
+    class _FakeWindow:
+        destroyed = False
+        def destroy(self):
+            self.destroyed = True
+
+    api._window = _FakeWindow()
+    monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
+    launched = []
+
+    def fake_download(server_url, version, dest_dir=None, progress=None, get=None):
+        assert version == "9.9.9"
+        progress(1024, 2048)
+        return Path(tmp_path / "setup.exe")
+
+    monkeypatch.setattr(bridge_mod.selfupdate, "download_installer", fake_download)
+    monkeypatch.setattr(bridge_mod.selfupdate, "launch_installer",
+                        lambda path: launched.append(path))
+    api.start_update()
+    api._update_thread.join(timeout=5)
+    assert launched == [tmp_path / "setup.exe"]
+    assert api._window.destroyed is True
+    types = [e["type"] for e in _drain(api)]
+    assert types == ["update_progress", "update_installing"]
+
+
+def test_start_update_failure_reports_and_leaves_app_running(tmp_path: Path, monkeypatch) -> None:
+    from desktop import bridge as bridge_mod
+
+    api, _ = _api(tmp_path)
+    api._window = None
+    monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
+    def boom(*args, **kwargs):
+        raise RuntimeError("HTTP 404")
+    monkeypatch.setattr(bridge_mod.selfupdate, "download_installer", boom)
+    api.start_update()
+    api._update_thread.join(timeout=5)
+    events = _drain(api)
+    assert events == [{"type": "update_failed", "error": "HTTP 404"}]
+
+
+def test_start_update_ignores_reentrant_clicks(tmp_path: Path, monkeypatch) -> None:
+    import threading
+
+    from desktop import bridge as bridge_mod
+
+    api, _ = _api(tmp_path)
+    api._window = None
+    release = threading.Event()
+    starts = []
+    monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
+
+    def slow_download(server_url, version, dest_dir=None, progress=None, get=None):
+        starts.append(1)
+        release.wait(timeout=5)
+        raise RuntimeError("cancelled")
+
+    monkeypatch.setattr(bridge_mod.selfupdate, "download_installer", slow_download)
+    api.start_update()
+    api.start_update()          # double-click while downloading
+    release.set()
+    api._update_thread.join(timeout=5)
+    assert starts == [1]

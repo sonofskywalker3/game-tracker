@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from desktop import config as cfg
+from desktop import selfupdate
 from desktop.csv_export import write_vendor_csvs
 from desktop.runner import ScrapeRunner
 from desktop.sync import sync_payloads
@@ -34,6 +35,7 @@ class Api:
         self._thread: threading.Thread | None = None
         self._payload_paths: dict[str, str] = {}
         self._sync_thread: threading.Thread | None = None
+        self._update_thread: threading.Thread | None = None
         # Set by main.py (needed for the folder dialog). MUST stay underscore-
         # private: pywebview serializes the js_api object's public attributes,
         # and a Window here sends it into window.native.AccessibilityObject.
@@ -128,3 +130,26 @@ class Api:
         results = sync_payloads(self._payloads(), self._config.server_url, self._config.token)
         return [{"source": r.source, "ok": r.ok, "summary": r.summary,
                  "retryable": r.retryable} for r in results]
+
+    # -- self-update --------------------------------------------------------------
+    def start_update(self) -> None:
+        # Same double-click guard rationale as start_scrape.
+        if self._update_thread is not None and self._update_thread.is_alive():
+            return
+        self._update_thread = threading.Thread(target=self._do_update, daemon=True)
+        self._update_thread.start()
+
+    def _do_update(self) -> None:
+        try:
+            version = check_for_update(self._config.server_url) or APP_VERSION
+            path = selfupdate.download_installer(
+                self._config.server_url, version,
+                progress=lambda done, total: self._events.put(
+                    {"type": "update_progress", "done": done, "total": total}))
+            self._events.put({"type": "update_installing"})
+            selfupdate.launch_installer(path)
+            if self._window is not None:
+                self._window.destroy()   # installer takes over and relaunches us
+        except Exception as exc:   # any failure must leave the running app usable
+            logger.exception("self-update failed")
+            self._events.put({"type": "update_failed", "error": str(exc)})

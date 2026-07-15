@@ -69,7 +69,10 @@ async function saveSettings() {
   hasToken = st.has_token; renderChip();
 }
 
+function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
+
 function startPolling() {
+  if (pollTimer) return;
   pollTimer = setInterval(async () => {
     const {events, captured} = await window.pywebview.api.poll();
     if (!$("scrape-progress").classList.contains("hidden")) {
@@ -111,14 +114,26 @@ function handleEvent(e) {
     $("start").disabled = false;
     renderResults();
     // With a token, sync starts automatically — keep polling for its events.
-    if (!hasToken) clearInterval(pollTimer);
+    if (!hasToken) stopPolling();
   } else if (e.type === "syncing") {
     document.querySelectorAll(".sync-cell").forEach((c) => {
       if (c.dataset.syncable) c.innerHTML = `<span class="spinner"></span>`;
     });
   } else if (e.type === "synced") {
-    clearInterval(pollTimer);
+    stopPolling();
     applySyncResults(e.results);
+  } else if (e.type === "update_progress") {
+    const mb = (n) => (n / 1048576).toFixed(1);
+    $("update-status").textContent = e.total
+      ? `Downloading — ${mb(e.done)} / ${mb(e.total)} MB`
+      : `Downloading — ${mb(e.done)} MB`;
+  } else if (e.type === "update_installing") {
+    $("update-status").textContent = "Installing — the app will restart itself…";
+  } else if (e.type === "update_failed") {
+    stopPolling();
+    $("update-now").disabled = false;
+    $("update-status").textContent =
+      "Update failed: " + e.error + " — you can keep using this version.";
   }
 }
 
@@ -170,6 +185,12 @@ $("retry-sync").onclick = async () => {
   $("retry-sync").disabled = false;
 };
 $("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
+$("update-now").onclick = () => {
+  $("update-now").disabled = true;
+  $("update-status").textContent = "Starting download…";
+  window.pywebview.api.start_update();
+  startPolling();
+};
 
 // Boot resiliently: the pywebviewready event can fire BEFORE this script
 // attaches its listener (warm WebView2), and the bridge can glitch during
