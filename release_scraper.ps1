@@ -29,12 +29,15 @@ if (-not (Test-Path $bootstrapper)) {
 & iscc /DAppVersion=$version installer\backlogquest-scraper.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed (is iscc on PATH?)" }
 
+& iscc /DAppVersion=$version installer\backlogquest-scraper-stub.iss
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed on the stub (is iscc on PATH?)" }
+
 Set-Content -Path "dist/version.txt" -Value $version -NoNewline
 
 if ($SkipPublish) {
   Write-Host "SkipPublish set: built v$version locally, not publishing to the droplet."
 } else {
   ssh gametracker "mkdir -p /opt/backlogquest/scraper"
-  scp $portable "dist/BacklogQuest-Scraper-Setup.exe" dist/version.txt gametracker:/opt/backlogquest/scraper/
+  scp $portable "dist/BacklogQuest-Scraper-Setup.exe" "dist/BacklogQuest-Scraper-Stub.exe" dist/version.txt gametracker:/opt/backlogquest/scraper/
   Write-Host "Published v$version to the droplet."
 }
