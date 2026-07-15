@@ -10,6 +10,10 @@ AppPublisher=BacklogQuest
 DefaultDirName={localappdata}\Programs\BacklogQuest Scraper
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+; Self-update installs run /VERYSILENT while the app is still tearing down —
+; let Restart Manager close it instead of dying on a locked exe.
+CloseApplications=force
+RestartApplications=no
 OutputBaseFilename=BacklogQuest-Scraper-Setup
 OutputDir=..\dist
 SetupIconFile=..\desktop\assets\backlogquest.ico
@@ -76,9 +80,25 @@ begin
   Result := '{"server_url": "https://' + Host + '", "token": "' + Token + '"}';
 end;
 
+{ The self-updater passes /RELAUNCHAPP=1: relaunch the app when the silent
+  install finishes so the update feels like a restart, not an exit. }
+function CmdLineParamExists(const Value: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Value) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Cfg: string;
+  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -86,4 +106,7 @@ begin
     if Cfg <> '' then
       SaveStringToFile(ExpandConstant('{app}\backlogquest.json'), Cfg, False);
   end;
+  if (CurStep = ssDone) and CmdLineParamExists('/RELAUNCHAPP=1') then
+    Exec(ExpandConstant('{app}\BacklogQuest Scraper.exe'), '', '', SW_SHOWNORMAL,
+         ewNoWait, ResultCode);
 end;
