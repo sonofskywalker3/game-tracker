@@ -66,6 +66,9 @@ log = logging.getLogger(__name__)
 # ============================================================================
 
 # Paths reachable without authentication (login flow, health, static assets).
+# /download/scraper/payload is public because the stub/self-updater fetch it
+# sessionless and the binary is generic; /download/scraper must NEVER be
+# public — its personalized download FILENAME embeds the import token.
 _PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz", "/api/scraper/version",
                            "/download/scraper/payload"})
 

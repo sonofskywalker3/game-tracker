@@ -6,6 +6,7 @@ import json
 import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +20,12 @@ from desktop.versioncheck import APP_VERSION, check_for_update
 logger = logging.getLogger(__name__)
 
 VENDOR_CHOICES: tuple[str, ...] = ("playstation", "xbox", "nintendo", "steam")
+
+# The installer takes over via Restart Manager once launched, but pywebview's
+# window.destroy() happens milliseconds later on this same code path — too
+# fast for the JS poll loop (500ms interval) to ever paint update_installing.
+# This linger gives the UI one guaranteed poll to show it before we tear down.
+_INSTALLING_LINGER_S = 1.5
 
 RunnerFactory = Callable[[list[str], Callable[[dict], None]], ScrapeRunner]
 
@@ -136,6 +143,12 @@ class Api:
         # Same double-click guard rationale as start_scrape.
         if self._update_thread is not None and self._update_thread.is_alive():
             return
+        # A scrape holds an open Playwright/browser session; racing an update
+        # (which tears the window down) against it would destroy the scrape.
+        if self._thread is not None and self._thread.is_alive():
+            self._events.put({"type": "update_failed",
+                              "error": "a scrape is running — update after it finishes"})
+            return
         self._update_thread = threading.Thread(target=self._do_update, daemon=True)
         self._update_thread.start()
 
@@ -148,6 +161,7 @@ class Api:
                     {"type": "update_progress", "done": done, "total": total}))
             self._events.put({"type": "update_installing"})
             selfupdate.launch_installer(path)
+            time.sleep(_INSTALLING_LINGER_S)   # let the JS poll loop paint "Installing"
             if self._window is not None:
                 self._window.destroy()   # installer takes over and relaunches us
         except Exception as exc:   # any failure must leave the running app usable
