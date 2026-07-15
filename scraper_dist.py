@@ -15,6 +15,7 @@ PUBLIC_URL_ENV = "BACKLOGQUEST_PUBLIC_URL"
 SCRAPER_DIR_DEFAULT = "/opt/backlogquest/scraper"
 PORTABLE_ZIP = "backlogquest-scraper-portable.zip"
 INSTALLER_EXE = "BacklogQuest-Scraper-Setup.exe"
+STUB_EXE = "BacklogQuest-Scraper-Stub.exe"
 VERSION_FILE = "version.txt"
 FLAVOR_PORTABLE = "portable"
 FLAVOR_INSTALLER = "installer"
@@ -74,6 +75,17 @@ def artifact_version() -> str:
         return path.read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+def installer_artifact() -> Path | None:
+    """Bytes to serve for the installer download: the ~2MB stub when
+    published (browsers deep-scan large exes), else the full installer
+    (deploy-safe fallback while the stub isn't uploaded yet), else None."""
+    for name in (STUB_EXE, INSTALLER_EXE):
+        path = scraper_dir() / name
+        if path.exists():
+            return path
+    return None
 
 
 def _setup_base() -> str:
