@@ -26,7 +26,7 @@ Progress = Callable[[int, int], None]   # (bytes_done, bytes_total; total 0 if u
 
 def download_installer(server_url: str, version: str, dest_dir: Path | None = None,
                        progress: Progress | None = None,
-                       get=requests.get) -> Path:
+                       get: Callable[..., requests.Response] = requests.get) -> Path:
     """Stream the payload to %TEMP% (overwriting any previous attempt);
     returns the installer path. Raises on HTTP/network errors — the caller
     reports and the running app stays untouched."""
@@ -51,7 +51,7 @@ def installer_command(path: Path) -> list[str]:
     return [str(path), *SILENT_FLAGS]
 
 
-def launch_installer(path: Path, spawn=subprocess.Popen) -> None:
+def launch_installer(path: Path, spawn: Callable[..., object] = subprocess.Popen) -> None:
     """Spawn the installer detached so it survives the app exiting under it."""
     detached = (getattr(subprocess, "DETACHED_PROCESS", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
