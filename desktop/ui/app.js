@@ -30,6 +30,10 @@ const genericSteps = (label) => [
   "Open your game library / full purchase history",
 ];
 let doneCounts = {}, skippedNotes = {}, hasToken = false, pollTimer = null, collectStart = 0;
+// pollTimer is shared by two consumers (scrape+sync flow, update flow); these
+// flags let each consumer's terminal event stop polling only when the OTHER
+// consumer isn't still mid-flight.
+let scrapeActive = false, updateActive = false;
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g,
@@ -113,14 +117,21 @@ function handleEvent(e) {
   } else if (e.type === "finished") {
     $("start").disabled = false;
     renderResults();
-    // With a token, sync starts automatically — keep polling for its events.
-    if (!hasToken) stopPolling();
+    // With a token, sync starts automatically — keep polling for its events
+    // (and leave scrapeActive true until synced fires).
+    if (!hasToken) {
+      scrapeActive = false;
+      $("update-now").disabled = false;
+      if (!updateActive) stopPolling();
+    }
   } else if (e.type === "syncing") {
     document.querySelectorAll(".sync-cell").forEach((c) => {
       if (c.dataset.syncable) c.innerHTML = `<span class="spinner"></span>`;
     });
   } else if (e.type === "synced") {
-    stopPolling();
+    scrapeActive = false;
+    $("update-now").disabled = false;
+    if (!updateActive) stopPolling();
     applySyncResults(e.results);
   } else if (e.type === "update_progress") {
     const mb = (n) => (n / 1048576).toFixed(1);
@@ -130,7 +141,8 @@ function handleEvent(e) {
   } else if (e.type === "update_installing") {
     $("update-status").textContent = "Installing — the app will restart itself…";
   } else if (e.type === "update_failed") {
-    stopPolling();
+    updateActive = false;
+    if (!scrapeActive) stopPolling();
     $("update-now").disabled = false;
     $("update-status").textContent =
       "Update failed: " + e.error + " — you can keep using this version.";
@@ -166,6 +178,8 @@ $("start").onclick = () => {
   doneCounts = {}; skippedNotes = {};
   const vendors = [...document.querySelectorAll("#vendors input:checked")].map((i) => i.value);
   if (!vendors.length) { $("start").disabled = false; return; }
+  scrapeActive = true;
+  $("update-now").disabled = true;
   window.pywebview.api.start_scrape(vendors);
   startPolling();
 };
@@ -187,6 +201,7 @@ $("retry-sync").onclick = async () => {
 $("again").onclick = () => { $("start").disabled = false; show("state-setup"); };
 $("update-now").onclick = () => {
   $("update-now").disabled = true;
+  updateActive = true;
   $("update-status").textContent = "Starting download…";
   window.pywebview.api.start_update();
   startPolling();

@@ -133,6 +133,7 @@ def test_start_update_downloads_installs_and_closes_window(tmp_path: Path, monke
             self.destroyed = True
 
     api._window = _FakeWindow()
+    monkeypatch.setattr(bridge_mod, "_INSTALLING_LINGER_S", 0)
     monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
     launched = []
 
@@ -165,6 +166,32 @@ def test_start_update_failure_reports_and_leaves_app_running(tmp_path: Path, mon
     api._update_thread.join(timeout=5)
     events = _drain(api)
     assert events == [{"type": "update_failed", "error": "HTTP 404"}]
+
+
+def test_start_update_refused_while_scrape_running(tmp_path: Path, monkeypatch) -> None:
+    import threading
+
+    from desktop import bridge as bridge_mod
+
+    release = threading.Event()
+
+    class _BlockingRunner(_FakeRunner):
+        def run(self) -> dict:
+            release.wait(timeout=5)
+            return {}
+
+    api = Api(data_dir=tmp_path, exe_dir=tmp_path / "exe",
+              runner_factory=lambda vendors, sink: _BlockingRunner())
+    monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
+    api.start_scrape(["playstation"])
+    api.start_update()
+    events = _drain(api)
+    update_failed = [e for e in events if e["type"] == "update_failed"]
+    assert len(update_failed) == 1
+    assert "scrape" in update_failed[0]["error"]
+    assert api._update_thread is None
+    release.set()
+    api._thread.join(timeout=5)
 
 
 def test_start_update_ignores_reentrant_clicks(tmp_path: Path, monkeypatch) -> None:
