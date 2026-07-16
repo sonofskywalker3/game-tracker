@@ -24,6 +24,7 @@ ReadyLabel2a=Setup will download the app from your BacklogQuest server (this ski
 [Code]
 const
   DefaultHost = 'backlogquest.xyz';
+  AllowedHostChars = 'abcdefghijklmnopqrstuvwxyz0123456789.-';
 
 var
   DownloadPage: TDownloadWizardPage;
@@ -35,7 +36,7 @@ var
   installer's own filename-decoding writes the sidecar unchanged. }
 function HostFromFileName(const SetupPath: string): string;
 var
-  Name: string;
+  Name, Host: string;
   H, C, I: Integer;
 begin
   Result := DefaultHost;
@@ -43,8 +44,13 @@ begin
   H := Pos('.h-', Name);
   C := Pos('.c-', Name);
   if (H = 0) or (C = 0) or (C <= H) then Exit;
-  Result := Copy(Name, H + 3, C - (H + 3));
-  if Result = '' then Result := DefaultHost;
+  Host := Lowercase(Copy(Name, H + 3, C - (H + 3)));
+  if Host = '' then Exit;
+  { Defense-in-depth: this string goes straight into the download URL; the
+    server only embeds [a-z0-9.-] hosts, so anything else falls back. }
+  for I := 1 to Length(Host) do
+    if Pos(Copy(Host, I, 1), AllowedHostChars) = 0 then Exit;
+  Result := Host;
 end;
 
 { Payload keeps the stub's own filename so markers survive; strip a browser's
@@ -82,9 +88,13 @@ begin
       try
         DownloadPage.Download;
       except
-        SuppressibleMsgBox('Download failed from https://' + Host +
-          '/download/scraper/payload' + #13#10 + GetExceptionMessage,
-          mbCriticalError, MB_OK, IDOK);
+        { A user cancel raises too — that's a choice, not a failure. }
+        if DownloadPage.AbortedByUser then
+          Log('Download cancelled by user.')
+        else
+          SuppressibleMsgBox('Download failed from https://' + Host +
+            '/download/scraper/payload' + #13#10 + GetExceptionMessage,
+            mbCriticalError, MB_OK, IDOK);
         Result := False;
       end;
     finally
@@ -93,21 +103,43 @@ begin
   end;
 end;
 
+function CmdLineParamExists(const Value: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Value) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Args: string;
 begin
   if CurStep = ssPostInstall then
   begin
-    { Forward silent mode so a scripted "stub /VERYSILENT" stays silent
-      end-to-end; interactive runs get the full installer's normal wizard. }
+    { Forward the SAME silent level the stub was invoked with: /SILENT keeps
+      the inner progress bar, /VERYSILENT stays fully hidden end-to-end;
+      interactive runs get the full installer's normal wizard. }
     Args := '';
     if WizardSilent then
-      Args := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART';
+    begin
+      if CmdLineParamExists('/VERYSILENT') then
+        Args := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+      else
+        Args := '/SILENT /SUPPRESSMSGBOXES /NORESTART';
+    end;
     if not Exec(ExpandConstant('{tmp}\') + PayloadFileName, Args, '',
                 SW_SHOWNORMAL, ewWaitUntilTerminated, PayloadExitCode) then
+    begin
       SuppressibleMsgBox('Could not start the downloaded installer.',
         mbCriticalError, MB_OK, IDOK);
+      PayloadExitCode := 1;   { launch failure must not exit 0 for scripted callers }
+    end;
   end;
 end;
 

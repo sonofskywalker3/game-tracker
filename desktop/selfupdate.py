@@ -42,6 +42,10 @@ def download_installer(server_url: str, version: str, dest_dir: Path | None = No
             done += len(chunk)
             if progress:
                 progress(done, total)
+    if total and done != total:
+        # A truncated installer must never be launched; the next attempt
+        # overwrites this file anyway ("wb").
+        raise OSError(f"download incomplete: got {done} of {total} bytes")
     logger.info("self-update: downloaded %s (%d bytes)", dest.name, done)
     return dest
 

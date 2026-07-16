@@ -44,6 +44,36 @@ def test_download_overwrites_previous_attempt(tmp_path: Path):
     assert dest.read_bytes() == b"new"
 
 
+def test_download_truncated_raises(tmp_path: Path):
+    # Server said 10 bytes, connection delivered 3: launching a truncated
+    # installer is worse than failing — the caller reports and the app lives on.
+    with pytest.raises(OSError, match="incomplete"):
+        selfupdate.download_installer("https://s", "0.1.5", dest_dir=tmp_path,
+                                      get=lambda url, stream=None, timeout=None:
+                                          _FakeStream([b"abc"], total=10))
+
+
+def test_download_without_content_length_succeeds(tmp_path: Path):
+    # No Content-Length header: progress reports total=0 and the size check
+    # is skipped (nothing to compare against).
+    seen = []
+    dest = selfupdate.download_installer("https://s", "0.1.5", dest_dir=tmp_path,
+                                         progress=lambda d, t: seen.append((d, t)),
+                                         get=lambda url, stream=None, timeout=None:
+                                             _FakeStream([b"ab"], total=0))
+    assert dest.read_bytes() == b"ab"
+    assert seen == [(2, 0)]
+
+
+def test_download_defaults_to_temp_dir(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(selfupdate.tempfile, "gettempdir", lambda: str(tmp_path))
+    dest = selfupdate.download_installer("https://s", "0.1.5",
+                                         get=lambda url, stream=None, timeout=None:
+                                             _FakeStream([b"x"]))
+    assert dest == tmp_path / "BacklogQuest-Scraper-Setup-0.1.5.exe"
+    assert dest.read_bytes() == b"x"
+
+
 def test_download_http_error_raises_and_leaves_no_file(tmp_path: Path):
     with pytest.raises(RuntimeError, match="HTTP 404"):
         selfupdate.download_installer("https://s", "0.1.5", dest_dir=tmp_path,

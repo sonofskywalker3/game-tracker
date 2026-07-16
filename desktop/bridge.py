@@ -81,6 +81,12 @@ class Api:
         # still reach here before the button updates, so guard here too.
         if self._thread is not None and self._thread.is_alive():
             return
+        # Mirror of start_update's guard: a mid-download update tears the
+        # window down; a scrape started under it would be destroyed with it.
+        if self._update_thread is not None and self._update_thread.is_alive():
+            self._events.put({"type": "scrape_refused",
+                              "reason": "An update is downloading — it restarts the app when done."})
+            return
         chosen = [v for v in VENDOR_CHOICES if v in vendors]
         self._runner = self._runner_factory(chosen, self._on_event)
         self._thread = threading.Thread(target=self._runner.run, daemon=True)
@@ -93,15 +99,26 @@ class Api:
             # Sync is automatic whenever a token is configured; runs on its own
             # thread (server-side import can take minutes) and reports back
             # through the same event queue the UI already polls.
-            if self._config.token and self._payload_paths:
-                self._events.put({"type": "syncing"})
-                self._sync_thread = threading.Thread(target=self._auto_sync, daemon=True)
-                self._sync_thread.start()
+            if self._config.token:
+                if self._payload_paths:
+                    self._events.put({"type": "syncing"})
+                    self._sync_thread = threading.Thread(target=self._auto_sync, daemon=True)
+                    self._sync_thread.start()
+                else:
+                    # Nothing to sync (all vendors skipped), but the UI waits
+                    # on "synced" as its terminal event — emit it regardless.
+                    self._events.put({"type": "synced", "results": []})
             return
         self._events.put(event)
 
     def _auto_sync(self) -> None:
-        self._events.put({"type": "synced", "results": self.sync()})
+        try:
+            results = self.sync()
+        except Exception as exc:   # "synced" must fire or the UI freezes mid-sync
+            logger.exception("auto-sync failed")
+            results = [{"source": source, "ok": False, "summary": str(exc),
+                        "retryable": True} for source in self._payload_paths]
+        self._events.put({"type": "synced", "results": results})
 
     def continue_login(self) -> None:
         if self._runner:
@@ -146,8 +163,10 @@ class Api:
         # A scrape holds an open Playwright/browser session; racing an update
         # (which tears the window down) against it would destroy the scrape.
         if self._thread is not None and self._thread.is_alive():
-            self._events.put({"type": "update_failed",
-                              "error": "a scrape is running — update after it finishes"})
+            # Distinct from update_failed: the UI shows this reason verbatim
+            # (no "Update failed: ..." framing around a non-failure).
+            self._events.put({"type": "update_refused",
+                              "reason": "A scrape is running — you can update after it finishes."})
             return
         self._update_thread = threading.Thread(target=self._do_update, daemon=True)
         self._update_thread.start()

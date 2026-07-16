@@ -109,6 +109,39 @@ def test_finished_event_skips_sync_without_token(tmp_path: Path) -> None:
     assert api._sync_thread is None
 
 
+def test_finished_with_token_but_no_payloads_still_emits_synced(tmp_path: Path) -> None:
+    # All vendors skipped: there is nothing to sync, but the UI waits on the
+    # terminal "synced" event before re-enabling controls (Update button) and
+    # stopping its poll loop — without it the app looks stuck forever.
+    api, _ = _api(tmp_path)
+    api.save_settings("https://s.example", "tok")
+    api._on_event({"type": "finished", "results": {}})
+    events = api.poll()["events"]
+    assert [e["type"] for e in events] == ["finished", "synced"]
+    assert events[-1]["results"] == []
+    assert api._sync_thread is None
+
+
+def test_auto_sync_crash_still_emits_synced_with_failures(tmp_path: Path, monkeypatch) -> None:
+    # sync() raising on the sync thread must not swallow the terminal event;
+    # the UI gets per-source failures (retryable) instead of freezing.
+    api, _ = _api(tmp_path)
+    api.save_settings("https://s.example", "tok")
+    payload = tmp_path / "playstation.json"
+    payload.write_text(json.dumps({"source": "playstation", "games": []}), encoding="utf-8")
+
+    def boom(self):
+        raise RuntimeError("server unreachable")
+
+    monkeypatch.setattr(Api, "sync", boom)
+    api._on_event({"type": "finished", "results": {"playstation": str(payload)}})
+    api._sync_thread.join(timeout=5)
+    events = api.poll()["events"]
+    assert [e["type"] for e in events] == ["finished", "syncing", "synced"]
+    assert events[-1]["results"] == [{"source": "playstation", "ok": False,
+                                      "summary": "server unreachable", "retryable": True}]
+
+
 def test_no_public_window_attribute(tmp_path: Path) -> None:
     # pywebview serializes the js_api's PUBLIC attributes; a Window attr recurses
     # through window.native.AccessibilityObject.Bounds.Empty... and wedges the UI
@@ -149,8 +182,9 @@ def test_start_update_downloads_installs_and_closes_window(tmp_path: Path, monke
     api._update_thread.join(timeout=5)
     assert launched == [tmp_path / "setup.exe"]
     assert api._window.destroyed is True
-    types = [e["type"] for e in _drain(api)]
-    assert types == ["update_progress", "update_installing"]
+    events = _drain(api)
+    assert events[0] == {"type": "update_progress", "done": 1024, "total": 2048}
+    assert [e["type"] for e in events] == ["update_progress", "update_installing"]
 
 
 def test_start_update_failure_reports_and_leaves_app_running(tmp_path: Path, monkeypatch) -> None:
@@ -186,12 +220,42 @@ def test_start_update_refused_while_scrape_running(tmp_path: Path, monkeypatch) 
     api.start_scrape(["playstation"])
     api.start_update()
     events = _drain(api)
-    update_failed = [e for e in events if e["type"] == "update_failed"]
-    assert len(update_failed) == 1
-    assert "scrape" in update_failed[0]["error"]
+    refused = [e for e in events if e["type"] == "update_refused"]
+    assert len(refused) == 1
+    # Standalone copy: the UI shows the reason verbatim (no "Update failed:"
+    # prefix / "keep using this version" suffix wrapped around it).
+    assert refused[0]["reason"] == "A scrape is running — you can update after it finishes."
     assert api._update_thread is None
     release.set()
     api._thread.join(timeout=5)
+
+
+def test_start_scrape_refused_while_update_downloading(tmp_path: Path, monkeypatch) -> None:
+    # Mirror guard: a mid-download update will tear the window down; starting
+    # a scrape under it would destroy the scrape session.
+    import threading
+
+    from desktop import bridge as bridge_mod
+
+    api, _ = _api(tmp_path)
+    api._window = None
+    release = threading.Event()
+    monkeypatch.setattr(bridge_mod, "check_for_update", lambda url: "9.9.9")
+
+    def slow_download(server_url, version, dest_dir=None, progress=None, get=None):
+        release.wait(timeout=5)
+        raise RuntimeError("cancelled")
+
+    monkeypatch.setattr(bridge_mod.selfupdate, "download_installer", slow_download)
+    api.start_update()
+    api.start_scrape(["playstation"])
+    events = _drain(api)
+    refused = [e for e in events if e["type"] == "scrape_refused"]
+    assert len(refused) == 1
+    assert refused[0]["reason"] == "An update is downloading — it restarts the app when done."
+    assert api._thread is None
+    release.set()
+    api._update_thread.join(timeout=5)
 
 
 def test_start_update_ignores_reentrant_clicks(tmp_path: Path, monkeypatch) -> None:
