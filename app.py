@@ -2455,6 +2455,9 @@ def api_import_scrape():
 # Desktop scraper distribution
 # ============================================================================
 
+_ERR_INSTALLER_UNAVAILABLE = "installer not available"
+
+
 @app.route("/download/scraper")
 def download_scraper():
     """Personalized desktop-app download: the portable zip carries a sidecar
@@ -2468,7 +2471,7 @@ def download_scraper():
     if flavor == scraper_dist.FLAVOR_INSTALLER:
         path = scraper_dist.installer_artifact()
         if path is None:
-            return jsonify({"error": "installer not available"}), 404
+            return jsonify({"error": _ERR_INSTALLER_UNAVAILABLE}), 404
         return send_file(path, as_attachment=True,
                          download_name=scraper_dist.installer_download_name(server_url, token))
     src = scraper_dist.scraper_dir() / scraper_dist.PORTABLE_ZIP
@@ -2487,7 +2490,7 @@ def download_scraper_payload():
     browser session, hence public. The binary is generic (no token inside)."""
     path = scraper_dist.scraper_dir() / scraper_dist.INSTALLER_EXE
     if not path.exists():
-        return jsonify({"error": "installer not available"}), 404
+        return jsonify({"error": _ERR_INSTALLER_UNAVAILABLE}), 404
     return send_file(path, as_attachment=True,
                      download_name=scraper_dist.INSTALLER_EXE)
 

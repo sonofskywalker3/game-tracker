@@ -18,6 +18,7 @@ button.primary { background: #8B93FF; color: #14151C; font-weight: 600; }
 button.linkish { background: none; color: #8B93FF; padding: 6px 0; }
 button:disabled { opacity: .5; cursor: default; }
 .row { display: flex; gap: 10px; margin-top: 14px; }
+#start-status { margin-top: 8px; font-size: 13px; color: #B7B9C6; }
 .chip { margin-top: 12px; font-size: 13px; color: #B7B9C6; }
 .chip.ok { color: #7ED9A0; }
 details { margin-top: 14px; color: #B7B9C6; }

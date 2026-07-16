@@ -78,7 +78,7 @@ def artifact_version() -> str:
 
 
 def installer_artifact() -> Path | None:
-    """Bytes to serve for the installer download: the ~2MB stub when
+    """Path to serve for the installer download: the ~2MB stub when
     published (browsers deep-scan large exes), else the full installer
     (deploy-safe fallback while the stub isn't uploaded yet), else None."""
     for name in (STUB_EXE, INSTALLER_EXE):

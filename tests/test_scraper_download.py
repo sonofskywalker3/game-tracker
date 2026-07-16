@@ -216,7 +216,10 @@ def test_payload_route_serves_full_installer_plain(client, artifacts: Path) -> N
 
 def test_payload_route_404_when_unpublished(client, artifacts: Path) -> None:
     (artifacts / "BacklogQuest-Scraper-Setup.exe").unlink()
-    assert client.get("/download/scraper/payload").status_code == 404
+    resp = client.get("/download/scraper/payload")
+    # Body distinguishes "file not published" from a missing route's 404.
+    assert resp.status_code == 404
+    assert resp.get_json() == {"error": "installer not available"}
 
 
 def test_payload_route_public_under_auth(client, monkeypatch) -> None:

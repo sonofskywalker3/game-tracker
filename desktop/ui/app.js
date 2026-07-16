@@ -146,6 +146,17 @@ function handleEvent(e) {
     $("update-now").disabled = false;
     $("update-status").textContent =
       "Update failed: " + e.error + " — you can keep using this version.";
+  } else if (e.type === "update_refused") {
+    // Not a failure — the bridge declined to start; show the reason verbatim.
+    updateActive = false;
+    if (!scrapeActive) stopPolling();
+    $("update-now").disabled = false;
+    $("update-status").textContent = e.reason;
+  } else if (e.type === "scrape_refused") {
+    scrapeActive = false;
+    if (!updateActive) stopPolling();
+    $("start").disabled = false;
+    $("start-status").textContent = e.reason;
   }
 }
 
@@ -175,6 +186,7 @@ function renderResults() {
 
 $("start").onclick = () => {
   $("start").disabled = true;
+  $("start-status").textContent = "";
   doneCounts = {}; skippedNotes = {};
   const vendors = [...document.querySelectorAll("#vendors input:checked")].map((i) => i.value);
   if (!vendors.length) { $("start").disabled = false; return; }
