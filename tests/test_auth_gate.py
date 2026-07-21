@@ -1,11 +1,17 @@
 # tests/test_auth_gate.py
+from unittest.mock import patch
+
 import pytest
-from werkzeug.security import generate_password_hash
+
+import oauth
 
 
 @pytest.fixture
 def secure_env(monkeypatch):
-    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", generate_password_hash("pw"))
+    """Turn the auth gate ON by configuring Google OAuth, with a real session
+    secret and an API bearer token for the native-client path."""
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setenv("BACKLOGQUEST_API_TOKEN", "apitoken")
     monkeypatch.setenv("BACKLOGQUEST_SESSION_SECRET", "test-secret")
     import app as app_module
@@ -22,7 +28,7 @@ def test_healthz_always_open(client):
 
 
 def test_gate_off_when_unconfigured(client):
-    # No password hash in env -> app behaves as today (no redirect).
+    # No OAuth env in dev/tests -> app behaves as today (no redirect).
     assert client.get("/api/stats").status_code == 200
 
 
@@ -37,21 +43,20 @@ def test_html_redirects_to_login(client, secure_env):
     assert "/login" in res.headers["Location"]
 
 
-def test_login_with_password_grants_session(client, secure_env):
-    res = client.post("/login", data={"password": "pw"}, follow_redirects=False)
-    assert res.status_code == 302
-    assert client.get("/api/stats").status_code == 200  # session cookie carried
-
-
-def test_login_json_returns_token(client, secure_env):
-    res = client.post("/login", json={"password": "pw"})
-    assert res.status_code == 200
-    assert res.get_json()["token"] == "apitoken"
-
-
-def test_login_bad_password_401(client, secure_env):
-    res = client.post("/login", json={"password": "nope"})
+def test_callback_is_public_under_gate(client, secure_env):
+    # /auth/callback must bypass the gate or OAuth login could never complete.
+    # Authlib is mocked to fail verification -> clean 401 (not a redirect to
+    # /login), proving the gate let the request through to the handler.
+    with patch("oauth.verify_google_callback", side_effect=oauth.OAuthError("x")):
+        res = client.get("/auth/callback?code=x&state=y")
     assert res.status_code == 401
+
+
+def test_session_user_grants_access(client, secure_env):
+    # A bound web session (set by the OAuth callback) carries past the gate.
+    with client.session_transaction() as s:
+        s["user_id"] = 1
+    assert client.get("/api/stats").status_code == 200
 
 
 def test_api_token_grants_access(client, secure_env):
@@ -82,9 +87,19 @@ def test_check_session_secret_allows_default_when_auth_disabled(client):
         app_module.app.secret_key = original
 
 
-def test_login_sets_persistent_session_cookie(client, secure_env):
-    res = client.post("/login", data={"password": "pw"}, follow_redirects=False)
-    assert res.status_code == 302
-    set_cookie_headers = res.headers.get_all("Set-Cookie")
-    session_cookie = next(h for h in set_cookie_headers if h.startswith("session="))
-    assert "Max-Age" in session_cookie or "Expires" in session_cookie
+def test_check_oauth_config_rejects_half_configured(monkeypatch):
+    import app as app_module
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    with pytest.raises(RuntimeError):
+        app_module.check_oauth_config()
+
+
+def test_check_oauth_config_allows_both_or_neither(monkeypatch):
+    import app as app_module
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    app_module.check_oauth_config()  # neither -> ok
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "csecret")
+    app_module.check_oauth_config()  # both -> ok

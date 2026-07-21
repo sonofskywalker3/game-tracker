@@ -13,17 +13,18 @@
     h1 { font-size: 18px; margin: 0 0 16px; }
     input { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 12px;
             border-radius: 8px; border: 1px solid #444; background: #2a2a3c; color: #fff; }
-    button { width: 100%; padding: 10px; border: none; border-radius: 8px;
-             background: #7c3aed; color: #fff; font-weight: 600; cursor: pointer; }
+    .card { background: #1e1e2e; padding: 32px; border-radius: 12px; width: 280px; }
+    a.btn { display: block; width: 100%; box-sizing: border-box; padding: 10px;
+            border: none; border-radius: 8px; background: #7c3aed; color: #fff;
+            font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; }
     .err { color: #fca5a5; font-size: 13px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
-  <form method="post" action="/login">
+  <div class="card">
     <h1>BacklogQuest</h1>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
-    <input type="password" name="password" placeholder="Password" autofocus>
-    <button type="submit">Sign in</button>
-  </form>
+    <a class="btn" href="/auth/login">Sign in with Google</a>
+  </div>
 </body>
 </html>

@@ -119,7 +119,8 @@ def test_unknown_flavor_400_and_missing_artifact_404(client, artifacts: Path) ->
 
 def test_version_endpoint_public(client, monkeypatch) -> None:
     # Auth ON: /api/scraper/version must still answer (it's in _PUBLIC_PATHS).
-    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", "pbkdf2:sha256:x$y$z")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "csecret")
     assert client.get("/api/scraper/version").get_json() == {"version": "0.1.0"}
     # ...while the downloads are gated.
     assert client.get("/download/scraper?flavor=portable").status_code in (302, 401)
@@ -225,5 +226,6 @@ def test_payload_route_404_when_unpublished(client, artifacts: Path) -> None:
 def test_payload_route_public_under_auth(client, monkeypatch) -> None:
     # The stub runs on a fresh machine and the self-updater has no browser
     # session — the payload route must bypass the auth gate.
-    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", "pbkdf2:sha256:x$y$z")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "csecret")
     assert client.get("/download/scraper/payload").status_code == 200

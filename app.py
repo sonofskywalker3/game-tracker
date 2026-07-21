@@ -13,6 +13,8 @@ import requests
 import auth
 import dedup
 import hltb
+import identity
+import oauth
 import import_scraped
 import decider
 import igdb_match
@@ -48,7 +50,21 @@ def check_session_secret() -> None:
     if auth.auth_enabled() and app.secret_key in ("", "dev-insecure-secret"):
         raise RuntimeError(
             "BACKLOGQUEST_SESSION_SECRET must be set (not the dev default) when "
-            "BACKLOGQUEST_PASSWORD_HASH is configured")
+            "Google OAuth (GOOGLE_OAUTH_CLIENT_ID/SECRET) is configured")
+
+
+def check_oauth_config() -> None:
+    """Fail closed on a half-configured OAuth deploy: if exactly one of the client
+    id / secret is set, refuse to start rather than silently run with the gate off
+    (auth.auth_enabled() requires BOTH, so a partial config would leave every
+    route open)."""
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+    if bool(client_id) != bool(client_secret):
+        raise RuntimeError(
+            "Google OAuth is half-configured: set BOTH GOOGLE_OAUTH_CLIENT_ID and "
+            "GOOGLE_OAUTH_CLIENT_SECRET, or neither. Refusing to run with the auth "
+            "gate open.")
 
 
 app.config.update(
@@ -57,6 +73,9 @@ app.config.update(
     SESSION_COOKIE_SECURE=auth.cloud_mode(),
 )
 app.permanent_session_lifetime = timedelta(days=30)
+
+# Register the Google OIDC client (no-op transport until OAuth env is set).
+oauth.init_app(app)
 
 log = logging.getLogger(__name__)
 
@@ -69,20 +88,35 @@ log = logging.getLogger(__name__)
 # /download/scraper/payload is public because the stub/self-updater fetch it
 # sessionless and the binary is generic; /download/scraper must NEVER be
 # public — its personalized download FILENAME embeds the import token.
-_PUBLIC_PATHS = frozenset({"/login", "/logout", "/healthz", "/api/scraper/version",
+_PUBLIC_PATHS = frozenset({"/login", "/logout", "/auth/login", "/auth/callback",
+                           "/healthz", "/api/scraper/version",
                            "/download/scraper/payload"})
+
+
+def _allowed_emails() -> set[str]:
+    """The lowercased email allowlist (BACKLOGQUEST_ALLOWED_EMAILS, comma-sep)."""
+    raw = os.environ.get("BACKLOGQUEST_ALLOWED_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+@app.before_request
+def _bind_user():
+    """Bind the acting user for THIS request on every request, regardless of the
+    auth gate. Downstream handlers read identity.current_user_id(); with no bound
+    session user (dev/tests/API bearer) it falls back to the owner."""
+    identity.set_request_user(session.get("user_id"))
 
 
 @app.before_request
 def _require_auth():
-    """Gate every request when auth is configured. No-op when the password hash
-    is unset (local dev / tests behave exactly as before hosting)."""
+    """Gate every request when auth is configured. No-op when Google OAuth is
+    unset (local dev / tests behave exactly as before hosting)."""
     if not auth.auth_enabled():
         return None
     path = request.path
     if path in _PUBLIC_PATHS or path.startswith("/static/"):
         return None
-    if auth.is_authenticated(request.headers, bool(session.get("authed"))):
+    if auth.is_authenticated(request.headers, bool(session.get("user_id"))):
         return None
     if path == "/api/import/scrape" and auth.is_import_authorized(request.headers):
         return None
@@ -97,24 +131,40 @@ def healthz():
     return jsonify({"status": "ok"})
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login")
 def login_page():
-    """Password login. Sets a session cookie for the web; returns the API bearer
-    token as JSON for native clients (the Android app stores it)."""
-    if request.method == "GET":
-        return render_template("login.html")
-    if request.is_json:
-        password = (request.get_json(silent=True) or {}).get("password", "")
-    else:
-        password = request.form.get("password", "")
-    if not auth.check_password(password or ""):
-        if request.is_json:
-            return jsonify({"error": "invalid password"}), 401
-        return render_template("login.html", error="Incorrect password"), 401
+    """Render the 'Sign in with Google' page. The button links to /auth/login,
+    which kicks off the OIDC authorize redirect."""
+    return render_template("login.html")
+
+
+@app.route("/auth/login")
+def auth_login():
+    """Start the Google OIDC flow: redirect to Google's consent screen."""
+    try:
+        return oauth.authorize_redirect(url_for("auth_callback", _external=True))
+    except oauth.OAuthError:
+        return render_template("login.html", error="Sign-in unavailable"), 503
+
+
+@app.route("/auth/callback")
+def auth_callback():
+    """Complete the Google OIDC flow: verify the callback, enforce the email
+    allowlist, then bind the user into the session."""
+    try:
+        info = oauth.verify_google_callback(request)
+    except oauth.OAuthError:
+        return render_template("login.html", error="Sign-in failed"), 401
+    if info["email"].lower() not in _allowed_emails():
+        return render_template("login.html", error="Not invited yet"), 403
+    conn = get_db()
+    try:
+        uid = identity.upsert_google_user(
+            conn, info["sub"], info["email"], info.get("name"))
+    finally:
+        conn.close()
     session.permanent = True
-    session["authed"] = True
-    if request.is_json:
-        return jsonify({"token": os.environ.get("BACKLOGQUEST_API_TOKEN", "")})
+    session["user_id"] = uid
     return redirect(url_for("index"))
 
 
@@ -2521,6 +2571,7 @@ def ensure_db():
 
 
 if __name__ == '__main__':
+    check_oauth_config()
     check_session_secret()
     ensure_db()
 
