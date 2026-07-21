@@ -35,8 +35,8 @@ def test_import_scrape_rejects_missing_games(client):
 
 
 def test_import_scrape_requires_import_token_when_secured(client, monkeypatch):
-    from werkzeug.security import generate_password_hash
-    monkeypatch.setenv("BACKLOGQUEST_PASSWORD_HASH", generate_password_hash("pw"))
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "csecret")
     monkeypatch.setenv("BACKLOGQUEST_IMPORT_TOKEN", "imp")
     import app as app_module
     app_module.app.secret_key = "s"

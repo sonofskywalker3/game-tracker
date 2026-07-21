@@ -1,19 +1,17 @@
 # auth.py
-"""Env-driven auth helpers for the single-user cloud deployment.
+"""Env-driven auth helpers for the multi-user cloud deployment.
 
-Auth is enforced ONLY when BACKLOGQUEST_PASSWORD_HASH is set; with it unset the
+The auth gate is enforced ONLY when Google OAuth is configured (both
+GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET set); with them unset the
 app behaves exactly as it did before hosting (keeps the local dev + test suite
-unauthenticated). Identity is deliberately abstract here so a future multi-user
-"Sign in with Google" (OIDC) path replaces these helpers without touching the
-gate or the routes that call them.
+unauthenticated, falling back to the owner identity). Web identity now comes from
+"Sign in with Google" (OIDC — see oauth.py); the API bearer path is unchanged.
 """
 from __future__ import annotations
 
 import hmac
 import os
 from collections.abc import Mapping
-
-from werkzeug.security import check_password_hash
 
 _BEARER_PREFIX = "Bearer "
 
@@ -24,16 +22,14 @@ def _env(name: str) -> str | None:
 
 
 def auth_enabled() -> bool:
-    """True when a password hash is configured (turns the whole gate on)."""
-    return _env("BACKLOGQUEST_PASSWORD_HASH") is not None
+    """True when Google OAuth is configured (turns the whole gate on).
 
-
-def check_password(candidate: str) -> bool:
-    """True iff auth is enabled and `candidate` matches the configured hash."""
-    hashed = _env("BACKLOGQUEST_PASSWORD_HASH")
-    if hashed is None:
-        return False
-    return check_password_hash(hashed, candidate)
+    Requires BOTH client id and secret; a partial config is treated as disabled
+    here and rejected at startup (see app.check_oauth_config)."""
+    return (
+        _env("GOOGLE_OAUTH_CLIENT_ID") is not None
+        and _env("GOOGLE_OAUTH_CLIENT_SECRET") is not None
+    )
 
 
 def bearer_token(headers: Mapping[str, str]) -> str | None:

@@ -1,27 +1,27 @@
 # tests/test_auth.py
 import pytest
-from werkzeug.security import generate_password_hash
 import auth
 
 
 @pytest.fixture
 def env(monkeypatch):
-    for var in ("BACKLOGQUEST_PASSWORD_HASH", "BACKLOGQUEST_API_TOKEN",
-                "BACKLOGQUEST_IMPORT_TOKEN", "BACKLOGQUEST_CLOUD"):
+    for var in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET",
+                "BACKLOGQUEST_API_TOKEN", "BACKLOGQUEST_IMPORT_TOKEN",
+                "BACKLOGQUEST_CLOUD"):
         monkeypatch.delenv(var, raising=False)
     return monkeypatch
 
 
-def test_auth_disabled_when_no_hash(env):
+def test_auth_disabled_when_no_oauth(env):
     assert auth.auth_enabled() is False
-    assert auth.check_password("anything") is False
 
 
-def test_check_password_matches_hash(env):
-    env.setenv("BACKLOGQUEST_PASSWORD_HASH", generate_password_hash("hunter2"))
+def test_auth_enabled_requires_both_oauth_creds(env):
+    # Partial config is treated as disabled here (startup fails closed on it).
+    env.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid")
+    assert auth.auth_enabled() is False
+    env.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "csecret")
     assert auth.auth_enabled() is True
-    assert auth.check_password("hunter2") is True
-    assert auth.check_password("wrong") is False
 
 
 def test_bearer_token_parsing(env):
