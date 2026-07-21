@@ -1,5 +1,6 @@
 import sqlite3
 
+import app as flask_app
 import identity
 import models
 
@@ -34,3 +35,14 @@ def test_upsert_creates_new_user_for_new_sub(monkeypatch):
     uid = identity.upsert_google_user(conn, "sub-999", "tester@example.com", "Tester")
     assert uid != identity.OWNER_USER_ID
     assert conn.execute("SELECT google_sub FROM users WHERE id = ?", (uid,)).fetchone()["google_sub"] == "sub-999"
+
+
+def test_current_user_defaults_to_owner_without_session():
+    with flask_app.app.test_request_context("/"):
+        assert identity.current_user_id() == identity.OWNER_USER_ID
+
+
+def test_set_request_user_overrides():
+    with flask_app.app.test_request_context("/"):
+        identity.set_request_user(42)
+        assert identity.current_user_id() == 42

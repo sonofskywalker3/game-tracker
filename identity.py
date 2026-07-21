@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
+from flask import g
+
 OWNER_USER_ID = 1
 
 
@@ -43,3 +45,13 @@ def upsert_google_user(conn: sqlite3.Connection, sub: str, email: str, name: str
     )
     conn.commit()
     return cur.lastrowid
+
+
+def set_request_user(user_id: int | None) -> None:
+    g.acting_user_id = user_id
+
+
+def current_user_id() -> int:
+    """The user whose data this request may touch. Falls back to the owner when no
+    user is bound (owner-only mode, local dev, and the existing test suite)."""
+    return getattr(g, "acting_user_id", None) or OWNER_USER_ID
