@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -499,6 +500,31 @@ def reclean_display_titles(conn, dry_run=False):
                     (cleaned, row["id"]),
                 )
     return changes
+
+
+def migrate_users(conn: sqlite3.Connection) -> None:
+    """Create the users table and seed the owner as user #1 (idempotent).
+
+    Must run before every other migrate_* call: later migrations add FKs
+    pointing at this table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            google_sub   TEXT UNIQUE,
+            email        TEXT NOT NULL,
+            display_name TEXT,
+            is_owner     INTEGER NOT NULL DEFAULT 0,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    owner_email = os.environ.get("BACKLOGQUEST_OWNER_EMAIL", "owner@localhost").strip()
+    # Force the owner to id=1 so existing single-tenant rows backfill to a stable id.
+    conn.execute(
+        "INSERT INTO users (id, email, is_owner) VALUES (1, ?, 1) "
+        "ON CONFLICT(id) DO UPDATE SET email = excluded.email, is_owner = 1",
+        (owner_email,),
+    )
+    conn.commit()
 
 
 def migrate_platform_category(conn):
@@ -1344,6 +1370,9 @@ def migrate_user_profile(conn: sqlite3.Connection) -> None:
 def migrate_db():
     """Run database migrations for schema updates."""
     conn = get_db()
+
+    # Users table must exist first: later migrations add FKs pointing at it.
+    migrate_users(conn)
 
     # Check if sort_order column exists in user_ratings
     columns = conn.execute("PRAGMA table_info(user_ratings)").fetchall()
