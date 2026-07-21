@@ -527,6 +527,48 @@ def migrate_users(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_add_user_id_games(conn: sqlite3.Connection) -> None:
+    """Add games.user_id (backfilled to owner) and swap UNIQUE(normalized_title)
+    for UNIQUE(user_id, normalized_title). Idempotent.
+
+    SQLite cannot alter a table-level UNIQUE constraint in place, and dropping
+    the autoindex that backs it does not reliably lift the constraint, so this
+    rebuilds the games table with the composite UNIQUE baked in and copies rows
+    over (defaulting user_id=1)."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(games)").fetchall()]
+    if "user_id" in cols:
+        return
+
+    old_cols_info = conn.execute("PRAGMA table_info(games)").fetchall()
+    old_col_names = [c[1] for c in old_cols_info]
+
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("""
+        CREATE TABLE games_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            normalized_title TEXT NOT NULL,
+            cover_url TEXT,
+            metacritic_score INTEGER,
+            opencritic_score INTEGER,
+            igdb_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            psn_addons_synced_at TIMESTAMP,
+            user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+            UNIQUE(user_id, normalized_title)
+        )
+    """)
+    copy_cols = [c for c in old_col_names if c != "user_id"]
+    cols_sql = ", ".join(copy_cols)
+    conn.execute(f"INSERT INTO games_new ({cols_sql}, user_id) SELECT {cols_sql}, 1 FROM games")
+    conn.execute("DROP TABLE games")
+    conn.execute("ALTER TABLE games_new RENAME TO games")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_games_normalized_title ON games(normalized_title)")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+
+
 def migrate_platform_category(conn):
     """Add platforms.category if missing and (re)backfill from short_name.
 
@@ -1373,6 +1415,9 @@ def migrate_db():
 
     # Users table must exist first: later migrations add FKs pointing at it.
     migrate_users(conn)
+
+    # Add games.user_id + per-user title uniqueness, backfilled to the owner.
+    migrate_add_user_id_games(conn)
 
     # Check if sort_order column exists in user_ratings
     columns = conn.execute("PRAGMA table_info(user_ratings)").fetchall()

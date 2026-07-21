@@ -346,11 +346,13 @@ def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False
     Commits the insert (the catalog applier commits internally)."""
     title = clean_title(raw_title)
     normalized = normalize_title(title)
-    # Atomic dedup on UNIQUE(normalized_title): DO NOTHING (rowcount 0) means a
-    # concurrent or prior create won — no check-then-insert race, no 500.
+    # Atomic dedup on UNIQUE(user_id, normalized_title): DO NOTHING (rowcount 0)
+    # means a concurrent or prior create won — no check-then-insert race, no 500.
+    # user_id isn't supplied here (defaults to the owner, id 1), so this still
+    # matches single-user rows identically to the old UNIQUE(normalized_title).
     cur = conn.execute(
         "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?) "
-        "ON CONFLICT(normalized_title) DO NOTHING",
+        "ON CONFLICT(user_id, normalized_title) DO NOTHING",
         (title, normalized, (cover_url or '').strip() or None))
     if cur.rowcount == 0:
         existing = conn.execute(
