@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import Callable
 
 DB_PATH = Path(__file__).parent / "games.db"
 GAME_TRAITS_PATH = Path(__file__).parent / "game_traits.json"                  # per-user (gitignored)
@@ -585,6 +586,167 @@ def migrate_add_user_id_games(conn: sqlite3.Connection) -> None:
     for index_sql in index_sqls:
         conn.execute(index_sql)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_games_normalized_title ON games(normalized_title)")
+    conn.commit()
+
+
+def _rebuild_table_add_user_id(
+    conn: sqlite3.Connection,
+    table: str,
+    transform_sql: Callable[[str], str],
+    unique_marker: str,
+) -> None:
+    """Shared rebuild mechanic for adding user_id to a table whose live schema
+    carries a UNIQUE/CHECK constraint that SQLite cannot ALTER in place.
+
+    Mirrors `migrate_add_user_id_games`: drop any orphaned `_new` table left by
+    a crashed prior attempt, read the LIVE CREATE TABLE + index sql from
+    sqlite_master (never a hardcoded column list — a real DB may carry extra
+    ALTER-added columns beyond the day-one definition), transform + retarget
+    it via the caller-supplied `transform_sql`, copy rows in one transaction,
+    then swap the table in and recreate its indexes.
+
+    `unique_marker` is the exact per-table uniqueness text `transform_sql` is
+    expected to inject (e.g. "UNIQUE(user_id, name)"); asserted present in the
+    rebuilt CREATE TABLE sql so a silently-failed transform wedges loudly
+    instead of dropping the constraint.
+    """
+    cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if "user_id" in cols:
+        return
+
+    new_table = f"{table}_new"
+    # Recover from any orphaned <table>_new left by a prior failed attempt
+    # (CREATE TABLE auto-commits, so a mid-rebuild crash can strand it).
+    conn.execute(f"DROP TABLE IF EXISTS {new_table}")
+
+    create_sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()[0]
+    # Capture any explicit (non-autoindex) indexes before the table is dropped,
+    # so they can be recreated on the rebuilt table afterward.
+    index_sqls = [
+        row[0]
+        for row in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND tbl_name=? AND sql IS NOT NULL",
+            (table,),
+        ).fetchall()
+    ]
+
+    new_sql = create_sql.replace(f"CREATE TABLE {table}", f"CREATE TABLE {new_table}", 1)
+    new_sql = transform_sql(new_sql)
+    assert unique_marker in new_sql, (
+        f"{table} rebuild: expected {unique_marker!r} in retargeted CREATE TABLE sql "
+        "— transform_sql did not match the live schema"
+    )
+
+    col_list = ", ".join(cols)  # trusted column names: sourced from PRAGMA, not user input
+    conn.executescript(f"""
+        PRAGMA foreign_keys=OFF;
+        BEGIN;
+        {new_sql};
+        INSERT INTO {new_table} ({col_list}) SELECT {col_list} FROM {table};
+        DROP TABLE {table};
+        ALTER TABLE {new_table} RENAME TO {table};
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+    """)
+    for index_sql in index_sqls:
+        conn.execute(index_sql)
+
+    rebuilt_cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    assert "user_id" in rebuilt_cols, f"{table} rebuild did not land the user_id column"
+    conn.commit()
+
+
+def _inject_before_closing_paren(create_sql: str, addition: str) -> str:
+    """Insert `addition` as the last item in a CREATE TABLE's column/constraint
+    list, immediately before its closing paren (the correct grammar position
+    for a table-level constraint mixed with column defs)."""
+    close_idx = create_sql.rfind(")")
+    return f"{create_sql[:close_idx]}, {addition}{create_sql[close_idx:]}"
+
+
+def _tags_transform(create_sql: str) -> str:
+    """tags declares UNIQUE inline on name (models.py:216); SQLite forbids a
+    table-level constraint interleaved between column defs, so the inline
+    UNIQUE is stripped and a per-user column is added in its place, then the
+    composite UNIQUE(user_id, name) is appended as the final table constraint.
+    """
+    new_sql = re.sub(
+        r"name\s+TEXT\s+NOT\s+NULL\s+UNIQUE",
+        "name TEXT NOT NULL, user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id)",
+        create_sql,
+        count=1,
+    )
+    return _inject_before_closing_paren(new_sql, "UNIQUE(user_id, name)")
+
+
+def _add_user_id_col(conn: sqlite3.Connection, table: str) -> None:
+    """Idempotent ADD COLUMN user_id, backfilled to the owner via DEFAULT 1.
+
+    SQLite refuses to add a REFERENCES column with a non-NULL default when
+    foreign_keys is ON and the table already has rows ("Cannot add a
+    REFERENCES column with non-NULL default value") -- and the production
+    connection from get_db() always runs with foreign_keys=ON (models.py:151),
+    while slots/decider_chats are never empty on a real DB. Foreign key
+    enforcement is toggled off for this single statement, mirroring the
+    PRAGMA foreign_keys=OFF/ON bracket migrate_add_user_id_games already uses
+    around its rebuild.
+    """
+    cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if "user_id" in cols:
+        return
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1 "
+            "REFERENCES users(id)"
+        )
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
+def migrate_add_user_id_roots(conn: sqlite3.Connection) -> None:
+    """Add user_id (backfilled to owner) to tags, slots, and decider_chats.
+    Idempotent.
+
+    slots and decider_chats have no UNIQUE/CHECK obstacle, so a plain
+    idempotent ADD COLUMN suffices. tags declares UNIQUE(name) inline
+    (models.py:216); SQLite cannot alter that constraint in place, so tags is
+    rebuilt with UNIQUE(user_id, name) baked in, mirroring
+    `migrate_add_user_id_games`.
+    """
+    _rebuild_table_add_user_id(conn, "tags", _tags_transform, "UNIQUE(user_id, name)")
+    for t in ("slots", "decider_chats"):
+        _add_user_id_col(conn, t)
+    conn.commit()
+
+
+def _user_profile_transform(create_sql: str) -> str:
+    """user_profile guards its singleton row with `id INTEGER PRIMARY KEY
+    CHECK(id = 1)` (models.py:1414); that CHECK must be dropped (it would
+    otherwise reject every row but id=1 forever) and user_id NOT NULL +
+    UNIQUE(user_id) added so each user gets exactly one profile row."""
+    new_sql = re.sub(r"\s*CHECK\s*\(\s*id\s*=\s*1\s*\)", "", create_sql, count=1)
+    return _inject_before_closing_paren(
+        new_sql,
+        "user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id), UNIQUE(user_id)",
+    )
+
+
+def migrate_user_profile_per_user(conn: sqlite3.Connection) -> None:
+    """Convert the id=1 singleton user_profile to one row per user. Idempotent.
+
+    Must run after `migrate_user_profile` (which creates/seeds the table and
+    may still be adding its own ALTER-added columns like
+    collection_display_mode) so the rebuild's live-schema read picks up every
+    column that exists on the table at that point.
+    """
+    _rebuild_table_add_user_id(
+        conn, "user_profile", _user_profile_transform, "UNIQUE(user_id)"
+    )
+    conn.execute("UPDATE user_profile SET user_id = 1 WHERE id = 1")
     conn.commit()
 
 
@@ -1492,10 +1654,19 @@ def migrate_db():
     migrate_game_platform_format(conn)
     migrate_tagged_games_to_physical(conn)
     migrate_decider_chats(conn)
+
+    # Add user_id to tags (+ per-user name uniqueness), slots, decider_chats.
+    # Must run after migrate_slots/migrate_decider_chats above, which create
+    # those tables -- tags exists from init_db, but slots does not.
+    migrate_add_user_id_roots(conn)
+
     migrate_upc_review(conn)
     migrate_upc_enrichment_state(conn)
     migrate_slot_schedule_window(conn)
     migrate_user_profile(conn)
+    # Convert the singleton user_profile to one row per user. Must run after
+    # migrate_user_profile above (which creates/latest-migrates the table).
+    migrate_user_profile_per_user(conn)
     # Retire the home-rolled series schema. The rebuild removes the indexed +
     # FK-pinned user_ratings.series_id (which a plain DROP COLUMN cannot), then
     # migrate_drop_series drops the series table and the remaining series columns.
