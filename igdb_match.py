@@ -10,6 +10,8 @@ All IGDB access goes through igdb_dlc._igdb_query (monkeypatched in tests).
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Iterable
 
 import igdb_dlc
@@ -116,8 +118,16 @@ def _word_contains(container: str, phrase: str) -> bool:
     return f" {phrase} " in f" {container} "
 
 
+def _fold_accents(s: str) -> str:
+    """Strip diacritics for accent-insensitive comparison ('pokémon' -> 'pokemon').
+    Retail UPC titles and manual searches are ASCII, but IGDB's canonical names
+    carry accents ('Pokémon', 'Pokkén'); folding both sides lets them match."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+
+
 def _title_score(cand_name: str, search: str) -> int | None:
-    a, b = normalize_title(cand_name), normalize_title(search)
+    a = _fold_accents(normalize_title(cand_name))
+    b = _fold_accents(normalize_title(search))
     if not a or not b:
         return None
     if a == b:
@@ -170,18 +180,49 @@ def _escape(title: str) -> str:
     return title.replace('"', "").replace("\n", " ").strip()
 
 
+# IGDB's slug convention: diacritics folded to ASCII, apostrophes dropped (not
+# hyphenated — "Assassin's Creed" -> "assassins-creed"), every other run of
+# non-alphanumerics collapsed to a single hyphen, ends trimmed.
+_APOSTROPHES = ("'", "’", "ʼ")
+_SLUG_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(title: str) -> str:
+    """ASCII-fold a title to an IGDB-style slug ('Pokémon Y' -> 'pokemon-y')."""
+    folded = unicodedata.normalize("NFKD", title)
+    folded = folded.encode("ascii", "ignore").decode("ascii").lower()
+    for apo in _APOSTROPHES:
+        folded = folded.replace(apo, "")
+    return _SLUG_NON_ALNUM_RE.sub("-", folded).strip("-")
+
+
+# Fields both the search and the slug-fallback query request (kept identical so a
+# slug-rescued candidate is shaped exactly like a searched one for the scorer).
+_CANDIDATE_FIELDS = (
+    "fields name, cover.url, platforms, first_release_date, "
+    "total_rating_count, game_type; "
+)
+
+
 def fetch_candidates(title: str, client_id: str, token: str,
                      limit: int = 10) -> list[dict]:
     """Title-search IGDB, returning candidates WITH platform + ranking signals."""
     # game_type is surfaced for the Phase-4 disambiguation modal display,
     # not used by the scorer.
-    query = (
-        f'search "{_escape(title)}"; '
-        "fields name, cover.url, platforms, first_release_date, "
-        "total_rating_count, game_type; "
-        f"limit {int(limit)};"
-    )
-    return igdb_dlc._igdb_query(query, client_id, token) or []
+    query = f'search "{_escape(title)}"; ' + _CANDIDATE_FIELDS + f"limit {int(limit)};"
+    rows = igdb_dlc._igdb_query(query, client_id, token) or []
+    if rows:
+        return rows
+    # Accent-insensitive fallback: IGDB's full-text search is diacritic-sensitive,
+    # so an ASCII title ("Pokemon Y") never matches a canonical name that carries
+    # accents ("Pokémon Y"). IGDB slugs are ASCII-folded, so an exact slug lookup
+    # rescues that whole class of titles (Pokémon, Pokkén, Ōkami, ...). Fires only
+    # on an empty search, so the common path stays a single API call.
+    slug = _slugify(title)
+    if not slug:
+        return []
+    slug_query = f'where slug = "{slug}"; ' + _CANDIDATE_FIELDS + f"limit {int(limit)};"
+    return igdb_dlc._igdb_query(slug_query, client_id, token) or []
 
 
 def fetch_entry(igdb_id: int, client_id: str, token: str) -> dict | None:

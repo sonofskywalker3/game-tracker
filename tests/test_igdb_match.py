@@ -79,6 +79,61 @@ def test_fetch_candidates_queries_with_platforms(monkeypatch):
     assert out[0]["name"] == "Celeste"
 
 
+def test_title_score_folds_accents():
+    """An ASCII search title exactly matches a canonical name carrying diacritics."""
+    assert igdb_match._title_score("Pokémon Sun", "Pokemon Sun") == igdb_match._TITLE_EXACT
+
+
+def test_score_candidates_keeps_accented_title_match():
+    """The scorer must not drop a diacritic-bearing candidate for an ASCII search
+    title — the second half of the Pokémon scan bug (search rescued the entry, the
+    scorer then discarded it as a non-title-match)."""
+    cands = [_cand("Pokémon Sun", [37])]
+    out = igdb_match.score_candidates(cands, game_platform_ids={37}, title="Pokemon Sun")
+    assert [c["name"] for c in out] == ["Pokémon Sun"]
+
+
+def test_slugify_folds_accents_and_punctuation():
+    """ASCII slug matches IGDB's slug convention (diacritics folded, apostrophes
+    dropped, other punctuation collapsed to single hyphens, trimmed)."""
+    assert igdb_match._slugify("Pokémon Y") == "pokemon-y"
+    assert igdb_match._slugify("Assassin's Creed") == "assassins-creed"
+    assert igdb_match._slugify("  Ōkami HD  ") == "okami-hd"
+
+
+def test_fetch_candidates_slug_fallback_for_accented_title(monkeypatch):
+    """IGDB's full-text search is diacritic-sensitive, so an ASCII scan/user title
+    ("Pokemon Y") misses a canonical name that carries accents ("Pokémon Y"). Slugs
+    are ASCII-folded, so fetch_candidates retries by exact slug and rescues it."""
+    calls = []
+    def fake(query, cid, tok):
+        calls.append(query)
+        if 'search "Pokemon Y"' in query:          # accent-sensitive search misses
+            return []
+        if 'where slug = "pokemon-y"' in query:    # ASCII slug lookup rescues it
+            return [{"id": 234, "name": "Pokémon Y", "platforms": [37],
+                     "cover": {"url": "//x/t_thumb/p.jpg"}}]
+        return []
+    monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
+    out = igdb_match.fetch_candidates("Pokemon Y", "c", "t")
+    assert out and out[0]["name"] == "Pokémon Y"
+    assert any('where slug = "pokemon-y"' in q for q in calls)
+
+
+def test_fetch_candidates_skips_slug_fallback_when_search_hits(monkeypatch):
+    """The slug fallback fires ONLY on an empty search — a hit never triggers the
+    extra query (keeps the common path to a single IGDB call)."""
+    calls = []
+    def fake(query, cid, tok):
+        calls.append(query)
+        return [{"id": 1, "name": "Celeste", "platforms": [6],
+                 "cover": {"url": "//x/t_thumb/a.jpg"}}]
+    monkeypatch.setattr(igdb_match.igdb_dlc, "_igdb_query", fake)
+    igdb_match.fetch_candidates("Celeste", "c", "t")
+    assert len(calls) == 1
+    assert not any("slug" in q for q in calls)
+
+
 def test_cover_url_of_normalizes_to_big_https():
     c = {"cover": {"url": "//images.igdb.com/igdb/image/upload/t_thumb/abc.jpg"}}
     assert igdb_match.cover_url_of(c) == \
