@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from flask import g
+from flask import g, has_app_context
 
 OWNER_USER_ID = 1
 
@@ -53,5 +53,9 @@ def set_request_user(user_id: int | None) -> None:
 
 def current_user_id() -> int:
     """The user whose data this request may touch. Falls back to the owner when no
-    user is bound (owner-only mode, local dev, and the existing test suite)."""
-    return getattr(g, "acting_user_id", None) or OWNER_USER_ID
+    user is bound (owner-only mode, local dev, the existing test suite) and when
+    called outside any Flask app context (background threads, CLI)."""
+    if not has_app_context():
+        return OWNER_USER_ID
+    uid = getattr(g, "acting_user_id", None)
+    return uid if uid is not None else OWNER_USER_ID

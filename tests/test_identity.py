@@ -46,3 +46,15 @@ def test_set_request_user_overrides():
     with flask_app.app.test_request_context("/"):
         identity.set_request_user(42)
         assert identity.current_user_id() == 42
+
+
+def test_set_request_user_none_falls_back_to_owner():
+    with flask_app.app.test_request_context("/"):
+        identity.set_request_user(None)
+        assert identity.current_user_id() == identity.OWNER_USER_ID
+
+
+def test_current_user_id_without_app_context_returns_owner():
+    # No test_request_context (and no app_context) at all -- simulates a
+    # background thread (e.g. the scrape-import worker) or CLI/module scope.
+    assert identity.current_user_id() == identity.OWNER_USER_ID
