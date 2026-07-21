@@ -4,6 +4,10 @@ import pytest
 import models
 import app as app_module
 
+# Re-export the multi-user temp-DB fixture so tests can request `mu_db` by name
+# without importing it (helpers_multiuser owns the definition; Task 9 reuses it).
+from tests.helpers_multiuser import mu_db  # noqa: F401
+
 
 @pytest.fixture
 def temp_db(tmp_path, monkeypatch):

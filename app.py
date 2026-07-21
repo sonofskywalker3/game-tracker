@@ -240,6 +240,7 @@ PLATFORM_MEDIA: dict[str, str] = {
 def api_games():
     """Get all games with filters."""
     conn = get_db()
+    uid = identity.current_user_id()
 
     status = request.args.get('status', None)
     platform = request.args.get('platform', None)
@@ -271,9 +272,9 @@ def api_games():
         LEFT JOIN platforms p ON p.id = gp.platform_id
         LEFT JOIN game_tags gt ON gt.game_id = g.id
         LEFT JOIN tags t ON t.id = gt.tag_id
-        WHERE 1=1
+        WHERE g.user_id = ?
     """
-    params = []
+    params = [uid]
 
     if status:
         query += " AND ur.status = ?"
@@ -336,7 +337,7 @@ def api_games():
             r["parent_collection_id"] for r in
             conn.execute(
                 "SELECT DISTINCT parent_collection_id FROM games "
-                "WHERE parent_collection_id IS NOT NULL").fetchall()
+                "WHERE parent_collection_id IS NOT NULL AND user_id = ?", (uid,)).fetchall()
         }
         if display_mode == "members":
             rows = [r for r in rows if r["id"] not in container_ids]
@@ -388,25 +389,31 @@ def api_games():
 MAX_BATCH_ADD = 100
 
 
-def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False):
+def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False,
+                 user_id=None):
     """Shared create core for the single and batch add endpoints: clean/normalize
     the title, dedup against normalized_title, insert game + backlog rating +
     platform links, then apply the trait catalog. Returns
     (status, game_id, clean_display_title) where status is 'exists' or 'added'.
-    Commits the insert (the catalog applier commits internally)."""
+    Commits the insert (the catalog applier commits internally).
+
+    The new game (and its dedup lookup) is scoped to `user_id` (the acting user;
+    defaults to the owner outside a request), so one user's create can never
+    collide with — or hand back — another user's game of the same name."""
+    if user_id is None:
+        user_id = identity.current_user_id()
     title = clean_title(raw_title)
     normalized = normalize_title(title)
     # Atomic dedup on UNIQUE(user_id, normalized_title): DO NOTHING (rowcount 0)
     # means a concurrent or prior create won — no check-then-insert race, no 500.
-    # user_id isn't supplied here (defaults to the owner, id 1), so this still
-    # matches single-user rows identically to the old UNIQUE(normalized_title).
     cur = conn.execute(
-        "INSERT INTO games (title, normalized_title, cover_url) VALUES (?, ?, ?) "
+        "INSERT INTO games (title, normalized_title, cover_url, user_id) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(user_id, normalized_title) DO NOTHING",
-        (title, normalized, (cover_url or '').strip() or None))
+        (title, normalized, (cover_url or '').strip() or None, user_id))
     if cur.rowcount == 0:
         existing = conn.execute(
-            "SELECT id FROM games WHERE normalized_title = ?", (normalized,)).fetchone()
+            "SELECT id FROM games WHERE normalized_title = ? AND user_id = ?",
+            (normalized, user_id)).fetchone()
         return 'exists', existing['id'], title
     game_id = cur.lastrowid
     conn.execute(
@@ -431,6 +438,7 @@ def _insert_game(conn, raw_title, cover_url=None, platforms=None, physical=False
 def api_create_game():
     """Create a new game."""
     conn = get_db()
+    uid = identity.current_user_id()
     data = request.json
 
     raw_title = data.get('title', '').strip()
@@ -444,12 +452,13 @@ def api_create_game():
 
     status, game_id, title = _insert_game(
         conn, raw_title, cover_url=data.get('cover_url'),
-        platforms=platforms, physical=bool(data.get('physical')))
+        platforms=platforms, physical=bool(data.get('physical')), user_id=uid)
 
     if status == 'exists':
         if upc:
             igdb_row = conn.execute(
-                "SELECT igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+                "SELECT igdb_id FROM games WHERE id = ? AND user_id = ?",
+                (game_id, uid)).fetchone()
             barcode.registry_put(conn, upc,
                               igdb_id=igdb_row['igdb_id'] if igdb_row else None,
                               title=title, game_id=game_id)
@@ -478,7 +487,7 @@ def api_create_game():
     if upc:
         platform_short = platforms[0] if platforms else None
         igdb_row = conn.execute(
-            "SELECT igdb_id FROM games WHERE id = ?", (game_id,)
+            "SELECT igdb_id FROM games WHERE id = ? AND user_id = ?", (game_id, uid)
         ).fetchone()
         barcode.registry_put(conn, upc, igdb_id=igdb_row['igdb_id'] if igdb_row else None,
                           title=title, platform=platform_short, game_id=game_id)
@@ -502,6 +511,7 @@ def api_games_batch():
         return jsonify({'error': f'batch limited to {MAX_BATCH_ADD} games'}), 400
 
     conn = get_db()
+    uid = identity.current_user_id()
 
     # One shared token for the batch's best-effort enrichment (never fatal).
     client_id = token = None
@@ -529,7 +539,7 @@ def api_games_batch():
         status, game_id, title = _insert_game(
             conn, raw_title, cover_url=entry.get('cover_url'),
             platforms=entry.get('platforms') or [],
-            physical=bool(entry.get('physical')))
+            physical=bool(entry.get('physical')), user_id=uid)
 
         if status == 'added':
             added += 1
@@ -849,6 +859,7 @@ def api_data_import():
 def api_game(game_id):
     """Get single game details."""
     conn = get_db()
+    uid = identity.current_user_id()
 
     game = conn.execute("""
         SELECT
@@ -862,8 +873,8 @@ def api_game(game_id):
             ur.completed_at
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
-        WHERE g.id = ?
-    """, (game_id,)).fetchone()
+        WHERE g.id = ? AND g.user_id = ?
+    """, (game_id, uid)).fetchone()
 
     if not game:
         conn.close()
@@ -915,12 +926,14 @@ def api_games_search():
     if len(query) < 2:
         return jsonify([])
     conn = get_db()
+    uid = identity.current_user_id()
     like = f"%{query}%"
     rows = conn.execute(
         "SELECT id, title, cover_url, collection_name FROM games "
-        "WHERE title LIKE ? COLLATE NOCASE OR normalized_title LIKE ? COLLATE NOCASE "
+        "WHERE user_id = ? "
+        "AND (title LIKE ? COLLATE NOCASE OR normalized_title LIKE ? COLLATE NOCASE) "
         "ORDER BY title COLLATE NOCASE LIMIT 10",
-        (like, like)).fetchall()
+        (uid, like, like)).fetchall()
     game_ids = [r["id"] for r in rows]
     plat_by_game: dict[int, list[str]] = {gid: [] for gid in game_ids}
     if game_ids:
@@ -963,7 +976,9 @@ def api_add_dlc(game_id):
     if not name:
         return jsonify({'error': 'name required'}), 400
     conn = get_db()
-    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
     existing = conn.execute(
@@ -1164,7 +1179,9 @@ def api_refresh_dlc(game_id):
     import config
     import igdb_dlc
     conn = get_db()
-    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
     client_id, secret = config.get_twitch_credentials()
@@ -1191,6 +1208,11 @@ def api_refresh_dlc(game_id):
 def api_game_decider_chat(game_id: int):
     """Save (POST) or list (GET) decider conversations tied to a game."""
     conn = get_db()
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
     try:
         if request.method == 'POST':
             data = request.json or {}
@@ -1207,13 +1229,17 @@ def api_game_decider_chat(game_id: int):
 def api_refresh_psn_dlc(game_id: int):
     """Clear the PSN add-on marker for one game and kick a scrape to re-check it."""
     conn = get_db()
+    uid = identity.current_user_id()
     row = conn.execute(
-        "SELECT external_id FROM game_external_ids "
-        "WHERE game_id = ? AND source = 'playstation'", (game_id,)).fetchone()
+        "SELECT gei.external_id FROM game_external_ids gei "
+        "JOIN games g ON g.id = gei.game_id "
+        "WHERE gei.game_id = ? AND gei.source = 'playstation' AND g.user_id = ?",
+        (game_id, uid)).fetchone()
     if row is None:
         conn.close()
         return jsonify({"error": "no PlayStation id for this game"}), 404
-    conn.execute("UPDATE games SET psn_addons_synced_at = NULL WHERE id = ?", (game_id,))
+    conn.execute("UPDATE games SET psn_addons_synced_at = NULL WHERE id = ? AND user_id = ?",
+                 (game_id, uid))
     conn.commit()
     conn.close()
     ok, msg = scrape_service.start("playstation")
@@ -1231,7 +1257,9 @@ def api_pin_igdb(game_id):
     if not slug:
         return jsonify({'error': 'Not an IGDB game URL'}), 400
     conn = get_db()
-    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
     client_id, secret = config.get_twitch_credentials()
@@ -1250,10 +1278,11 @@ def api_pin_igdb(game_id):
         conn.close()
         return jsonify({'error': 'No IGDB game found for that URL'}), 404
     conn.execute("UPDATE games SET igdb_locked = 1, needs_igdb_review = 0, "
-                 "igdb_review_reason = NULL WHERE id = ?", (game_id,))
+                 "igdb_review_reason = NULL WHERE id = ? AND user_id = ?", (game_id, uid))
     conn.commit()
     game = conn.execute(
-        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ? AND user_id = ?",
+        (game_id, uid)).fetchone()
     dlc = conn.execute(
         "SELECT id, name, kind, owned, source FROM dlc WHERE game_id = ? ORDER BY kind, name",
         (game_id,)).fetchall()
@@ -1271,8 +1300,10 @@ def api_igdb_candidates(game_id):
     import igdb_dlc
     import igdb_match
     conn = get_db()
+    uid = identity.current_user_id()
     row = conn.execute(
-        "SELECT title, cover_url, collection_name, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+        "SELECT title, cover_url, collection_name, igdb_id FROM games "
+        "WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone()
     if not row:
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
@@ -1313,13 +1344,16 @@ def api_igdb_pick(game_id):
         return jsonify({'error': 'igdb_id must be an integer'}), 400
     cover_url = (data.get('cover_url') or '').strip() or None
     conn = get_db()
-    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
     conn.execute(
         "UPDATE games SET igdb_id = ?, cover_url = COALESCE(?, cover_url), "
         "igdb_locked = 1, needs_igdb_review = 0, igdb_review_reason = NULL, "
-        "updated_at = CURRENT_TIMESTAMP WHERE id = ?", (igdb_id, cover_url, game_id))
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+        (igdb_id, cover_url, game_id, uid))
     conn.commit()
     # The IGDB identity changed, so the collection memberships follow it.
     _sync_collections_for_game(conn, game_id)
@@ -1332,12 +1366,15 @@ def api_igdb_keep(game_id):
     """Keep the current IGDB match as-is: lock it and clear the review flag without
     changing igdb_id or cover_url (the 'this one is fine' action)."""
     conn = get_db()
-    if not conn.execute("SELECT 1 FROM games WHERE id = ?", (game_id,)).fetchone():
+    uid = identity.current_user_id()
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
     conn.execute(
         "UPDATE games SET igdb_locked = 1, needs_igdb_review = 0, "
-        "igdb_review_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (game_id,))
+        "igdb_review_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+        (game_id, uid))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1357,8 +1394,10 @@ def api_pin_steam(game_id):
     if not appid:
         return jsonify({'error': 'Not a Steam store URL'}), 400
     conn     = get_db()
+    uid      = identity.current_user_id()
     game_row = conn.execute(
-        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ?", (game_id,)).fetchone()
+        "SELECT id, title, cover_url, igdb_id FROM games WHERE id = ? AND user_id = ?",
+        (game_id, uid)).fetchone()
     if not game_row:
         conn.close()
         return jsonify({'error': 'Game not found'}), 404
@@ -1382,7 +1421,16 @@ TRAIT_ENUMS = {
 def api_update_game(game_id):
     """Update game rating, status, priority, title, cover_url, etc."""
     conn = get_db()
+    uid = identity.current_user_id()
     data = request.json
+
+    # Parent-ownership gate: a game the acting user doesn't own is a 404, and this
+    # guard also protects every child write below (user_ratings, tags, platforms)
+    # which key only on game_id.
+    if not conn.execute(
+            "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone():
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
 
     try:
         # Update game table fields (title, cover_url, time_to_beat_override_minutes, traits)
@@ -1425,7 +1473,10 @@ def api_update_game(game_id):
                     # invalid enum value: ignored
             game_updates.append("updated_at = CURRENT_TIMESTAMP")
             game_params.append(game_id)
-            conn.execute(f"UPDATE games SET {', '.join(game_updates)} WHERE id = ?", game_params)
+            game_params.append(uid)
+            conn.execute(
+                f"UPDATE games SET {', '.join(game_updates)} WHERE id = ? AND user_id = ?",
+                game_params)
 
         # Update user_ratings
         updates = []
@@ -1557,15 +1608,17 @@ def api_update_game(game_id):
 def api_delete_game(game_id):
     """Delete a game and all its related data."""
     conn = get_db()
+    uid = identity.current_user_id()
 
     try:
-        # Check if game exists
-        game = conn.execute("SELECT id FROM games WHERE id = ?", (game_id,)).fetchone()
+        # Check the game exists AND is owned by the acting user (else 404).
+        game = conn.execute(
+            "SELECT id FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone()
         if not game:
             return jsonify({'error': 'Game not found'}), 404
 
         # Delete the game (CASCADE will handle related tables)
-        conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+        conn.execute("DELETE FROM games WHERE id = ? AND user_id = ?", (game_id, uid))
         # Orphaned members fall back to standalone (shown) instead of vanishing
         # from the collection-mode filter with a stale parent reference.
         dedup.clear_parent_collection(conn, game_id)
@@ -1584,8 +1637,11 @@ def api_not_a_game(game_id):
     to the per-user excluded_games.json, so a future re-import skips it forever.
     """
     conn = get_db()
+    uid = identity.current_user_id()
     try:
-        g = conn.execute("SELECT id, title FROM games WHERE id = ?", (game_id,)).fetchone()
+        g = conn.execute(
+            "SELECT id, title FROM games WHERE id = ? AND user_id = ?",
+            (game_id, uid)).fetchone()
         if not g:
             return jsonify({'error': 'Game not found'}), 404
         normalized = import_scraped.match_key(g['title'])
@@ -1599,7 +1655,7 @@ def api_not_a_game(game_id):
             entries = [{'source': None, 'external_id': None,
                         'normalized_title': normalized, 'title': g['title']}]
         import_scraped.add_excluded_games(entries)
-        conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+        conn.execute("DELETE FROM games WHERE id = ? AND user_id = ?", (game_id, uid))
         # Same cleanup as api_delete_game: a member left pointing at a now-gone
         # container would vanish from the library in 'collection' display mode.
         dedup.clear_parent_collection(conn, game_id)
@@ -1620,7 +1676,7 @@ def api_normalize_titles():
     result — clean_title already smart-title-cases ALL-CAPS titles.
     """
     conn = get_db()
-    changes = reclean_display_titles(conn)
+    changes = reclean_display_titles(conn, user_id=identity.current_user_id())
     if changes:
         conn.commit()
     conn.close()
@@ -1673,6 +1729,20 @@ def api_merge_games():
         return jsonify({'error': 'survivor_id and drop_ids are required'}), 400
 
     conn = get_db()
+    uid = identity.current_user_id()
+    # Every id in the merge — survivor AND each drop — must belong to the acting
+    # user, or the merge could fold away (or into) another user's game. Any
+    # unowned id is a 404; nothing is mutated.
+    needed_ids = {survivor_id, *drop_ids}
+    placeholders = ",".join("?" * len(needed_ids))
+    owned = {
+        r[0] for r in conn.execute(
+            f"SELECT id FROM games WHERE id IN ({placeholders}) AND user_id = ?",
+            (*needed_ids, uid))
+    }
+    if owned != needed_ids:
+        conn.close()
+        return jsonify({'error': 'Game not found'}), 404
     try:
         result = dedup.merge_games(
             conn, survivor_id, drop_ids,
@@ -1721,6 +1791,7 @@ def api_dismiss_duplicate():
 def api_reorder_games():
     """Update the sort order of games based on drag-and-drop reordering."""
     conn = get_db()
+    uid = identity.current_user_id()
     data = request.json
 
     game_ids = data.get('game_ids', [])
@@ -1728,8 +1799,19 @@ def api_reorder_games():
         conn.close()
         return jsonify({'error': 'No game IDs provided'}), 400
 
-    # Update sort_order for each game, ensuring user_ratings row exists
+    # Only reorder games the acting user owns — an unscoped INSERT ... ON CONFLICT
+    # here would create/overwrite user_ratings rows for another user's games.
+    placeholders = ",".join("?" * len(game_ids))
+    owned = {
+        r[0] for r in conn.execute(
+            f"SELECT id FROM games WHERE id IN ({placeholders}) AND user_id = ?",
+            (*game_ids, uid))
+    }
+
+    # Update sort_order for each owned game, ensuring its user_ratings row exists.
     for index, game_id in enumerate(game_ids):
+        if game_id not in owned:
+            continue
         conn.execute("""
             INSERT INTO user_ratings (game_id, sort_order)
             VALUES (?, ?)

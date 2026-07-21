@@ -477,7 +477,7 @@ def clean_title(title):
     return title
 
 
-def reclean_display_titles(conn, dry_run=False):
+def reclean_display_titles(conn, dry_run=False, user_id=None):
     """Recompute every game's display title with the current clean_title rules.
 
     Display-only: updates games.title but NEVER normalized_title. Recomputing the
@@ -485,21 +485,34 @@ def reclean_display_titles(conn, dry_run=False):
     leaving normalized_title alone here means an improved clean_title can never
     trip UNIQUE(normalized_title) and crash on startup.
 
+    When ``user_id`` is given, only that user's games are read and rewritten, so a
+    per-user "normalize titles" action can never touch another user's library.
+    (Left unscoped for CLI/maintenance callers that operate on the whole DB.)
+
     Idempotent (clean_title is a fixed point) and --dry-run-able. Does not commit;
     the caller owns the transaction. Returns the list of changed rows as
     ``{"id", "original", "cleaned"}`` dicts.
     """
+    if user_id is None:
+        rows = conn.execute("SELECT id, title FROM games").fetchall()
+        # No user_id predicate: keeps working on legacy/CLI schemas that predate
+        # the games.user_id column (referencing it unconditionally would raise).
+        update_sql = "UPDATE games SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    else:
+        rows = conn.execute(
+            "SELECT id, title FROM games WHERE user_id = ?", (user_id,)).fetchall()
+        update_sql = ("UPDATE games SET title = ?, updated_at = CURRENT_TIMESTAMP "
+                      "WHERE id = ? AND user_id = ?")
     changes = []
-    for row in conn.execute("SELECT id, title FROM games").fetchall():
+    for row in rows:
         original = row["title"]
         cleaned = clean_title(original)
         if cleaned != original:
             changes.append({"id": row["id"], "original": original, "cleaned": cleaned})
             if not dry_run:
-                conn.execute(
-                    "UPDATE games SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (cleaned, row["id"]),
-                )
+                params = (cleaned, row["id"]) if user_id is None \
+                    else (cleaned, row["id"], user_id)
+                conn.execute(update_sql, params)
     return changes
 
 
