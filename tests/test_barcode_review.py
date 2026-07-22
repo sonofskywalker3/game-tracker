@@ -6,7 +6,12 @@ import sqlite3
 import pytest
 
 import barcode
-from tests.helpers_multiuser import app_ctx_as, seed_barcode_review, seed_game
+from tests.helpers_multiuser import (
+    app_ctx_as,
+    client_as,
+    seed_barcode_review,
+    seed_game,
+)
 
 # mu_db fixture comes from conftest's re-export (tests/conftest.py); importing
 # it here too would shadow the fixture parameter name below and trip ruff's
@@ -158,3 +163,63 @@ def test_list_pending_only_pending(mu_db: sqlite3.Connection) -> None:
     items = barcode.list_pending(mu_db)
     upcs = {i["upc"] for i in items}
     assert upcs == {"U-I"}  # rejected U-J excluded
+
+
+def test_tester_link_queues_not_registry(mu_db):
+    client = client_as(2)  # non-owner
+    r = client.post("/api/barcode/link",
+                    json={"upc": "R-A", "platform": "PS", "title": "Queued", "igdb_id": 5})
+    assert r.status_code == 200 and r.get_json()["queued"] is True
+    assert mu_db.execute(
+        "SELECT COUNT(*) FROM barcode_link_review WHERE upc='R-A' AND user_id=2"
+    ).fetchone()[0] == 1
+    assert barcode.registry_get(mu_db, "R-A") is None  # nothing shared
+
+
+def test_owner_link_writes_registry_directly(mu_db):
+    client = client_as(1)  # owner
+    r = client.post("/api/barcode/link",
+                    json={"upc": "R-B", "platform": "PS", "title": "Trusted"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body.get("queued") is not True
+    assert barcode.registry_get(mu_db, "R-B")["title"] == "Trusted"
+    assert mu_db.execute(
+        "SELECT COUNT(*) FROM barcode_link_review WHERE upc='R-B'").fetchone()[0] == 0
+
+
+def test_review_list_owner_only(mu_db):
+    seed_barcode_review(mu_db, 2, upc="R-C", title="Pending")
+    assert client_as(2).get("/api/barcode/review").status_code == 403
+    owner_res = client_as(1).get("/api/barcode/review")
+    assert owner_res.status_code == 200
+    assert {i["upc"] for i in owner_res.get_json()["items"]} == {"R-C"}
+
+
+def test_review_approve_reject_owner_only(mu_db):
+    rid = seed_barcode_review(mu_db, 2, upc="R-D", title="Wrong", igdb_id=3)
+    assert client_as(2).post(f"/api/barcode/review/{rid}/approve", json={}).status_code == 403
+    assert client_as(2).post(f"/api/barcode/review/{rid}/reject", json={}).status_code == 403
+
+
+def test_route_approve_with_edit(mu_db):
+    rid = seed_barcode_review(mu_db, 2, upc="R-E", title="Wrong", igdb_id=3, game_id=88)
+    r = client_as(1).post(f"/api/barcode/review/{rid}/approve",
+                          json={"title": "Right"})
+    assert r.status_code == 200
+    reg = barcode.registry_get(mu_db, "R-E")
+    assert reg["title"] == "Right" and reg["game_id"] is None
+
+
+def test_route_reject(mu_db):
+    rid = seed_barcode_review(mu_db, 2, upc="R-F", title="Nope")
+    assert client_as(1).post(f"/api/barcode/review/{rid}/reject", json={}).status_code == 200
+    assert mu_db.execute(
+        "SELECT status FROM barcode_link_review WHERE id=?", (rid,)
+    ).fetchone()[0] == "rejected"
+
+
+def test_route_approve_404_and_409(mu_db):
+    assert client_as(1).post("/api/barcode/review/999999/approve", json={}).status_code == 404
+    rid = seed_barcode_review(mu_db, 2, upc="R-G", status="rejected")
+    assert client_as(1).post(f"/api/barcode/review/{rid}/approve", json={}).status_code == 409

@@ -731,6 +731,10 @@ _OWNER_ONLY = {
         "owner-only install-level scrape phase/progress for the single home-machine "
         "importer; non-owner gets 403. "
         "Covered by test_admin_get_routes_reject_non_owner",
+    "/api/barcode/review":
+        "owner-only queue of tester barcode links awaiting approval; a non-owner "
+        "gets 403 and never reads other users' pending submissions. Covered by "
+        "test_review_list_owner_only",
 }
 
 _SWEEP_PATHS = frozenset(url.split("?")[0] for _, url, _ in READ_SWEEP)
