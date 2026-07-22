@@ -646,6 +646,8 @@ def api_collection_detail(collection_id):
 def api_collections_backfill():
     """Resolve IGDB collection memberships + original release dates for every
     igdb-pinned game (a whole library is only a few batched calls)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     import igdb_dlc
     import igdb_resolve
     client_id, secret = get_twitch_credentials()
@@ -736,6 +738,8 @@ def api_bundle_review_dismiss(review_id):
 def api_traits_ai_status():
     """SP-C: how many games lack a session length + whether the AI run can
     start (user's Anthropic key configured), plus live task state."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     import background_tasks
     import traits_ai
     conn = get_db()
@@ -751,6 +755,8 @@ def api_traits_ai_status():
 def api_traits_ai_run():
     """Kick off background AI session-length classification (opt-in, uses the
     user's own Anthropic key)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     import background_tasks
     key, _model = get_anthropic_config()
     if not key:
@@ -2272,6 +2278,8 @@ def api_slot_chat(slot_id: int):
 @app.route('/api/hltb/refresh', methods=['POST'])
 def api_hltb_refresh():
     """Batch-enrich games lacking HLTB durations."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     conn = get_db()
     result = hltb.enrich_missing(conn)
     conn.close()
@@ -2591,6 +2599,8 @@ def api_fetch_covers_status():
 @app.route('/api/enrichment/run', methods=['POST'])
 def api_enrichment_run():
     """Trigger one enrichment batch now (respects the shared daily quota cap)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     conn = get_db()
     state = enrichment.get_enrichment_state(conn)
     conn.close()
@@ -2608,6 +2618,8 @@ def api_enrichment_run():
 @app.route('/api/enrichment/status')
 def api_enrichment_status():
     """Enrichment task status + eligible-remaining + today's remaining quota."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     status = get_enrichment_status()
     conn = get_db()
     state = enrichment.get_enrichment_state(conn)

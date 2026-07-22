@@ -488,6 +488,68 @@ def test_igdb_candidates_404_for_unowned_game(mu_db):
 
 
 # ===========================================================================
+# OWNER-GATED install-wide bulk-maintenance cluster.
+#
+# These jobs enrich SHARED public metadata across the whole library and burn
+# shared per-IP API quotas (IGDB/Anthropic/HLTB), so they are OWNER-ONLY admin
+# operations, not per-user features. A non-owner authenticated user must get a
+# 403 and never reach the job OR its install-wide aggregate counts; the owner
+# (user 1) retains full access. Auth is off in tests, so the default client is
+# the owner -- only these tests act as a non-owner (user 2) against the gate.
+# ===========================================================================
+
+
+def test_owner_only_status_routes_reject_non_owner(mu_db):
+    """The install-wide maintenance STATUS reads are owner-only: a non-owner gets
+    403 (so the aggregate-count leak is closed), while the owner still gets 200."""
+    for url in ("/api/traits/ai/status", "/api/enrichment/status"):
+        assert client_as(2).get(url).status_code == 403
+        assert client_as(1).get(url).status_code == 200
+
+
+def test_owner_only_write_routes_reject_non_owner(mu_db, monkeypatch):
+    """The install-wide maintenance WRITES are owner-only: a non-owner gets 403 and
+    the heavy job is never reached; the owner is permitted past the gate (non-403).
+
+    The heavy/network work (IGDB backfill, Anthropic classification) is mocked so
+    the owner path does no real network/AI work, and call-flags prove the non-owner
+    never triggers either job."""
+    import app as app_module
+    import igdb_dlc
+    import igdb_resolve
+    import traits_ai
+
+    started = {"backfill": False, "classify": False}
+
+    def fake_backfill(conn, cid, tok, progress=None):
+        started["backfill"] = True
+        return {"games": 0, "collections": 0, "memberships": 0}
+
+    def fake_classify(conn, *, client=None, model=None, progress=None):
+        started["classify"] = True
+        return {"total": 0, "classified": 0, "unknown": 0}
+
+    monkeypatch.setattr(app_module, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(igdb_dlc, "get_access_token", lambda cid, sec: "tok")
+    monkeypatch.setattr(igdb_resolve, "backfill_collections", fake_backfill)
+    monkeypatch.setattr(app_module, "get_anthropic_config",
+                        lambda: ("sk-test", "some-model"), raising=False)
+    monkeypatch.setattr(traits_ai, "classify_unclassified", fake_classify)
+
+    # Non-owner: both writes 403, and neither heavy job is reached.
+    cl2 = client_as(2)
+    assert cl2.post("/api/collections/backfill").status_code == 403
+    assert cl2.post("/api/traits/ai/run").status_code == 403
+    assert started["backfill"] is False
+    assert started["classify"] is False
+
+    # Owner: permitted past the gate (not 403).
+    cl1 = client_as(1)
+    assert cl1.post("/api/collections/backfill").status_code != 403
+    assert cl1.post("/api/traits/ai/run").status_code != 403
+
+
+# ===========================================================================
 # COMPLETENESS GATE: every non-public /api/ GET rule must be accounted for.
 #
 # The READ/WRITE sweeps are hand-maintained, so an unscoped route can ship
@@ -539,12 +601,18 @@ _ISOLATION_ALLOWLIST = {
     "/api/covers/fetch/status":
         "install-level background cover-fetch task state (task_manager singleton); "
         "no per-user rows",
+}
+
+# GET routes gated to the owner (identity.is_owner()): a non-owner gets 403 and
+# never reaches the install-wide aggregate count, so there is no per-user data to
+# isolate. Covered by test_owner_only_status_routes_reject_non_owner.
+_OWNER_ONLY = {
     "/api/enrichment/status":
-        "install-level enrichment maintenance status (shared daily quota); aggregate "
-        "counts only, part of the out-of-scope owner-gated bulk-maintenance cluster",
+        "owner-only install-wide enrichment maintenance status (shared daily "
+        "quota); non-owner gets 403, never reads the aggregate count",
     "/api/traits/ai/status":
-        "install-level AI-classification maintenance status; aggregate unclassified "
-        "count only, part of the out-of-scope owner-gated api_traits_ai_run cluster",
+        "owner-only install-wide AI-classification maintenance status; non-owner "
+        "gets 403, never reads the aggregate unclassified count",
 }
 
 _SWEEP_PATHS = frozenset(url.split("?")[0] for _, url, _ in READ_SWEEP)
@@ -552,8 +620,8 @@ _SWEEP_PATHS = frozenset(url.split("?")[0] for _, url, _ in READ_SWEEP)
 
 def test_every_api_get_route_is_isolation_covered():
     """Enumerate the live url_map: every non-public /api/ GET rule must be in the
-    READ sweep, a dedicated isolation test, or the explicit allow-list. A newly
-    added unscoped GET route fails here until triaged."""
+    READ sweep, a dedicated isolation test, the explicit allow-list, or the
+    owner-only set. A newly added unscoped GET route fails here until triaged."""
     import app as app_module
 
     public = app_module._PUBLIC_PATHS
@@ -573,9 +641,12 @@ def test_every_api_get_route_is_isolation_covered():
             continue
         if path in _ISOLATION_ALLOWLIST:
             continue
+        if path in _OWNER_ONLY:
+            continue
         uncovered.append(path)
 
     assert not uncovered, (
         "Untriaged /api/ GET routes (scope them + add to READ_SWEEP/dedicated "
-        "test, or allow-list with a justification): " + ", ".join(sorted(uncovered))
+        "test, allow-list, or _OWNER_ONLY with a justification): "
+        + ", ".join(sorted(uncovered))
     )
