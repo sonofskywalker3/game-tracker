@@ -150,12 +150,16 @@ def auth_login():
 @app.route("/auth/callback")
 def auth_callback():
     """Complete the Google OIDC flow: verify the callback, enforce the email
-    allowlist, then bind the user into the session."""
+    allowlist (if configured), then bind the user into the session."""
     try:
         info = oauth.verify_google_callback(request)
     except oauth.OAuthError:
         return render_template("login.html", error="Sign-in failed"), 401
-    if info["email"].lower() not in _allowed_emails():
+    # Empty allowlist = trust Google's testing-mode test-user list; set it to
+    # re-enable server-side enforcement (e.g. if the OAuth app is ever
+    # Published out of testing mode).
+    allowed = _allowed_emails()
+    if allowed and info["email"].lower() not in allowed:
         return render_template("login.html", error="Not invited yet"), 403
     conn = get_db()
     try:

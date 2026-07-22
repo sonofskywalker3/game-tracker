@@ -49,6 +49,22 @@ def test_callback_rejects_non_allowlisted(oauth_client):
         assert "user_id" not in s
 
 
+def test_callback_allows_any_email_when_allowlist_unset(client, monkeypatch):
+    """With BACKLOGQUEST_ALLOWED_EMAILS unset/empty, the allowlist gate is
+    skipped and any authenticated Google user is trusted (Google's OAuth
+    testing-mode test-user list is the sole gate in that case)."""
+    monkeypatch.delenv("BACKLOGQUEST_ALLOWED_EMAILS", raising=False)
+    monkeypatch.setenv("BACKLOGQUEST_OWNER_EMAIL", "owner@example.com")
+    with patch(
+        "oauth.verify_google_callback",
+        return_value={"sub": "s3", "email": "arbitrary@example.com", "name": "A"},
+    ):
+        res = client.get("/auth/callback?code=x&state=y", follow_redirects=False)
+    assert res.status_code in (302, 303)
+    with client.session_transaction() as s:
+        assert s["user_id"]
+
+
 def test_callback_oauth_error_returns_401(oauth_client):
     """A verification/state/token failure surfaces a clean 401 with no session and
     no leaked stack trace."""
