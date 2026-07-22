@@ -2489,19 +2489,82 @@ def api_barcode_resolve():
 
 @app.route('/api/barcode/link', methods=['POST'])
 def api_barcode_link():
-    """Record a confirmed UPC -> game mapping in the registry (no library write).
+    """Record a confirmed UPC -> game mapping.
 
-    The single scan-side registry writer; resolve() is read-only. Idempotent
-    upsert on UPC. game_id is optional (knowledge without ownership)."""
+    Owner links write the shared barcode_registry directly (trusted). A non-owner
+    (tester) link is queued into barcode_link_review as a pending row -- provisional
+    for the submitter only -- until the owner approves it into the registry."""
     data = request.get_json(silent=True) or {}
     upc = (data.get('upc') or '').strip()
     platform = (data.get('platform') or '').strip() or None
     if not upc or not platform:
         return jsonify({'error': 'upc and platform required'}), 400
     conn = get_db()
-    barcode.registry_put(conn, upc, igdb_id=data.get('igdb_id'),
-                         title=data.get('title'), platform=platform,
-                         cover_url=data.get('cover_url'), game_id=data.get('game_id'))
+    if identity.is_owner():
+        barcode.registry_put(conn, upc, igdb_id=data.get('igdb_id'),
+                             title=data.get('title'), platform=platform,
+                             cover_url=data.get('cover_url'), game_id=data.get('game_id'))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True})
+    barcode.queue_upsert(conn, upc=upc, user_id=identity.current_user_id(),
+                         platform=platform, igdb_id=data.get('igdb_id'),
+                         title=data.get('title'), cover_url=data.get('cover_url'),
+                         game_id=data.get('game_id'))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'queued': True})
+
+
+@app.route('/api/barcode/review')
+def api_barcode_review_list():
+    """Pending tester barcode links awaiting owner approval (owner-only)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
+    conn = get_db()
+    items = barcode.list_pending(conn)
+    conn.close()
+    return jsonify({'items': items, 'count': len(items)})
+
+
+@app.route('/api/barcode/review/<int:review_id>/approve', methods=['POST'])
+def api_barcode_review_approve(review_id):
+    """Approve a queued barcode link into the shared registry (owner-only).
+
+    Optional JSON body overrides the queued identity (title/igdb_id/platform/
+    cover_url); the edited values are what get written to barcode_registry."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    try:
+        barcode.approve(conn, review_id, title=data.get('title'),
+                        igdb_id=data.get('igdb_id'), platform=data.get('platform'),
+                        cover_url=data.get('cover_url'))
+    except ValueError as exc:
+        conn.rollback()
+        conn.close()
+        msg = str(exc)
+        return jsonify({'error': msg}), 404 if 'not found' in msg else 409
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/barcode/review/<int:review_id>/reject', methods=['POST'])
+def api_barcode_review_reject(review_id):
+    """Reject a queued barcode link (owner-only). The provisional stops applying;
+    the UPC is resubmittable (no permanent-reject memory in v1)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
+    conn = get_db()
+    try:
+        barcode.reject(conn, review_id)
+    except ValueError as exc:
+        conn.rollback()
+        conn.close()
+        msg = str(exc)
+        return jsonify({'error': msg}), 404 if 'not found' in msg else 409
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
