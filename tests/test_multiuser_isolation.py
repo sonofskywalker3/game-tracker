@@ -254,6 +254,14 @@ def _sweep_seed_export(conn) -> tuple[str, str]:
     return "AAUSER1EXPORT", "BBUSER2EXPORT"
 
 
+def _sweep_seed_games_search(conn) -> tuple[str, str]:
+    # Both titles share the substring "USER" so the ?q=USER typeahead matches
+    # both users' rows -- the route is proven scoped only if user 1's is absent.
+    seed_game(conn, user_id=1, title="AAUSER1SEARCH")
+    seed_game(conn, user_id=2, title="BBUSER2SEARCH")
+    return "AAUSER1SEARCH", "BBUSER2SEARCH"
+
+
 READ_SWEEP = [
     ("games", "/api/games", _sweep_seed_games),
     ("slots", "/api/slots", _sweep_seed_slots),
@@ -262,6 +270,7 @@ READ_SWEEP = [
     ("bundle_review", "/api/bundle-review", _sweep_seed_bundle_review),
     ("enrichment_review", "/api/enrichment/review", _sweep_seed_enrichment_review),
     ("data_export", "/api/data/export", _sweep_seed_export),
+    ("games_search", "/api/games/search?q=USER", _sweep_seed_games_search),
 ]
 
 
@@ -429,3 +438,144 @@ def test_positive_barcode_registry_identity_visible_to_both(mu_db):
         body = client_as(uid).get("/api/barcode/resolve?upc=99887766").get_json()
         assert body["source"] == "cache"
         assert body["candidates"][0]["title"] == "Shared Registry Title"
+
+
+# ===========================================================================
+# Final-review blocking fixes: /api/recommendations + /api/covers/status.
+# Both routes read the shared `games` table unscoped before the fix, leaking
+# every user's titles / private notes / counts. Dedicated isolation tests.
+# ===========================================================================
+
+
+def test_recommendations_excludes_other_users_games(mu_db):
+    """/api/recommendations must not surface another user's titles or private
+    notes. Seed a distinctive title + note for user 1; as user 2 neither the
+    title nor the note may appear anywhere in the response body."""
+    a_game = seed_game(mu_db, user_id=1, title="AAUSER1RECGAME")
+    mu_db.execute(
+        "UPDATE user_ratings SET notes = ? WHERE game_id = ?",
+        ("USER1PRIVATENOTE", a_game),
+    )
+    mu_db.commit()
+    seed_game(mu_db, user_id=2, title="BBUSER2RECGAME")
+
+    body = client_as(2).get("/api/recommendations").get_data(as_text=True)
+    assert "AAUSER1RECGAME" not in body       # user 1's title never leaks
+    assert "USER1PRIVATENOTE" not in body      # user 1's private note never leaks
+    assert "BBUSER2RECGAME" in body            # user 2's own rec still works
+
+
+def test_covers_status_counts_are_per_user(mu_db):
+    """/api/covers/status counts must reflect ONLY the acting user's library.
+    User 1 has several games (some missing covers); as user 2 the totals must
+    count only user 2's single game."""
+    seed_game(mu_db, user_id=1, title="A-Cover-1")
+    seed_game(mu_db, user_id=1, title="A-Cover-2")
+    seed_game(mu_db, user_id=1, title="A-Cover-3")
+    seed_game(mu_db, user_id=2, title="B-Cover-1")   # cover_url NULL -> missing
+
+    status = client_as(2).get("/api/covers/status").get_json()
+    assert status["total"] == 1           # only user 2's game, not the 3 of user 1
+    assert status["missing"] == 1
+    assert status["with_covers"] == 0
+
+
+def test_igdb_candidates_404_for_unowned_game(mu_db):
+    """/api/games/<id>/igdb-candidates is gated on parent-game ownership: an
+    unowned game id is a 404 before any external lookup (no cross-user read)."""
+    gid = seed_game(mu_db, user_id=1, title="A-IGDB-Only")
+    assert client_as(2).get(f"/api/games/{gid}/igdb-candidates").status_code == 404
+
+
+# ===========================================================================
+# COMPLETENESS GATE: every non-public /api/ GET rule must be accounted for.
+#
+# The READ/WRITE sweeps are hand-maintained, so an unscoped route can ship
+# without ever failing CI (this is exactly how /api/recommendations and
+# /api/covers/status shipped green). This test enumerates the LIVE url_map and
+# asserts every non-public /api/ GET rule is either (a) covered by the READ
+# sweep, (b) covered by a named dedicated isolation test, or (c) on an EXPLICIT
+# allow-list with a one-line justification. A newly-added unscoped GET route
+# fails here until it is triaged -- forcing the leak/allow-list decision.
+# ===========================================================================
+
+# Rules covered by a dedicated isolation test above (rule string -> test name).
+_DEDICATED_ISOLATION_TESTS = {
+    "/api/games/<int:game_id>":
+        "test_user_cannot_fetch_another_users_game_by_id (unowned id -> 404)",
+    "/api/games/<int:game_id>/decider-chat":
+        "test_user_cannot_see_another_users_decider_chat",
+    "/api/games/<int:game_id>/igdb-candidates":
+        "test_igdb_candidates_404_for_unowned_game (parent-game ownership 404)",
+    "/api/collections":
+        "test_user_cannot_see_another_users_collections_membership",
+    "/api/collections/<int:collection_id>":
+        "test_user_cannot_see_another_users_collections_membership (detail)",
+    "/api/profile": "test_user_cannot_see_another_users_profile",
+    "/api/stats": "test_stats_reflect_only_acting_users_library",
+    "/api/dlc/review/count": "test_dlc_review_count_is_per_user",
+    "/api/duplicates": "test_user_cannot_see_another_users_duplicates",
+    "/api/recommendations": "test_recommendations_excludes_other_users_games",
+    "/api/covers/status": "test_covers_status_counts_are_per_user",
+}
+
+# Routes that return ONLY shared/global/catalog data or per-install config, so
+# there is no per-user data to isolate. One justification per entry.
+_ISOLATION_ALLOWLIST = {
+    "/api/platforms":
+        "global platform catalog (no user_id); positive control "
+        "test_positive_platforms_visible_to_both_users",
+    "/api/settings":
+        "per-install config only (Twitch/Anthropic/Steam creds, masked); "
+        "no per-user library data",
+    "/api/igdb/search":
+        "external IGDB catalog search over the network; touches no per-user DB rows",
+    "/api/barcode/resolve":
+        "shared UPC->identity registry; per-user ownership derivation is scoped "
+        "via user_id (test_positive_barcode_registry_identity_visible_to_both)",
+    "/api/scrape/status":
+        "install-level scrape phase/progress for the single home-machine importer; "
+        "no per-user rows",
+    "/api/covers/fetch/status":
+        "install-level background cover-fetch task state (task_manager singleton); "
+        "no per-user rows",
+    "/api/enrichment/status":
+        "install-level enrichment maintenance status (shared daily quota); aggregate "
+        "counts only, part of the out-of-scope owner-gated bulk-maintenance cluster",
+    "/api/traits/ai/status":
+        "install-level AI-classification maintenance status; aggregate unclassified "
+        "count only, part of the out-of-scope owner-gated api_traits_ai_run cluster",
+}
+
+_SWEEP_PATHS = frozenset(url.split("?")[0] for _, url, _ in READ_SWEEP)
+
+
+def test_every_api_get_route_is_isolation_covered():
+    """Enumerate the live url_map: every non-public /api/ GET rule must be in the
+    READ sweep, a dedicated isolation test, or the explicit allow-list. A newly
+    added unscoped GET route fails here until triaged."""
+    import app as app_module
+
+    public = app_module._PUBLIC_PATHS
+    uncovered: list[str] = []
+    for rule in app_module.app.url_map.iter_rules():
+        methods = rule.methods or set()
+        if "GET" not in methods:
+            continue
+        path = str(rule.rule)
+        if not path.startswith("/api/"):
+            continue
+        if path in public or path.startswith("/static/"):
+            continue
+        if path in _SWEEP_PATHS:
+            continue
+        if path in _DEDICATED_ISOLATION_TESTS:
+            continue
+        if path in _ISOLATION_ALLOWLIST:
+            continue
+        uncovered.append(path)
+
+    assert not uncovered, (
+        "Untriaged /api/ GET routes (scope them + add to READ_SWEEP/dedicated "
+        "test, or allow-list with a justification): " + ", ".join(sorted(uncovered))
+    )
