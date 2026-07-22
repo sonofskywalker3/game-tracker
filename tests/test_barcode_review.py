@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from tests.helpers_multiuser import seed_barcode_review
+import barcode
+from tests.helpers_multiuser import app_ctx_as, seed_barcode_review, seed_game
 
 # mu_db fixture comes from conftest's re-export (tests/conftest.py); importing
 # it here too would shadow the fixture parameter name below and trip ruff's
@@ -36,3 +37,110 @@ def test_seed_helper_inserts_pending_row(mu_db: sqlite3.Connection) -> None:
         (rid,)).fetchone()
     assert (row["user_id"], row["upc"], row["title"], row["status"]) == (
         2, "0123456789012", "Halo", "pending")
+
+
+def test_queue_upsert_then_pending_for_user(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-A", user_id=2, platform="PS",
+                         igdb_id=42, title="Halo", cover_url="c.jpg", game_id=7)
+    row = barcode.pending_for_user(mu_db, "U-A", 2)
+    assert row["title"] == "Halo" and row["igdb_id"] == 42 and row["platform"] == "PS"
+    # A resubmission upserts the SAME row (UNIQUE(user_id, upc)), not a duplicate.
+    barcode.queue_upsert(mu_db, upc="U-A", user_id=2, platform="XBOX", title="Halo 2")
+    assert mu_db.execute(
+        "SELECT COUNT(*) FROM barcode_link_review WHERE user_id=2 AND upc='U-A'"
+    ).fetchone()[0] == 1
+    row2 = barcode.pending_for_user(mu_db, "U-A", 2)
+    assert row2["title"] == "Halo 2" and row2["platform"] == "XBOX"
+
+
+def test_pending_is_submitter_scoped(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-B", user_id=2, title="Only Mine")
+    assert barcode.pending_for_user(mu_db, "U-B", 2) is not None
+    assert barcode.pending_for_user(mu_db, "U-B", 1) is None  # owner doesn't see it
+
+
+def test_resolve_uses_own_pending_but_not_others(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-C", user_id=2, platform="PS",
+                         igdb_id=55, title="Provisional Game")
+    with app_ctx_as(2):
+        res = barcode.resolve(mu_db, "U-C", user_id=2)
+    assert res["source"] == "provisional"
+    assert res["candidates"][0]["title"] == "Provisional Game"
+    assert res["candidates"][0]["igdb_id"] == 55
+    # A different user has no registry row and no pending row -> not provisional.
+    with app_ctx_as(1):
+        other = barcode.resolve(mu_db, "U-C", user_id=1)
+    assert other["source"] != "provisional"
+
+
+def test_resolve_provisional_derives_ownership_for_submitter(mu_db):
+    seed_game(mu_db, 2, "Owned Provisional", igdb_id=77)
+    barcode.queue_upsert(mu_db, upc="U-D", user_id=2, igdb_id=77,
+                         title="Owned Provisional", platform="PS")
+    with app_ctx_as(2):
+        res = barcode.resolve(mu_db, "U-D", user_id=2)
+    assert res["candidates"][0]["owned_game_id"] is not None
+
+
+def test_approve_writes_edited_identity_no_game_id(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-E", user_id=2, platform="PS",
+                         igdb_id=10, title="Wrong Title", game_id=99)
+    review_id = mu_db.execute(
+        "SELECT id FROM barcode_link_review WHERE upc='U-E'").fetchone()[0]
+    barcode.approve(mu_db, review_id, title="Correct Title")
+    reg = barcode.registry_get(mu_db, "U-E")
+    assert reg["title"] == "Correct Title"       # edited value won
+    assert reg["igdb_id"] == 10                   # untouched field preserved
+    assert reg["game_id"] is None                 # game_id NOT carried into registry
+    row = mu_db.execute(
+        "SELECT status, title, resolved_at FROM barcode_link_review WHERE id=?",
+        (review_id,)).fetchone()
+    assert row["status"] == "approved" and row["title"] == "Correct Title"
+    assert row["resolved_at"] is not None
+
+
+def test_approved_resolves_for_everyone(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-F", user_id=2, platform="PS",
+                         igdb_id=11, title="Shared Now")
+    review_id = mu_db.execute(
+        "SELECT id FROM barcode_link_review WHERE upc='U-F'").fetchone()[0]
+    barcode.approve(mu_db, review_id)
+    with app_ctx_as(1):
+        res = barcode.resolve(mu_db, "U-F", user_id=1)  # a non-submitter
+    assert res["source"] == "cache"
+    assert res["candidates"][0]["title"] == "Shared Now"
+
+
+def test_reject_stops_provisional(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-G", user_id=2, title="Rejectme")
+    review_id = mu_db.execute(
+        "SELECT id FROM barcode_link_review WHERE upc='U-G'").fetchone()[0]
+    barcode.reject(mu_db, review_id)
+    assert mu_db.execute(
+        "SELECT status FROM barcode_link_review WHERE id=?", (review_id,)
+    ).fetchone()[0] == "rejected"
+    assert barcode.pending_for_user(mu_db, "U-G", 2) is None  # no longer pending
+    assert barcode.registry_get(mu_db, "U-G") is None          # no registry write
+
+
+def test_approve_reject_not_found_and_not_pending(mu_db):
+    import pytest
+    with pytest.raises(ValueError, match="not found"):
+        barcode.approve(mu_db, 999999)
+    barcode.queue_upsert(mu_db, upc="U-H", user_id=2, title="X")
+    rid = mu_db.execute("SELECT id FROM barcode_link_review WHERE upc='U-H'").fetchone()[0]
+    barcode.reject(mu_db, rid)
+    with pytest.raises(ValueError, match="not pending"):
+        barcode.approve(mu_db, rid)          # already rejected
+    with pytest.raises(ValueError, match="not pending"):
+        barcode.reject(mu_db, rid)
+
+
+def test_list_pending_only_pending(mu_db):
+    barcode.queue_upsert(mu_db, upc="U-I", user_id=2, title="Pending One")
+    barcode.queue_upsert(mu_db, upc="U-J", user_id=1, title="Pending Two")
+    rid = mu_db.execute("SELECT id FROM barcode_link_review WHERE upc='U-J'").fetchone()[0]
+    barcode.reject(mu_db, rid)
+    items = barcode.list_pending(mu_db)
+    upcs = {i["upc"] for i in items}
+    assert upcs == {"U-I"}  # rejected U-J excluded

@@ -364,6 +364,91 @@ def registry_upcs_for_game(conn: sqlite3.Connection, game_id: int) -> list[dict]
     return [{"upc": r["upc"], "platform": r["platform"]} for r in rows]
 
 
+def queue_upsert(conn: sqlite3.Connection, *, upc: str, user_id: int,
+                 platform: str | None = None, igdb_id: int | None = None,
+                 title: str | None = None, cover_url: str | None = None,
+                 game_id: int | None = None) -> None:
+    """Enqueue (or refresh) a tester's pending barcode link.
+
+    ON CONFLICT(user_id, upc) a resubmission refreshes the proposed identity,
+    re-sets status to 'pending', clears resolved_at, and PRESERVES created_at."""
+    conn.execute(
+        "INSERT INTO barcode_link_review "
+        "(user_id, upc, platform, igdb_id, title, cover_url, game_id, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now')) "
+        "ON CONFLICT(user_id, upc) DO UPDATE SET "
+        "platform=excluded.platform, igdb_id=excluded.igdb_id, "
+        "title=excluded.title, cover_url=excluded.cover_url, "
+        "game_id=excluded.game_id, status='pending', resolved_at=NULL",
+        (user_id, upc, platform, igdb_id, title, cover_url, game_id),
+    )
+
+
+def pending_for_user(conn: sqlite3.Connection, upc: str,
+                     user_id: int) -> dict | None:
+    """The caller's OWN pending review row for this UPC, or None. Submitter-scoped."""
+    row = conn.execute(
+        "SELECT id, upc, igdb_id, title, platform, cover_url, game_id "
+        "FROM barcode_link_review "
+        "WHERE user_id = ? AND upc = ? AND status = 'pending'",
+        (user_id, upc),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_pending(conn: sqlite3.Connection) -> list[dict]:
+    """All pending review rows across submitters (owner review list)."""
+    rows = conn.execute(
+        "SELECT id, user_id, upc, platform, igdb_id, title, cover_url, game_id, "
+        "created_at FROM barcode_link_review "
+        "WHERE status = 'pending' ORDER BY created_at, id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approve(conn: sqlite3.Connection, review_id: int, *,
+            title: str | None = None, igdb_id: int | None = None,
+            platform: str | None = None, cover_url: str | None = None) -> None:
+    """Approve a pending row into the shared registry (edit-before-approve).
+
+    Supplied overrides win over the submitted values; the merged IDENTITY (never
+    game_id) is written to barcode_registry and mirrored back onto the row, which
+    is marked approved. Raises ValueError if missing / not pending."""
+    row = conn.execute(
+        "SELECT upc, title, igdb_id, platform, cover_url, status "
+        "FROM barcode_link_review WHERE id = ?", (review_id,)).fetchone()
+    if row is None:
+        raise ValueError("review not found")
+    if row["status"] != "pending":
+        raise ValueError("review not pending")
+    final_title = title if title is not None else row["title"]
+    final_igdb = igdb_id if igdb_id is not None else row["igdb_id"]
+    final_platform = platform if platform is not None else row["platform"]
+    final_cover = cover_url if cover_url is not None else row["cover_url"]
+    registry_put(conn, row["upc"], igdb_id=final_igdb, title=final_title,
+                 platform=final_platform, cover_url=final_cover)
+    conn.execute(
+        "UPDATE barcode_link_review SET title = ?, igdb_id = ?, platform = ?, "
+        "cover_url = ?, status = 'approved', resolved_at = datetime('now') "
+        "WHERE id = ?",
+        (final_title, final_igdb, final_platform, final_cover, review_id))
+
+
+def reject(conn: sqlite3.Connection, review_id: int) -> None:
+    """Reject a pending row (plain reject: provisional stops, UPC resubmittable).
+
+    Raises ValueError if missing / not pending. No registry write."""
+    row = conn.execute(
+        "SELECT status FROM barcode_link_review WHERE id = ?", (review_id,)).fetchone()
+    if row is None:
+        raise ValueError("review not found")
+    if row["status"] != "pending":
+        raise ValueError("review not pending")
+    conn.execute(
+        "UPDATE barcode_link_review SET status = 'rejected', "
+        "resolved_at = datetime('now') WHERE id = ?", (review_id,))
+
+
 def _owned_game_id(conn: sqlite3.Connection, title: str,
                    user_id: int = identity.OWNER_USER_ID) -> int | None:
     """id of an existing game owned by ``user_id`` whose stored match key equals
@@ -476,6 +561,24 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
                     "title": cached["title"],
                     "platform": cached["platform"],
                     "cover_url": cached["cover_url"],
+                    "game_type": None,
+                    "owned_game_id": owned_id,
+                    "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
+                }]}
+
+    # A tester's own pending (unapproved) link resolves provisionally for THEM
+    # only -- never for other users, and never from the shared registry until the
+    # owner approves it. Identity only; ownership derived per-user as in the cache
+    # path above.
+    pending = pending_for_user(conn, upc, user_id)
+    if pending:
+        owned_id = _owned_game_id(conn, pending["title"] or "", user_id)
+        return {"upc": upc, "source": "provisional",
+                "scanned_platform": pending["platform"], "candidates": [{
+                    "igdb_id": pending["igdb_id"],
+                    "title": pending["title"],
+                    "platform": pending["platform"],
+                    "cover_url": pending["cover_url"],
                     "game_type": None,
                     "owned_game_id": owned_id,
                     "owned_platforms": owned_platforms_for(conn, owned_id) if owned_id else [],
