@@ -13,6 +13,7 @@ mocking is ever needed to act as a particular user.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 
@@ -91,3 +92,94 @@ def seed_game(conn: sqlite3.Connection, user_id: int, title: str) -> int:
     )
     conn.commit()
     return game_id
+
+
+def set_status(conn: sqlite3.Connection, game_id: int, status: str) -> None:
+    """Force a game's user_ratings status (e.g. 'playing') and commit."""
+    conn.execute(
+        "INSERT INTO user_ratings (game_id, status) VALUES (?, ?) "
+        "ON CONFLICT(game_id) DO UPDATE SET status = excluded.status",
+        (game_id, status),
+    )
+    conn.commit()
+
+
+def seed_slot(conn: sqlite3.Connection, user_id: int, label: str,
+              *, platforms: list[str] | None = None, sort_order: int = 0) -> int:
+    """Insert a slot (a per-user root) owned by ``user_id`` and return its id."""
+    cur = conn.execute(
+        "INSERT INTO slots (label, sort_order, platforms, user_id) VALUES (?, ?, ?, ?)",
+        (label, sort_order, json.dumps(platforms or []), user_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_tag(conn: sqlite3.Connection, user_id: int, name: str,
+             category: str = "custom") -> int:
+    """Insert a tag (a per-user root) owned by ``user_id`` and return its id."""
+    cur = conn.execute(
+        "INSERT INTO tags (name, category, user_id) VALUES (?, ?, ?)",
+        (name, category, user_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_game_tag(conn: sqlite3.Connection, game_id: int, tag_id: int) -> None:
+    """Link a game to a tag (the game_tags child m2m) and commit."""
+    conn.execute(
+        "INSERT OR IGNORE INTO game_tags (game_id, tag_id) VALUES (?, ?)",
+        (game_id, tag_id),
+    )
+    conn.commit()
+
+
+def seed_collection_membership(conn: sqlite3.Connection, game_id: int,
+                               collection_id: int, name: str) -> None:
+    """Put a game into a (shared-catalog) collection via game_collections."""
+    conn.execute(
+        "INSERT OR IGNORE INTO collections (id, name, slug) VALUES (?, ?, ?)",
+        (collection_id, name, name.lower().replace(" ", "-")),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO game_collections (game_id, collection_id) VALUES (?, ?)",
+        (game_id, collection_id),
+    )
+    conn.commit()
+
+
+def seed_decider_chat(conn: sqlite3.Connection, game_id: int, user_id: int,
+                      *, slot_label: str = "Quick",
+                      messages: list[dict] | None = None) -> int:
+    """Insert a saved decider chat (decider_chats root) for a game/user."""
+    payload = messages or [{"role": "user", "content": "what next"}]
+    cur = conn.execute(
+        "INSERT INTO decider_chats (game_id, slot_label, messages, user_id) "
+        "VALUES (?, ?, ?, ?)",
+        (game_id, slot_label, json.dumps(payload), user_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_dlc(conn: sqlite3.Connection, game_id: int, name: str,
+             *, owned: int = 0) -> int:
+    """Insert a DLC row (child of games) and return its id."""
+    cur = conn.execute(
+        "INSERT INTO dlc (game_id, name, owned, source) VALUES (?, ?, ?, 'manual')",
+        (game_id, name, owned),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_profile(conn: sqlite3.Connection, user_id: int, *,
+                 work_start_min: int | None = None) -> None:
+    """Insert/replace this user's user_profile row (a per-user root)."""
+    conn.execute(
+        "INSERT INTO user_profile (user_id, work_start_min) VALUES (?, ?) "
+        "ON CONFLICT(user_id) DO UPDATE SET work_start_min = excluded.work_start_min",
+        (user_id, work_start_min),
+    )
+    conn.commit()

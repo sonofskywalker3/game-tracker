@@ -7,29 +7,35 @@ import sqlite3
 
 import anthropic
 import config
+from identity import OWNER_USER_ID
 
 logger = logging.getLogger(__name__)
 
 MODEL_MAX_TOKENS = 1024
 
 
-def build_library_snapshot(conn: sqlite3.Connection) -> str:
+def build_library_snapshot(conn: sqlite3.Connection,
+                           user_id: int = OWNER_USER_ID) -> str:
     """One compact line per game, deterministic (ordered by id). Status-tagged so the
     model knows what is finished. Each line starts with #<id> for citation.
     Platforms are fetched in one query (not per game) — the snapshot rebuilds on
-    every chat turn, and its bytes must stay identical for prompt caching."""
+    every chat turn, and its bytes must stay identical for prompt caching. Scoped
+    to ``user_id`` so the prompt only ever contains the acting user's library."""
     rows = conn.execute("""
         SELECT g.id, g.title, g.session_length,
                ur.status, ur.priority, ur.hours_played
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
+        WHERE g.user_id = ?
         ORDER BY g.id
-    """).fetchall()
+    """, (user_id,)).fetchall()
     plats: dict[int, list[str]] = {}
     for p in conn.execute(
             "SELECT gp.game_id, p.short_name FROM game_platforms gp "
             "JOIN platforms p ON p.id = gp.platform_id "
-            "ORDER BY gp.game_id, p.short_name").fetchall():
+            "JOIN games g ON g.id = gp.game_id "
+            "WHERE g.user_id = ? "
+            "ORDER BY gp.game_id, p.short_name", (user_id,)).fetchall():
         if p["short_name"]:
             plats.setdefault(p["game_id"], []).append(p["short_name"])
     lines = []
@@ -75,7 +81,8 @@ REPLAY_INTENT: tuple[str, ...] = (
 
 
 def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict],
-                               completionist: bool = False) -> set[int]:
+                               completionist: bool = False,
+                               user_id: int = OWNER_USER_ID) -> set[int]:
     """Game ids that must not be auto-suggested: finished (completed/100%) and
     dropped games, unless a user message signals replay/completion intent (which
     lifts both — the INSTRUCTIONS promise dropped games are replayable on request).
@@ -92,8 +99,10 @@ def _suppressed_suggestion_ids(conn: sqlite3.Connection, messages: list[dict],
         return set()
     placeholders = ",".join("?" for _ in statuses)
     rows = conn.execute(
-        f"SELECT game_id FROM user_ratings WHERE status IN ({placeholders})",
-        tuple(statuses)).fetchall()
+        f"SELECT ur.game_id FROM user_ratings ur "
+        f"JOIN games g ON g.id = ur.game_id "
+        f"WHERE ur.status IN ({placeholders}) AND g.user_id = ?",
+        (*statuses, user_id)).fetchall()
     return {r["game_id"] for r in rows}
 
 
@@ -148,25 +157,30 @@ def parse_suggestions(text: str, valid_ids: set[int]) -> tuple[str, list[int]]:
 
 
 def save_chat(conn: sqlite3.Connection, game_id: int, slot_id: int | None,
-              slot_label: str | None, messages: list[dict]) -> int | None:
+              slot_label: str | None, messages: list[dict],
+              user_id: int = OWNER_USER_ID) -> int | None:
     """Persist a decider conversation tied to a game (picks-tab history). Keeps only
-    real user/assistant dialogue; returns the new row id, or None if nothing to save."""
+    real user/assistant dialogue; returns the new row id, or None if nothing to save.
+    decider_chats is a per-user root: the row is stamped with ``user_id``."""
     clean = [{"role": m.get("role"), "content": m.get("content")}
              for m in (messages or [])
              if m.get("role") in ("user", "assistant") and m.get("content")]
     if not clean:
         return None
     cur = conn.execute(
-        "INSERT INTO decider_chats (game_id, slot_id, slot_label, messages) VALUES (?, ?, ?, ?)",
-        (game_id, slot_id, slot_label, json.dumps(clean)))
+        "INSERT INTO decider_chats (game_id, slot_id, slot_label, messages, user_id) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (game_id, slot_id, slot_label, json.dumps(clean), user_id))
     return cur.lastrowid
 
 
-def list_chats(conn: sqlite3.Connection, game_id: int) -> list[dict]:
-    """Saved decider conversations for a game, newest first."""
+def list_chats(conn: sqlite3.Connection, game_id: int,
+               user_id: int = OWNER_USER_ID) -> list[dict]:
+    """Saved decider conversations for a game (this user's), newest first."""
     rows = conn.execute(
         "SELECT id, slot_label, messages, created_at FROM decider_chats "
-        "WHERE game_id = ? ORDER BY created_at DESC, id DESC", (game_id,)).fetchall()
+        "WHERE game_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC",
+        (game_id, user_id)).fetchall()
     out = []
     for r in rows:
         try:
@@ -183,9 +197,12 @@ def _make_client(api_key: str):
 
 
 def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
-           *, client=None, model: str | None = None) -> dict:
+           *, client=None, model: str | None = None,
+           user_id: int = OWNER_USER_ID) -> dict:
     """Run one blocking decider turn. Returns {"reply", "suggestions": [game_id]} or
-    {"error": ...}. `client`/`model` are injectable for tests; otherwise built from config."""
+    {"error": ...}. `client`/`model` are injectable for tests; otherwise built from
+    config. Scoped to ``user_id`` so the library, valid ids, and finished-game
+    suppression only ever consider the acting user's games."""
     if client is None:
         key, cfg_model = config.get_anthropic_config()
         if not key:
@@ -194,11 +211,12 @@ def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
         model = model or cfg_model
     model = model or "claude-sonnet-4-6"
 
-    snapshot = build_library_snapshot(conn)
+    snapshot = build_library_snapshot(conn, user_id)
     system = build_system_prompt(snapshot)
     slot_context = build_slot_context(conn, slot)
     payload = [{"role": "user", "content": slot_context}] + list(messages)
-    valid_ids = {r["id"] for r in conn.execute("SELECT id FROM games").fetchall()}
+    valid_ids = {r["id"] for r in conn.execute(
+        "SELECT id FROM games WHERE user_id = ?", (user_id,)).fetchall()}
 
     try:
         resp = client.messages.create(
@@ -212,6 +230,6 @@ def decide(conn: sqlite3.Connection, slot: dict, messages: list[dict],
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
     reply, ids = parse_suggestions(text, valid_ids)
     suppressed = _suppressed_suggestion_ids(
-        conn, messages, completionist=bool(slot.get("completionist")))
+        conn, messages, completionist=bool(slot.get("completionist")), user_id=user_id)
     ids = [i for i in ids if i not in suppressed]   # backstop: never pin finished/dropped
     return {"reply": reply, "suggestions": ids}

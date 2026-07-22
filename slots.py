@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from identity import OWNER_USER_ID
 from recommendation import calculate_tag_affinity
 from slot_signals import latency_tolerant, effective_time_to_beat_minutes
 
@@ -40,15 +41,18 @@ def _game_tag_names(conn: sqlite3.Connection, game_id: int) -> set[str]:
 
 
 def _candidate_platforms(conn: sqlite3.Connection,
-                         excluded: frozenset[str]) -> dict[int, set[str]]:
-    """Platform short_names per candidate game id, one query for the whole pool."""
+                         excluded: frozenset[str],
+                         user_id: int = OWNER_USER_ID) -> dict[int, set[str]]:
+    """Platform short_names per candidate game id, one query for the whole pool
+    (scoped to the acting user's games)."""
     rows = conn.execute(f"""
         SELECT gp.game_id, p.short_name
         FROM game_platforms gp
         JOIN platforms p ON p.id = gp.platform_id
         JOIN user_ratings ur ON ur.game_id = gp.game_id
-        WHERE ur.status NOT IN ({",".join("?" * len(excluded))})
-    """, tuple(excluded)).fetchall()
+        JOIN games g ON g.id = gp.game_id
+        WHERE ur.status NOT IN ({",".join("?" * len(excluded))}) AND g.user_id = ?
+    """, (*excluded, user_id)).fetchall()
     by_game: dict[int, set[str]] = {}
     for r in rows:
         by_game.setdefault(r["game_id"], set()).add(r["short_name"])
@@ -56,15 +60,18 @@ def _candidate_platforms(conn: sqlite3.Connection,
 
 
 def _candidate_tags(conn: sqlite3.Connection,
-                    excluded: frozenset[str]) -> dict[int, set[str]]:
-    """Tag names per candidate game id, one query for the whole pool."""
+                    excluded: frozenset[str],
+                    user_id: int = OWNER_USER_ID) -> dict[int, set[str]]:
+    """Tag names per candidate game id, one query for the whole pool (scoped to the
+    acting user's games)."""
     rows = conn.execute(f"""
         SELECT gt.game_id, t.name
         FROM game_tags gt
         JOIN tags t ON t.id = gt.tag_id
         JOIN user_ratings ur ON ur.game_id = gt.game_id
-        WHERE ur.status NOT IN ({",".join("?" * len(excluded))})
-    """, tuple(excluded)).fetchall()
+        JOIN games g ON g.id = gt.game_id
+        WHERE ur.status NOT IN ({",".join("?" * len(excluded))}) AND g.user_id = ?
+    """, (*excluded, user_id)).fetchall()
     by_game: dict[int, set[str]] = {}
     for r in rows:
         by_game.setdefault(r["game_id"], set()).add(r["name"])
@@ -78,20 +85,27 @@ def _taste_boost_by_tag(affinity: dict) -> dict[str, float]:
             if data["avg_rating"] >= TASTE_MIN_AVG_RATING}
 
 
-def _recent_fatigue_tags(conn: sqlite3.Connection) -> set[str]:
-    """Tags of the few most-recently-removed slot_history games (genre fatigue)."""
+def _recent_fatigue_tags(conn: sqlite3.Connection,
+                         user_id: int = OWNER_USER_ID) -> set[str]:
+    """Tags of the few most-recently-removed slot_history games (genre fatigue),
+    scoped to the acting user's games (slot_history has no user_id; its game is the
+    ownership root, and it must survive slot deletion, so gate on the game owner)."""
     rows = conn.execute(
-        "SELECT game_id FROM slot_history ORDER BY removed_at DESC LIMIT ?",
-        (FATIGUE_RECENT_COUNT,)).fetchall()
+        "SELECT sh.game_id FROM slot_history sh "
+        "JOIN games g ON g.id = sh.game_id "
+        "WHERE g.user_id = ? ORDER BY sh.removed_at DESC LIMIT ?",
+        (user_id, FATIGUE_RECENT_COUNT)).fetchall()
     tags: set[str] = set()
     for r in rows:
         tags |= _game_tag_names(conn, r["game_id"])
     return tags
 
 
-def _pinned_game_ids(conn: sqlite3.Connection) -> set[int]:
+def _pinned_game_ids(conn: sqlite3.Connection,
+                     user_id: int = OWNER_USER_ID) -> set[int]:
     rows = conn.execute(
-        "SELECT current_game_id FROM slots WHERE current_game_id IS NOT NULL").fetchall()
+        "SELECT current_game_id FROM slots "
+        "WHERE current_game_id IS NOT NULL AND user_id = ?", (user_id,)).fetchall()
     return {r["current_game_id"] for r in rows}
 
 
@@ -112,13 +126,17 @@ def _dismissed_game_ids(conn: sqlite3.Connection, slot_id: int) -> set[int]:
         "SELECT game_id FROM slot_dismissals WHERE slot_id = ?", (slot_id,)).fetchall()}
 
 
-def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> list[dict]:
-    """Return ranked eligible games for a slot: [{"game", "score", "reasons"}]."""
+def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10,
+                    user_id: int = OWNER_USER_ID) -> list[dict]:
+    """Return ranked eligible games for a slot: [{"game", "score", "reasons"}].
+
+    The candidate pool + all sidecar reads are scoped to ``user_id`` so another
+    user's games can never be ranked into this user's slate."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
     streamable_only = bool(slot.get("streamable_only"))
     taste_boosts = _taste_boost_by_tag(calculate_tag_affinity(conn))
-    fatigue_tags = _recent_fatigue_tags(conn)
-    pinned = _pinned_game_ids(conn)
+    fatigue_tags = _recent_fatigue_tags(conn, user_id)
+    pinned = _pinned_game_ids(conn, user_id)
     dismissed = _dismissed_game_ids(conn, slot["id"]) if slot.get("id") else set()
 
     completionist = bool(slot.get("completionist"))
@@ -128,11 +146,11 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10) -> li
         SELECT g.*, ur.status, ur.priority, ur.hours_played
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
-        WHERE ur.status NOT IN ({placeholders})
-    """, tuple(excluded)).fetchall()
+        WHERE ur.status NOT IN ({placeholders}) AND g.user_id = ?
+    """, (*excluded, user_id)).fetchall()
     # Batched sidecar data for the whole candidate pool (was 2 queries per game).
-    platforms_by_game = _candidate_platforms(conn, excluded)
-    tags_by_game = _candidate_tags(conn, excluded)
+    platforms_by_game = _candidate_platforms(conn, excluded, user_id)
+    tags_by_game = _candidate_tags(conn, excluded, user_id)
 
     out = []
     for game in rows:
@@ -224,10 +242,13 @@ def _log_history(conn: sqlite3.Connection, slot_id: int, game_id: int,
         (slot_id, game_id, goal, outcome))
 
 
-def reorder(conn: sqlite3.Connection, slot_ids: list[int]) -> None:
-    """Set each slot's sort_order to its position in slot_ids. Caller owns the commit."""
+def reorder(conn: sqlite3.Connection, slot_ids: list[int],
+            user_id: int = OWNER_USER_ID) -> None:
+    """Set each slot's sort_order to its position in slot_ids. Only the acting
+    user's slots are touched (an unowned id in the list is a no-op). Caller commits."""
     for index, slot_id in enumerate(slot_ids):
-        conn.execute("UPDATE slots SET sort_order = ? WHERE id = ?", (index, slot_id))
+        conn.execute("UPDATE slots SET sort_order = ? WHERE id = ? AND user_id = ?",
+                     (index, slot_id, user_id))
 
 
 def _clear_slot(conn: sqlite3.Connection, slot_id: int) -> None:
@@ -298,29 +319,37 @@ def apply_outcome(conn: sqlite3.Connection, slot_id: int, outcome: str, *,
     raise ValueError(f"unknown outcome: {outcome!r}")
 
 
-def recently_finished(conn: sqlite3.Connection, limit: int = 6) -> list[dict]:
-    """Most-recently removed slot_history rows joined to game title/cover."""
+def recently_finished(conn: sqlite3.Connection, limit: int = 6,
+                      user_id: int = OWNER_USER_ID) -> list[dict]:
+    """Most-recently removed slot_history rows joined to game title/cover, scoped to
+    the acting user's games."""
     rows = conn.execute("""
         SELECT h.outcome, h.removed_at, g.id AS game_id, g.title, g.cover_url
         FROM slot_history h JOIN games g ON g.id = h.game_id
+        WHERE g.user_id = ?
         ORDER BY h.removed_at DESC LIMIT ?
-    """, (limit,)).fetchall()
+    """, (user_id, limit)).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_slots_state(conn: sqlite3.Connection, candidate_limit: int = 8) -> list[dict]:
-    """Full slate state: each slot dict + its current_game dict + ranked candidates."""
-    slot_rows = conn.execute("SELECT * FROM slots ORDER BY sort_order, id").fetchall()
+def get_slots_state(conn: sqlite3.Connection, candidate_limit: int = 8,
+                    user_id: int = OWNER_USER_ID) -> list[dict]:
+    """Full slate state (this user's slots): each slot dict + its current_game dict
+    + ranked candidates."""
+    slot_rows = conn.execute(
+        "SELECT * FROM slots WHERE user_id = ? ORDER BY sort_order, id",
+        (user_id,)).fetchall()
     state = []
     for row in slot_rows:
         slot = dict(row)
         current_game = None
         if slot["current_game_id"]:
-            g = conn.execute("SELECT * FROM games WHERE id = ?",
-                             (slot["current_game_id"],)).fetchone()
+            g = conn.execute("SELECT * FROM games WHERE id = ? AND user_id = ?",
+                             (slot["current_game_id"], user_id)).fetchone()
             current_game = dict(g) if g else None
         slot["current_game"] = current_game
-        slot["candidates"] = rank_candidates(conn, slot, limit=candidate_limit)
+        slot["candidates"] = rank_candidates(
+            conn, slot, limit=candidate_limit, user_id=user_id)
         slot["windows"] = [
             dict(wr) for wr in conn.execute(
                 "SELECT id, days, start_min, end_min FROM slot_schedule_window "
