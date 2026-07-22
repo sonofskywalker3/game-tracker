@@ -61,7 +61,8 @@ def calculate_tag_affinity(conn, user_id: int = OWNER_USER_ID):
     return affinity
 
 
-def get_recommendations(conn, limit=10, status_filter='backlog'):
+def get_recommendations(conn, limit=10, status_filter='backlog',
+                        user_id: int = OWNER_USER_ID):
     """
     Get recommended games to play next.
 
@@ -74,7 +75,7 @@ def get_recommendations(conn, limit=10, status_filter='backlog'):
 
     Returns list of (game, score, reasons) tuples.
     """
-    tag_affinity = calculate_tag_affinity(conn)
+    tag_affinity = calculate_tag_affinity(conn, user_id)
 
     # Get all backlog games with their data
     games = conn.execute("""
@@ -92,9 +93,9 @@ def get_recommendations(conn, limit=10, status_filter='backlog'):
             g.created_at
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
-        WHERE ur.status = ?
+        WHERE ur.status = ? AND g.user_id = ?
         ORDER BY g.title
-    """, (status_filter,)).fetchall()
+    """, (status_filter, user_id)).fetchall()
 
     recommendations = []
 
@@ -170,7 +171,7 @@ def get_recommendations(conn, limit=10, status_filter='backlog'):
     return recommendations[:limit]
 
 
-def get_quick_picks(conn, count=3):
+def get_quick_picks(conn, count=3, user_id: int = OWNER_USER_ID):
     """
     Get quick game suggestions for different moods/situations.
     Returns dict with categories.
@@ -188,13 +189,14 @@ def get_quick_picks(conn, count=3):
         LEFT JOIN game_tags gt ON gt.game_id = g.id
         LEFT JOIN tags t ON t.id = gt.tag_id
         WHERE ur.status = 'backlog'
+        AND g.user_id = ?
         AND (g.session_length = 'short'
              OR COALESCE(g.time_to_beat_override_minutes, g.hltb_main_minutes) <= ?
              OR t.name IN ('Indie', 'Puzzle', 'Platformer'))
         GROUP BY g.id
         ORDER BY ur.priority DESC, RANDOM()
         LIMIT ?
-    """, (QUICK_SESSION_MAX_MINUTES, count)).fetchall()
+    """, (user_id, QUICK_SESSION_MAX_MINUTES, count)).fetchall()
 
     # "Highly rated" - best critic scores. A game qualifies when EITHER score
     # clears the bar, so display/sort by the better of the two — not by a
@@ -205,10 +207,11 @@ def get_quick_picks(conn, count=3):
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status = 'backlog'
+        AND g.user_id = ?
         AND (g.metacritic_score >= ? OR g.opencritic_score >= ?)
         ORDER BY score DESC
         LIMIT ?
-    """, (ACCLAIMED_MIN_CRITIC_SCORE, ACCLAIMED_MIN_CRITIC_SCORE, count)).fetchall()
+    """, (user_id, ACCLAIMED_MIN_CRITIC_SCORE, ACCLAIMED_MIN_CRITIC_SCORE, count)).fetchall()
 
     # "Hidden gems" - lower profile but potentially good
     picks['hidden_gems'] = conn.execute("""
@@ -216,11 +219,12 @@ def get_quick_picks(conn, count=3):
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status = 'backlog'
+        AND g.user_id = ?
         AND g.metacritic_score IS NULL
         AND g.opencritic_score IS NULL
         ORDER BY ur.priority DESC, RANDOM()
         LIMIT ?
-    """, (count,)).fetchall()
+    """, (user_id, count)).fetchall()
 
     # "Continue playing" - games in progress
     picks['continue_playing'] = conn.execute("""
@@ -228,9 +232,10 @@ def get_quick_picks(conn, count=3):
         FROM games g
         JOIN user_ratings ur ON ur.game_id = g.id
         WHERE ur.status = 'playing'
+        AND g.user_id = ?
         ORDER BY ur.updated_at DESC
         LIMIT ?
-    """, (count,)).fetchall()
+    """, (user_id, count)).fetchall()
 
     return picks
 

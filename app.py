@@ -1897,9 +1897,10 @@ def api_recommendations():
     """Get game recommendations."""
     conn = get_db()
     limit = request.args.get('limit', 10, type=int)
+    uid = identity.current_user_id()
 
-    recs = get_recommendations(conn, limit=limit)
-    picks = get_quick_picks(conn)
+    recs = get_recommendations(conn, limit=limit, user_id=uid)
+    picks = get_quick_picks(conn, user_id=uid)
 
     # Convert Row objects to dicts for quick picks
     quick_picks = {}
@@ -2425,9 +2426,14 @@ def api_update_settings():
 def api_covers_status():
     """Get cover art status."""
     conn = get_db()
-    total = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    uid = identity.current_user_id()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM games WHERE user_id = ?", (uid,)
+    ).fetchone()[0]
     missing = conn.execute(
-        "SELECT COUNT(*) FROM games WHERE cover_url IS NULL OR cover_url = ''"
+        "SELECT COUNT(*) FROM games WHERE user_id = ? "
+        "AND (cover_url IS NULL OR cover_url = '')",
+        (uid,),
     ).fetchone()[0]
     conn.close()
 
