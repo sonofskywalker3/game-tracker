@@ -1384,6 +1384,35 @@ def migrate_barcode_registry_drop_owned(conn: sqlite3.Connection) -> None:
     return
 
 
+def migrate_barcode_link_review(conn: sqlite3.Connection) -> None:
+    """Per-user queue of tester barcode links awaiting owner approval.
+
+    A non-owner POST /api/barcode/link enqueues a pending row here (provisional
+    for that submitter only) instead of writing the shared barcode_registry; the
+    owner approves it into the registry or rejects it. Fresh CREATE with user_id
+    inline (no ADD COLUMN, so no FK-off/on caution needed). Idempotent."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS barcode_link_review (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            upc TEXT NOT NULL,
+            platform TEXT,
+            igdb_id INTEGER,
+            title TEXT,
+            cover_url TEXT,
+            game_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            resolved_at TEXT,
+            UNIQUE(user_id, upc)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_barcode_link_review_status "
+        "ON barcode_link_review(status)")
+    conn.commit()
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -1696,6 +1725,8 @@ def migrate_db():
     migrate_barcode_registry(conn)
     migrate_barcode_registry_cover(conn)
     migrate_barcode_registry_drop_owned(conn)
+    # Per-user tester barcode-link approval queue (FK -> users, created first).
+    migrate_barcode_link_review(conn)
     migrate_game_platform_format(conn)
     migrate_tagged_games_to_physical(conn)
     migrate_decider_chats(conn)
