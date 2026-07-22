@@ -353,11 +353,26 @@ def test_dlc_review_count_is_per_user(mu_db):
 
 def test_stats_reflect_only_acting_users_library(mu_db):
     seed_game(mu_db, user_id=1, title="A-One")
-    seed_game(mu_db, user_id=1, title="A-Two")
+    a_two = seed_game(mu_db, user_id=1, title="A-Two")
     seed_game(mu_db, user_id=2, title="B-One")
+
+    # User 1's second game is on Steam (a platform user 2 owns nothing on) --
+    # this exercises by_platform, which the naive COUNT(gp.game_id) leaked
+    # cross-user (a LEFT-joined-away row from another owner is still non-NULL
+    # on gp.game_id, so it got counted regardless of the g.user_id filter).
+    steam_id = mu_db.execute(
+        "SELECT id FROM platforms WHERE short_name = 'Steam'"
+    ).fetchone()["id"]
+    mu_db.execute(
+        "INSERT INTO game_platforms (game_id, platform_id) VALUES (?, ?)",
+        (a_two, steam_id),
+    )
+    mu_db.commit()
+
     stats = client_as(2).get("/api/stats").get_json()
     assert stats["total_games"] == 1                     # only user 2's game
     assert stats["by_status"].get("backlog") == 1
+    assert stats["by_platform"].get("Steam", 0) == 0      # not user 1's Steam game
 
 
 # --- The picked_game_id injection (hole B) - NOT surfaced by a naive sweep ---

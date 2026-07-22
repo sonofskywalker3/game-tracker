@@ -2332,7 +2332,7 @@ def api_stats():
 
     # By platform (game_platforms gated via the parent game's owner).
     platform_counts = conn.execute("""
-        SELECT p.short_name, COUNT(gp.game_id) as count
+        SELECT p.short_name, COUNT(g.id) as count
         FROM platforms p
         LEFT JOIN game_platforms gp ON gp.platform_id = p.id
         LEFT JOIN games g ON g.id = gp.game_id AND g.user_id = ?
