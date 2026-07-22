@@ -2433,7 +2433,8 @@ def api_barcode_resolve():
             client_id = None
 
     conn = get_db()
-    result = barcode.resolve(conn, upc, client_id=client_id, token=token)
+    result = barcode.resolve(conn, upc, client_id=client_id, token=token,
+                             user_id=identity.current_user_id())
     conn.close()
     return jsonify(result)
 

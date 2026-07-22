@@ -12,6 +12,7 @@ from collections.abc import Callable
 import requests
 
 import dedup
+import identity
 import igdb_match
 import import_scraped
 import models
@@ -363,18 +364,22 @@ def registry_upcs_for_game(conn: sqlite3.Connection, game_id: int) -> list[dict]
     return [{"upc": r["upc"], "platform": r["platform"]} for r in rows]
 
 
-def _owned_game_id(conn: sqlite3.Connection, title: str) -> int | None:
-    """id of an existing game whose stored match key equals the title's, else None.
+def _owned_game_id(conn: sqlite3.Connection, title: str,
+                   user_id: int = identity.OWNER_USER_ID) -> int | None:
+    """id of an existing game owned by ``user_id`` whose stored match key equals
+    the title's, else None.
 
     games.normalized_title stores normalize_title(clean_title(...)) — the
     import_scraped.match_key composition — so the same composed key is applied
     here; a bare normalize_title would miss titles clean_title changes (edition
-    suffixes, leading region tags, ...)."""
+    suffixes, leading region tags, ...). Scoped to ``user_id`` so ownership never
+    crosses users (the shared barcode_registry cache is not scoped this way —
+    only the derived owned_game_id is)."""
     if not title:
         return None
     row = conn.execute(
-        "SELECT id FROM games WHERE normalized_title = ?",
-        (import_scraped.match_key(title),),
+        "SELECT id FROM games WHERE user_id = ? AND normalized_title = ?",
+        (user_id, import_scraped.match_key(title)),
     ).fetchone()
     return row["id"] if row else None
 
@@ -451,14 +456,20 @@ def _drop_edition_duplicates(raw: list[dict]) -> list[dict]:
 
 
 def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
-            token: str | None = None) -> dict:
+            token: str | None = None,
+            user_id: int = identity.OWNER_USER_ID) -> dict:
     """Resolve a UPC to candidate games: cache -> UPC API -> IGDB match.
+
+    ``barcode_registry`` (the cache) is a SHARED global UPC->identity mapping;
+    ownership (owned_game_id/owned_platforms) is always derived fresh from
+    ``user_id``'s own games, never from the registry's stored game_id, so two
+    users scanning the same UPC each see only their own ownership.
 
     Returns {upc, source, scanned_platform, candidates[, product_title]}. Each candidate:
     {igdb_id, title, platform, cover_url, game_type, owned_game_id, owned_platforms}."""
     cached = registry_get(conn, upc)
     if cached:
-        owned_id = cached["game_id"] or _owned_game_id(conn, cached["title"] or "")
+        owned_id = _owned_game_id(conn, cached["title"] or "", user_id)
         return {"upc": upc, "source": "cache",
                 "scanned_platform": cached["platform"], "candidates": [{
                     "igdb_id": cached["igdb_id"],
@@ -497,7 +508,7 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
         if not used_hint:
             result_platform = None
         for c in raw[:MAX_CANDIDATES]:
-            owned_id = _owned_game_id(conn, c.get("name") or "")
+            owned_id = _owned_game_id(conn, c.get("name") or "", user_id)
             shorts = igdb_match.short_names_for(c.get("platforms") or [])
             candidates.append({
                 "igdb_id": c.get("igdb_id"),
@@ -515,7 +526,7 @@ def resolve(conn: sqlite3.Connection, upc: str, *, client_id: str | None = None,
                 continue
             cons = []
             for k in igdb_match.bundle_constituents(cand["igdb_id"], client_id, token):
-                owned_id = _owned_game_id(conn, k.get("name") or "")
+                owned_id = _owned_game_id(conn, k.get("name") or "", user_id)
                 cons.append({
                     "title": k.get("name"),
                     "owned_game_id": owned_id,

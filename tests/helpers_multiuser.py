@@ -16,11 +16,13 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 from flask.testing import FlaskClient
 
 import app as app_module
+import identity
 import models
 from models import normalize_title
 
@@ -74,16 +76,18 @@ def client_as(user_id: int) -> FlaskClient:
     return client
 
 
-def seed_game(conn: sqlite3.Connection, user_id: int, title: str) -> int:
+def seed_game(conn: sqlite3.Connection, user_id: int, title: str,
+              *, igdb_id: int | None = None) -> int:
     """Insert a game owned by ``user_id`` (+ a backlog rating) and return its id.
 
     Sets ``normalized_title`` via ``normalize_title`` so the per-user
     ``UNIQUE(user_id, normalized_title)`` constraint is respected, and commits so
     the app's own ``get_db()`` connection (a separate handle on the same file)
-    sees the row."""
+    sees the row. ``igdb_id`` is optional (Task 8: barcode-registry linkage
+    tests seed it to line a game up with a cached registry row's igdb_id)."""
     cur = conn.execute(
-        "INSERT INTO games (title, normalized_title, user_id) VALUES (?, ?, ?)",
-        (title, normalize_title(title), user_id),
+        "INSERT INTO games (title, normalized_title, user_id, igdb_id) VALUES (?, ?, ?, ?)",
+        (title, normalize_title(title), user_id, igdb_id),
     )
     game_id = cur.lastrowid
     conn.execute(
@@ -183,3 +187,30 @@ def seed_profile(conn: sqlite3.Connection, user_id: int, *,
         (user_id, work_start_min),
     )
     conn.commit()
+
+
+def seed_registry(conn: sqlite3.Connection, *, upc: str, igdb_id: int | None = None,
+                  title: str | None = None, platform: str | None = None,
+                  cover_url: str | None = None) -> None:
+    """Insert a row into the SHARED ``barcode_registry`` UPC cache (Task 8).
+
+    Not tied to any user -- the registry is a global identity cache; only
+    derived ownership (``owned_game_id``/``owned_platforms``) is per-user.
+    Deliberately never sets ``game_id`` (the column the leak used to trust)."""
+    conn.execute(
+        "INSERT INTO barcode_registry "
+        "(upc, igdb_id, title, platform, cover_url, confirmed_at) "
+        "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+        (upc, igdb_id, title, platform, cover_url),
+    )
+    conn.commit()
+
+
+@contextmanager
+def app_ctx_as(user_id: int) -> Iterator[None]:
+    """Push a request context with ``user_id`` bound as the acting user, so
+    ``identity.current_user_id()`` returns it for direct (non-route) calls
+    (e.g. ``barcode.resolve``) made inside the ``with`` block."""
+    with app_module.app.test_request_context():
+        identity.set_request_user(user_id)
+        yield
