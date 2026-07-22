@@ -2383,6 +2383,8 @@ def api_stats():
 @app.route('/api/settings', methods=['GET'])
 def api_get_settings():
     """Get current settings (credentials masked)."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     config = load_config()
     # Mask secrets for display
     masked = {
@@ -2403,6 +2405,8 @@ def api_get_settings():
 @app.route('/api/settings', methods=['PUT'])
 def api_update_settings():
     """Update settings."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     data = request.json
     updates = {}
 
@@ -2577,6 +2581,8 @@ def api_igdb_search():
 @app.route('/api/covers/fetch', methods=['POST'])
 def api_fetch_covers():
     """Start fetching missing cover art in background."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     client_id, client_secret = get_twitch_credentials()
 
     if not client_id or not client_secret:
@@ -2593,6 +2599,8 @@ def api_fetch_covers():
 @app.route('/api/covers/fetch/status')
 def api_fetch_covers_status():
     """Get current status of cover fetch background task."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     return jsonify(get_cover_fetch_status())
 
 
@@ -2695,6 +2703,8 @@ _SCRAPE_CLOUD_DISABLED = "scraping runs on the home machine in cloud mode"
 @app.route('/api/scrape/start', methods=['POST'])
 def api_scrape_start():
     """Start a web-driven vendor library scrape in the background."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     if auth.cloud_mode():
         return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     vendor = (request.json or {}).get('vendor', '')
@@ -2709,6 +2719,8 @@ def api_scrape_start():
 @app.route('/api/scrape/continue', methods=['POST'])
 def api_scrape_continue():
     """Signal that the user has logged in and the scrape may proceed."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     if auth.cloud_mode():
         return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     scrape_service.signal_continue()
@@ -2718,6 +2730,8 @@ def api_scrape_continue():
 @app.route('/api/scrape/cancel', methods=['POST'])
 def api_scrape_cancel():
     """Request cancellation of the running scrape."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     if auth.cloud_mode():
         return jsonify({"error": _SCRAPE_CLOUD_DISABLED}), 409
     scrape_service.cancel()
@@ -2727,6 +2741,8 @@ def api_scrape_cancel():
 @app.route('/api/scrape/status')
 def api_scrape_status():
     """Current scrape phase/progress for the UI poller."""
+    if not identity.is_owner():
+        return jsonify({'error': 'owner only'}), 403
     if auth.cloud_mode():
         return jsonify({"phase": "disabled", "message": _SCRAPE_CLOUD_DISABLED})
     return jsonify(scrape_service.status())
@@ -2735,7 +2751,11 @@ def api_scrape_status():
 @app.route('/api/import/scrape', methods=['POST'])
 def api_import_scrape():
     """Ingest a scrape JSON payload pushed from the home machine and run the
-    import pipeline cloud-side. Auth: the import token (handled by the gate)."""
+    import pipeline cloud-side. Auth: the scraper import token ONLY -- a valid
+    user session alone is rejected (only the downloaded scraper client, bearing
+    the token, may push scrape imports)."""
+    if not auth.is_import_authorized(request.headers):
+        return jsonify({'error': 'import token required'}), 403
     payload = request.get_json(silent=True) or {}
     source = payload.get('source', '')
     games = payload.get('games')
