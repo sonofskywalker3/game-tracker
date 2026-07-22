@@ -206,6 +206,25 @@ def seed_registry(conn: sqlite3.Connection, *, upc: str, igdb_id: int | None = N
     conn.commit()
 
 
+def seed_barcode_review(conn: sqlite3.Connection, user_id: int, *,
+                        upc: str = "0123456789012", platform: str | None = "PS",
+                        igdb_id: int | None = None, title: str | None = "Some Game",
+                        cover_url: str | None = None, game_id: int | None = None,
+                        status: str = "pending") -> int:
+    """Insert a barcode_link_review row for ``user_id`` and return its id.
+
+    Mirrors the tester-submitted queue row. ``game_id`` is the submitter's own
+    proposed library row (informational; never written to the shared registry)."""
+    cur = conn.execute(
+        "INSERT INTO barcode_link_review "
+        "(user_id, upc, platform, igdb_id, title, cover_url, game_id, status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, upc, platform, igdb_id, title, cover_url, game_id, status),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
 def seed_dlc_review(conn: sqlite3.Connection, user_id: int, *,
                     game_id: int | None = None, addon_title: str = "Season Pass",
                     reason: str = "no parent", source: str | None = None,
