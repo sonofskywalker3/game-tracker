@@ -550,6 +550,119 @@ def test_owner_only_write_routes_reject_non_owner(mu_db, monkeypatch):
 
 
 # ===========================================================================
+# OWNER-GATED admin/install-level surface (owner-directed pre-deploy lockdown).
+#
+# The owner's directive: "gate any APIs that don't have to do with a user
+# managing their own database." Per-install config (settings), install-wide
+# background jobs (cover-fetch), and the in-app browser scraper (scrape/*) are
+# admin/install operations -- a beta tester manages only their own library, not
+# the install's credentials/jobs. Non-owner => 403 and the job never starts;
+# the owner (user 1) keeps full access. Auth is off in tests, so the default
+# client is the owner -- only these tests act as a non-owner (user 2).
+# ===========================================================================
+
+
+def _isolate_config(tmp_path, monkeypatch, initial=None):
+    """Point config_module.CONFIG_PATH at a throwaway file (never real config.json)."""
+    import json
+
+    import config as config_module
+    path = tmp_path / "config.json"
+    if initial is not None:
+        path.write_text(json.dumps(initial))
+    monkeypatch.setattr(config_module, "CONFIG_PATH", path)
+    return path
+
+
+def test_admin_get_routes_reject_non_owner(mu_db, tmp_path, monkeypatch):
+    """The install-level admin GET reads are owner-only: a non-owner gets 403
+    (no install secrets / job state leak), the owner still gets 200."""
+    _isolate_config(tmp_path, monkeypatch, {"steam_id": "111"})
+    for url in ("/api/settings", "/api/covers/fetch/status", "/api/scrape/status"):
+        assert client_as(2).get(url).status_code == 403
+        assert client_as(1).get(url).status_code == 200
+
+
+def test_admin_write_routes_reject_non_owner(mu_db, tmp_path, monkeypatch):
+    """The install-level admin WRITES are owner-only: a non-owner gets 403 and
+    the job/config write is never reached; the owner is permitted (non-403).
+
+    All heavy work (config save, cover-fetch background thread, scraper start) is
+    mocked, and call-flags prove the non-owner never triggers any of them."""
+    import app as app_module
+    import scrape_service
+
+    _isolate_config(tmp_path, monkeypatch, {"steam_id": "111"})
+    started = {"save": False, "covers": False, "scrape": False}
+
+    def fake_save(updates):
+        started["save"] = True
+
+    def fake_covers(cid, secret):
+        started["covers"] = True
+        return True, "started"
+
+    def fake_scrape_start(vendor):
+        started["scrape"] = True
+        return True, "started"
+
+    monkeypatch.setattr(app_module, "save_config", fake_save)
+    monkeypatch.setattr(app_module, "get_twitch_credentials", lambda: ("cid", "sec"))
+    monkeypatch.setattr(app_module, "run_cover_fetch_background", fake_covers)
+    monkeypatch.setattr(scrape_service, "start", fake_scrape_start)
+
+    # Non-owner: every write 403, and no job/config write is reached.
+    cl2 = client_as(2)
+    assert cl2.put("/api/settings", json={"steam_id": "222"}).status_code == 403
+    assert cl2.post("/api/covers/fetch").status_code == 403
+    assert cl2.post("/api/scrape/start", json={"vendor": "xbox"}).status_code == 403
+    assert started == {"save": False, "covers": False, "scrape": False}
+
+    # Owner: permitted past the gate (not 403).
+    cl1 = client_as(1)
+    assert cl1.put("/api/settings", json={"steam_id": "222"}).status_code != 403
+    assert cl1.post("/api/covers/fetch").status_code != 403
+    assert cl1.post("/api/scrape/start", json={"vendor": "xbox"}).status_code != 403
+
+
+# ===========================================================================
+# SCRAPER-IMPORT-TOKEN-ONLY: /api/import/scrape.
+#
+# Only the downloaded scraper client (bearing the import token) may push scrape
+# imports -- a valid USER SESSION alone (even the owner's browser) is rejected.
+# The before_request gate already lets token requests through; the handler now
+# also enforces the token so a session-authed request cannot reach the ingest.
+# ===========================================================================
+
+
+def test_import_scrape_is_scraper_token_only(mu_db, monkeypatch):
+    """A session-authed request WITHOUT the import token is rejected (403), and
+    the ingest is never reached; a request WITH the token is accepted."""
+    import scrape_service
+
+    ingested = {"called": False}
+
+    def fake_import(source, games):
+        ingested["called"] = True
+        return {"new_games": len(games)}
+
+    monkeypatch.setattr(scrape_service, "import_pushed", fake_import)
+    payload = {"source": "xbox", "games": [{"title": "Halo"}]}
+
+    # Session-authed non-scraper (no token) -- rejected even as the owner.
+    assert client_as(2).post("/api/import/scrape", json=payload).status_code == 403
+    assert client_as(1).post("/api/import/scrape", json=payload).status_code == 403
+    assert ingested["called"] is False
+
+    # With the import token: accepted, ingest runs.
+    monkeypatch.setenv("BACKLOGQUEST_IMPORT_TOKEN", "push-tok")
+    resp = client_as(2).post("/api/import/scrape", json=payload,
+                             headers={"Authorization": "Bearer push-tok"})
+    assert resp.status_code == 200
+    assert ingested["called"] is True
+
+
+# ===========================================================================
 # COMPLETENESS GATE: every non-public /api/ GET rule must be accounted for.
 #
 # The READ/WRITE sweeps are hand-maintained, so an unscoped route can ship
@@ -587,20 +700,13 @@ _ISOLATION_ALLOWLIST = {
     "/api/platforms":
         "global platform catalog (no user_id); positive control "
         "test_positive_platforms_visible_to_both_users",
-    "/api/settings":
-        "per-install config only (Twitch/Anthropic/Steam creds, masked); "
-        "no per-user library data",
     "/api/igdb/search":
-        "external IGDB catalog search over the network; touches no per-user DB rows",
+        "external IGDB catalog search over the network; touches no per-user DB rows. "
+        "Per-user-usable: a beta tester searches IGDB to add games to their library",
     "/api/barcode/resolve":
         "shared UPC->identity registry; per-user ownership derivation is scoped "
-        "via user_id (test_positive_barcode_registry_identity_visible_to_both)",
-    "/api/scrape/status":
-        "install-level scrape phase/progress for the single home-machine importer; "
-        "no per-user rows",
-    "/api/covers/fetch/status":
-        "install-level background cover-fetch task state (task_manager singleton); "
-        "no per-user rows",
+        "via user_id (test_positive_barcode_registry_identity_visible_to_both). "
+        "Per-user-usable: a beta tester scans a barcode to add to their library",
 }
 
 # GET routes gated to the owner (identity.is_owner()): a non-owner gets 403 and
@@ -613,6 +719,18 @@ _OWNER_ONLY = {
     "/api/traits/ai/status":
         "owner-only install-wide AI-classification maintenance status; non-owner "
         "gets 403, never reads the aggregate unclassified count",
+    "/api/settings":
+        "owner-only per-install config (Twitch/Anthropic/Steam creds); non-owner "
+        "gets 403, never reads install secrets. "
+        "Covered by test_admin_get_routes_reject_non_owner",
+    "/api/covers/fetch/status":
+        "owner-only install-wide cover-fetch background task state (task_manager "
+        "singleton); non-owner gets 403. "
+        "Covered by test_admin_get_routes_reject_non_owner",
+    "/api/scrape/status":
+        "owner-only install-level scrape phase/progress for the single home-machine "
+        "importer; non-owner gets 403. "
+        "Covered by test_admin_get_routes_reject_non_owner",
 }
 
 _SWEEP_PATHS = frozenset(url.split("?")[0] for _, url, _ in READ_SWEEP)

@@ -1,5 +1,16 @@
 import scrape_service
 
+# The import endpoint is now scraper-token-only (owner-directed lockdown): a
+# request must bear the import token even when the auth gate is off. These tests
+# supply it so they exercise the pipeline behavior, not the token gate itself
+# (the token gate has its own tests below).
+_IMPORT_TOKEN = "test-import-tok"
+_IMPORT_HEADERS = {"Authorization": f"Bearer {_IMPORT_TOKEN}"}
+
+
+def _with_token(monkeypatch):
+    monkeypatch.setenv("BACKLOGQUEST_IMPORT_TOKEN", _IMPORT_TOKEN)
+
 
 def _payload():
     return {"source": "xbox", "count": 1, "games": [
@@ -8,6 +19,7 @@ def _payload():
 
 
 def test_import_pushed_runs_pipeline(client, monkeypatch):
+    _with_token(monkeypatch)
     seen = {}
     def fake_pipeline(conn, vendor, games, *, store_resolvers=True, **kw):
         seen["vendor"] = vendor
@@ -16,7 +28,7 @@ def test_import_pushed_runs_pipeline(client, monkeypatch):
         return {"vendor": vendor, "new_games": len(games)}
     monkeypatch.setattr(scrape_service, "_run_pipeline", fake_pipeline)
 
-    res = client.post("/api/import/scrape", json=_payload())
+    res = client.post("/api/import/scrape", json=_payload(), headers=_IMPORT_HEADERS)
     assert res.status_code == 200
     body = res.get_json()
     assert body["success"] is True
@@ -24,13 +36,17 @@ def test_import_pushed_runs_pipeline(client, monkeypatch):
     assert seen == {"vendor": "xbox", "store_resolvers": False, "n": 1}
 
 
-def test_import_scrape_rejects_unknown_source(client):
-    res = client.post("/api/import/scrape", json={"source": "bogus", "games": []})
+def test_import_scrape_rejects_unknown_source(client, monkeypatch):
+    _with_token(monkeypatch)
+    res = client.post("/api/import/scrape", json={"source": "bogus", "games": []},
+                      headers=_IMPORT_HEADERS)
     assert res.status_code == 400
 
 
-def test_import_scrape_rejects_missing_games(client):
-    res = client.post("/api/import/scrape", json={"source": "xbox"})
+def test_import_scrape_rejects_missing_games(client, monkeypatch):
+    _with_token(monkeypatch)
+    res = client.post("/api/import/scrape", json={"source": "xbox"},
+                      headers=_IMPORT_HEADERS)
     assert res.status_code == 400
 
 
