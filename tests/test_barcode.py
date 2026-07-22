@@ -1,9 +1,11 @@
 import requests
 
 import barcode
+import identity
 import igdb_match
 import import_scraped
 import models
+from tests.helpers_multiuser import app_ctx_as, seed_game, seed_registry
 
 
 class _FakeResp:
@@ -311,3 +313,15 @@ def test_resolve_trailing_3d_falls_back_to_unstripped_for_other_platform(temp_db
     assert cand["igdb_id"] == 700
     assert cand["platform"] == "Genesis"      # candidate's own platform, not the 3DS guess
     assert result["scanned_platform"] is None  # wrong 3DS hint dropped
+
+
+def test_registry_ownership_is_per_user(mu_db):
+    # same UPC identity cached globally; only user 1 owns the game
+    seed_registry(mu_db, upc="123", igdb_id=7, title="Celeste")
+    seed_game(mu_db, user_id=1, title="Celeste", igdb_id=7)
+    with app_ctx_as(1):
+        r1 = barcode.resolve(mu_db, "123", user_id=identity.current_user_id())
+    with app_ctx_as(2):
+        r2 = barcode.resolve(mu_db, "123", user_id=identity.current_user_id())
+    assert r1["candidates"][0]["owned_game_id"] is not None
+    assert r2["candidates"][0]["owned_game_id"] is None

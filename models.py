@@ -1353,6 +1353,20 @@ def migrate_barcode_registry_cover(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_barcode_registry_drop_owned(conn: sqlite3.Connection) -> None:
+    """Documented no-op (multi-user Task 8).
+
+    barcode_registry is a SHARED global UPC->identity cache; ownership
+    (owned_game_id/owned_platforms) is now always derived per-user from the
+    acting user's own games (barcode._owned_game_id), never from this table's
+    game_id column. The column is left in place for back-compat -- registry_put
+    and registry_upcs_for_game both still read/write it harmlessly -- but the
+    read path (barcode.resolve) ignores it entirely. Nothing to migrate; this
+    exists to document the read-path contract change and give it a place in
+    migrate_db()'s history."""
+    return
+
+
 TRAIT_FIELDS = ("session_length",)
 
 
@@ -1664,6 +1678,7 @@ def migrate_db():
     migrate_psn_addons_synced_at(conn)
     migrate_barcode_registry(conn)
     migrate_barcode_registry_cover(conn)
+    migrate_barcode_registry_drop_owned(conn)
     migrate_game_platform_format(conn)
     migrate_tagged_games_to_physical(conn)
     migrate_decider_chats(conn)
