@@ -25,6 +25,7 @@ def conn(tmp_path):
             normalized_title TEXT,
             cover_url TEXT,
             igdb_id INTEGER,
+            user_id INTEGER NOT NULL DEFAULT 1,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE dlc (
@@ -60,6 +61,9 @@ def conn(tmp_path):
         );
     """)
     models.migrate_dlc_review_queue(c)
+    # The per-user column the real schema carries (Task 9: rematch scoping
+    # defaults to owner=1, so backfilled rows stay visible).
+    c.execute("ALTER TABLE dlc_review_queue ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
     c.commit()
     yield c
     c.close()

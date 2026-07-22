@@ -25,6 +25,7 @@ import igdb_dlc
 import igdb_resolve
 import import_scraped
 import models
+from identity import OWNER_USER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -106,19 +107,22 @@ def _split_via_catalog(conn: sqlite3.Connection, norm_title: str, names: list[st
 
 def _queue_review(conn: sqlite3.Connection, *, game_id: int, game_title: str,
                   igdb_id: int, bundle_name: str | None, constituents: list[str],
-                  reason: str) -> bool:
-    """Add one open review row; a still-open row for the same IGDB bundle is
-    left alone (re-imports must not multiply the queue). Returns True if added."""
+                  reason: str, user_id: int = OWNER_USER_ID) -> bool:
+    """Add one open review row owned by ``user_id``; a still-open row for the
+    same IGDB bundle owned by that user is left alone (re-imports must not
+    multiply the queue). Returns True if added. The de-dupe check is per-user so
+    one user's queued bundle never suppresses another user's."""
     open_row = conn.execute(
-        "SELECT 1 FROM bundle_review_queue WHERE igdb_id = ? "
-        "AND resolved_at IS NULL AND dismissed_at IS NULL", (igdb_id,)).fetchone()
+        "SELECT 1 FROM bundle_review_queue WHERE igdb_id = ? AND user_id = ? "
+        "AND resolved_at IS NULL AND dismissed_at IS NULL",
+        (igdb_id, user_id)).fetchone()
     if open_row:
         return False
     conn.execute(
         "INSERT INTO bundle_review_queue (game_id, game_title, igdb_id, "
-        "bundle_name, constituents_json, reason) VALUES (?, ?, ?, ?, ?, ?)",
+        "bundle_name, constituents_json, reason, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (game_id, game_title, igdb_id, bundle_name,
-         json.dumps(constituents, ensure_ascii=False), reason))
+         json.dumps(constituents, ensure_ascii=False), reason, user_id))
     conn.commit()
     return True
 
@@ -132,11 +136,14 @@ def handle_enriched_bundle(conn: sqlite3.Connection, game_id: int, igdb_payload:
     verdicts queue for the owner. Returns an outcome dict ({"action": ...}) or
     None when the game row is gone.
     """
-    row = conn.execute("SELECT title, normalized_title FROM games WHERE id = ?",
-                       (game_id,)).fetchone()
+    row = conn.execute(
+        "SELECT title, normalized_title, user_id FROM games WHERE id = ?",
+        (game_id,)).fetchone()
     if not row:
         return None
     norm = row["normalized_title"]
+    # The review row belongs to whoever owns the bundle game being enriched.
+    owner_id = row["user_id"] if row["user_id"] is not None else OWNER_USER_ID
     catalog = models.load_bundle_catalog()
     if norm in catalog:
         names = list(catalog[norm].get("constituents") or ())
@@ -159,18 +166,20 @@ def handle_enriched_bundle(conn: sqlite3.Connection, game_id: int, igdb_payload:
     added = _queue_review(conn, game_id=game_id, game_title=row["title"],
                           igdb_id=igdb_payload["id"],
                           bundle_name=igdb_payload.get("name"),
-                          constituents=names, reason=reason)
+                          constituents=names, reason=reason, user_id=owner_id)
     logger.info("bundle fallback: %r -> review (%s)%s", row["title"], reason,
                 "" if added else " [already queued]")
     return {"action": "queued", "reason": reason, "constituents": names}
 
 
-def pending_reviews(conn: sqlite3.Connection) -> list[dict]:
-    """Open review items, oldest first, with constituents decoded."""
+def pending_reviews(conn: sqlite3.Connection,
+                    user_id: int = OWNER_USER_ID) -> list[dict]:
+    """Open review items owned by ``user_id``, oldest first, constituents decoded."""
     rows = conn.execute(
         "SELECT id, game_id, game_title, igdb_id, bundle_name, "
         "constituents_json, reason, created_at FROM bundle_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL ORDER BY id").fetchall()
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ? "
+        "ORDER BY id", (user_id,)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -184,17 +193,20 @@ def pending_reviews(conn: sqlite3.Connection) -> list[dict]:
 
 def approve_review(conn: sqlite3.Connection, review_id: int, *,
                    client_id: str | None, token: str | None,
-                   constituents: list[str] | None = None) -> dict:
+                   constituents: list[str] | None = None,
+                   user_id: int = OWNER_USER_ID) -> dict:
     """Approve one queued split: cache it into the per-user catalog and expand
     through the shared path, then mark the row resolved.
 
     `constituents` overrides the proposed list (the owner may edit it in the
-    modal). Raises ValueError for a missing/closed row or an empty final list.
+    modal). Scoped to ``user_id`` (defaults to owner): a row the acting user
+    does not own reads as "not found" (→ 404). Raises ValueError for a
+    missing/closed row or an empty final list.
     """
     row = conn.execute(
         "SELECT id, game_id, game_title, igdb_id, constituents_json, "
-        "resolved_at, dismissed_at FROM bundle_review_queue WHERE id = ?",
-        (review_id,)).fetchone()
+        "resolved_at, dismissed_at FROM bundle_review_queue WHERE id = ? AND user_id = ?",
+        (review_id, user_id)).fetchone()
     if row is None:
         raise ValueError(f"bundle review {review_id} not found")
     if row["resolved_at"] is not None or row["dismissed_at"] is not None:
@@ -218,9 +230,18 @@ def approve_review(conn: sqlite3.Connection, review_id: int, *,
     return {"action": "split", "constituents": names, "report": report}
 
 
-def dismiss_review(conn: sqlite3.Connection, review_id: int) -> None:
-    """Mark one review row dismissed (the phantom bundle row stays as-is)."""
+def dismiss_review(conn: sqlite3.Connection, review_id: int,
+                   user_id: int = OWNER_USER_ID) -> None:
+    """Mark one review row dismissed (the phantom bundle row stays as-is).
+
+    Scoped to ``user_id`` (defaults to owner): dismissing a row the acting user
+    does not own raises ValueError ("not found" → 404), never a cross-user
+    write."""
+    if conn.execute("SELECT 1 FROM bundle_review_queue WHERE id = ? AND user_id = ?",
+                    (review_id, user_id)).fetchone() is None:
+        raise ValueError(f"bundle review {review_id} not found")
     conn.execute("UPDATE bundle_review_queue SET dismissed_at = CURRENT_TIMESTAMP "
-                 "WHERE id = ? AND resolved_at IS NULL AND dismissed_at IS NULL",
-                 (review_id,))
+                 "WHERE id = ? AND user_id = ? "
+                 "AND resolved_at IS NULL AND dismissed_at IS NULL",
+                 (review_id, user_id))
     conn.commit()

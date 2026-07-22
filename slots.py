@@ -134,7 +134,7 @@ def rank_candidates(conn: sqlite3.Connection, slot: dict, limit: int = 10,
     user's games can never be ranked into this user's slate."""
     platforms = set(json.loads(slot["platforms"])) if slot.get("platforms") else set()
     streamable_only = bool(slot.get("streamable_only"))
-    taste_boosts = _taste_boost_by_tag(calculate_tag_affinity(conn))
+    taste_boosts = _taste_boost_by_tag(calculate_tag_affinity(conn, user_id))
     fatigue_tags = _recent_fatigue_tags(conn, user_id)
     pinned = _pinned_game_ids(conn, user_id)
     dismissed = _dismissed_game_ids(conn, slot["id"]) if slot.get("id") else set()

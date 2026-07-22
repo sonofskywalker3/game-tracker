@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import dlc_ownership
 from dlc_ownership import Match, OwnershipReport
+from identity import OWNER_USER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def resolve(
     picked_game_id: int | None = None,
     picked_dlc_id: int | None = None,
     create_new_dlc: bool = False,
+    user_id: int = OWNER_USER_ID,
 ) -> Match:
     """Apply one user-resolved review item; return the resulting Match.
 
@@ -47,6 +49,14 @@ def resolve(
     and returns a Match with that reason. Raises ValueError if the picked game
     or DLC doesn't exist, or if the row is dismissed, or if the choice count is
     wrong.
+
+    Every DB read is scoped to ``user_id`` (defaults to the owner so the
+    single-tenant/legacy path is unchanged): the review row, the picked game,
+    and the picked DLC's parent game must ALL belong to the acting user, so
+    user B can neither resolve user A's queue row nor write DLC ownership onto
+    user A's game via a caller-supplied picked_game_id/picked_dlc_id. A row or
+    target the acting user does not own reads as "not found" (→ 404 at the
+    route), never a cross-user write.
     """
     picks = [picked_game_id is not None, picked_dlc_id is not None, create_new_dlc]
     if sum(picks) != 1:
@@ -57,7 +67,8 @@ def resolve(
     row = conn.execute(
         "SELECT id, addon_title, source, external_id, source_title, reason, "
         "game_id, resolved_at, dismissed_at "
-        "FROM dlc_review_queue WHERE id = ?", (review_id,)).fetchone()
+        "FROM dlc_review_queue WHERE id = ? AND user_id = ?",
+        (review_id, user_id)).fetchone()
     if row is None:
         raise ValueError(f"review_id {review_id} not found")
     if row["resolved_at"] is not None:
@@ -69,15 +80,19 @@ def resolve(
     addon = {"title": row["addon_title"], "source": row["source"],
              "external_id": row["external_id"], "source_title": row["source_title"]}
 
-    # Resolve the parent for the apply call.
+    # Resolve the parent for the apply call. The picked game/DLC-parent must be
+    # owned by the acting user, else a user could write DLC ownership onto
+    # another user's game by supplying its id.
     if picked_dlc_id is not None:
         dlc_row = conn.execute(
-            "SELECT game_id FROM dlc WHERE id = ?", (picked_dlc_id,)).fetchone()
+            "SELECT d.game_id FROM dlc d JOIN games g ON g.id = d.game_id "
+            "WHERE d.id = ? AND g.user_id = ?", (picked_dlc_id, user_id)).fetchone()
         if dlc_row is None:
             raise ValueError(f"picked_dlc_id {picked_dlc_id} not found")
         parent = dlc_row["game_id"]
     elif picked_game_id is not None:
-        if conn.execute("SELECT 1 FROM games WHERE id = ?", (picked_game_id,)).fetchone() is None:
+        if conn.execute("SELECT 1 FROM games WHERE id = ? AND user_id = ?",
+                        (picked_game_id, user_id)).fetchone() is None:
             raise ValueError(f"picked_game_id {picked_game_id} not found")
         parent = picked_game_id
     else:  # create_new_dlc
@@ -122,7 +137,8 @@ def resolve(
     return Match(row["addon_title"], game_id=parent, reason="already owned")
 
 
-def rematch_unresolved(conn: sqlite3.Connection) -> RematchReport:
+def rematch_unresolved(conn: sqlite3.Connection,
+                       user_id: int = OWNER_USER_ID) -> RematchReport:
     """Re-run the full matcher over still-open review rows; clear those now linkable.
 
     Review rows queued before a matcher improvement (e.g. the PSN title-id
@@ -134,16 +150,25 @@ def rematch_unresolved(conn: sqlite3.Connection) -> RematchReport:
     scrape). A row is marked resolved only when the apply yields a real
     create/reconcile/already-owned outcome; rows that merely refine to an
     ambiguous-dlc review are left open. Pure DB; the caller owns commit.
+
+    Scoped to ``user_id`` (defaults to the owner): only the acting user's
+    library is reconciled and only their open queue rows are touched, so a
+    rematch can never link add-ons onto — or resolve queue rows against —
+    another user's games.
     """
     library = [(r["id"], r["normalized_title"])
-               for r in conn.execute("SELECT id, normalized_title FROM games")]
-    titles = {r["id"]: r["title"] for r in conn.execute("SELECT id, title FROM games")}
+               for r in conn.execute(
+                   "SELECT id, normalized_title FROM games WHERE user_id = ?", (user_id,))]
+    titles = {r["id"]: r["title"]
+              for r in conn.execute(
+                  "SELECT id, title FROM games WHERE user_id = ?", (user_id,))}
     prefix_map = dlc_ownership.psn_prefix_map(conn)
 
     rows = conn.execute(
         "SELECT id, addon_title, source, external_id, source_title, reason, game_id "
         "FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL ORDER BY id").fetchall()
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ? "
+        "ORDER BY id", (user_id,)).fetchall()
 
     report = RematchReport()
     for row in rows:
@@ -156,6 +181,12 @@ def rematch_unresolved(conn: sqlite3.Connection) -> RematchReport:
                 prefix_map, row["source"], row["external_id"])
         if not isinstance(parent, int):
             continue  # still unresolvable -- leave the row open
+
+        # The global PSN prefix_map spans every user's external ids; never apply
+        # to a game outside the acting user's (scoped) library.
+        library_ids = {gid for gid, _ in library}
+        if parent not in library_ids:
+            continue
 
         parent_norm = next((gnorm for gid, gnorm in library if gid == parent), "") or ""
         sub = OwnershipReport()
@@ -175,11 +206,17 @@ def rematch_unresolved(conn: sqlite3.Connection) -> RematchReport:
     return report
 
 
-def dismiss(conn: sqlite3.Connection, review_id: int) -> None:
-    """Mark a review row dismissed (user said: not a real add-on). Idempotent."""
-    if conn.execute("SELECT 1 FROM dlc_review_queue WHERE id = ?", (review_id,)).fetchone() is None:
+def dismiss(conn: sqlite3.Connection, review_id: int,
+            user_id: int = OWNER_USER_ID) -> None:
+    """Mark a review row dismissed (user said: not a real add-on). Idempotent.
+
+    Scoped to ``user_id`` (defaults to the owner): dismissing a queue row the
+    acting user does not own is a "not found" (→ 404 at the route), not a
+    cross-user write."""
+    if conn.execute("SELECT 1 FROM dlc_review_queue WHERE id = ? AND user_id = ?",
+                    (review_id, user_id)).fetchone() is None:
         raise ValueError(f"review_id {review_id} not found")
     conn.execute(
         "UPDATE dlc_review_queue "
         "SET dismissed_at = COALESCE(dismissed_at, CURRENT_TIMESTAMP) "
-        "WHERE id = ?", (review_id,))
+        "WHERE id = ? AND user_id = ?", (review_id, user_id))

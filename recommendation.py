@@ -10,6 +10,7 @@ Factors considered:
 """
 from datetime import datetime
 
+from identity import OWNER_USER_ID
 from models import get_db
 
 # Effective time-to-beat (override, else HLTB main) at or under this counts as a
@@ -19,12 +20,18 @@ QUICK_SESSION_MAX_MINUTES = 600
 ACCLAIMED_MIN_CRITIC_SCORE = 85
 
 
-def calculate_tag_affinity(conn):
+def calculate_tag_affinity(conn, user_id: int = OWNER_USER_ID):
     """
     Calculate user's affinity for each tag based on ratings of completed/played games.
     Returns dict: {tag_id: affinity_score}
+
+    Scoped to ``user_id`` (defaults to the owner) so the taste signal weights
+    only the acting user's own ratings — another user's ratings must never bias
+    this user's recommendations. Not a data leak (scores, not rows), but scoping
+    keeps the ranking correct per-user.
     """
-    # Get average rating per tag from games the user has rated
+    # Get average rating per tag from games the user has rated (gate the child
+    # tables via the parent game's owner).
     rows = conn.execute("""
         SELECT
             gt.tag_id,
@@ -34,10 +41,11 @@ def calculate_tag_affinity(conn):
         FROM game_tags gt
         JOIN tags t ON t.id = gt.tag_id
         JOIN user_ratings ur ON ur.game_id = gt.game_id
-        WHERE ur.rating IS NOT NULL
+        JOIN games g ON g.id = gt.game_id
+        WHERE ur.rating IS NOT NULL AND g.user_id = ?
         GROUP BY gt.tag_id
         HAVING game_count >= 1
-    """).fetchall()
+    """, (user_id,)).fetchall()
 
     affinity = {}
     for row in rows:

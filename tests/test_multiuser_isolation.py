@@ -6,14 +6,20 @@ nor mutate another user's games; unowned game ids yield 404, never 403.
 """
 from __future__ import annotations
 
+import pytest
+
 from tests.helpers_multiuser import (
     client_as,
+    seed_bundle_review,
     seed_collection_membership,
     seed_decider_chat,
     seed_dlc,
+    seed_dlc_review,
     seed_game,
+    seed_registry,
     seed_slot,
     seed_tag,
+    seed_upc_review,
     set_status,
 )
 
@@ -181,3 +187,230 @@ def test_delete_dlc_404_for_unowned_dlc(mu_db):
     dlc_id = seed_dlc(mu_db, a_game, "Season Pass")
     assert client_as(2).delete(f"/api/dlc/{dlc_id}").status_code == 404
     assert mu_db.execute("SELECT 1 FROM dlc WHERE id = ?", (dlc_id,)).fetchone() is not None
+
+
+# ===========================================================================
+# Task 9: the parametrized cross-user isolation SWEEP (the correctness gate).
+#
+# Two parametrized families cover the full user-facing route inventory:
+#   * READ sweep  - seed a user-1 row AND a user-2 row per route; as user 2,
+#     assert user 1's marker is absent from the body and user 2's own marker is
+#     present (isolation + a positive "the route still works" control in one).
+#   * WRITE sweep - seed a user-1-owned row; as user 2, the single-row action
+#     targeting its id returns 404 and leaves the row untouched.
+# Plus standalone positive controls (shared/global data stays visible to both)
+# and the picked_game_id injection test the sweep cannot surface on its own.
+# The per-root reads/writes above (games/slots/tags/collections/dlc/...) remain
+# as focused Task 6-8 regression tests; this sweep is the completeness checklist.
+# ===========================================================================
+
+
+# --- READ sweep: (label, url, seed_fn -> (user1_marker, user2_marker)) ------
+
+def _sweep_seed_games(conn) -> tuple[str, str]:
+    seed_game(conn, user_id=1, title="AAUSER1GAME")
+    seed_game(conn, user_id=2, title="BBUSER2GAME")
+    return "AAUSER1GAME", "BBUSER2GAME"
+
+
+def _sweep_seed_slots(conn) -> tuple[str, str]:
+    seed_slot(conn, user_id=1, label="AAUSER1SLOT")
+    seed_slot(conn, user_id=2, label="BBUSER2SLOT")
+    return "AAUSER1SLOT", "BBUSER2SLOT"
+
+
+def _sweep_seed_tags(conn) -> tuple[str, str]:
+    seed_tag(conn, user_id=1, name="AAUSER1TAG")
+    seed_tag(conn, user_id=2, name="BBUSER2TAG")
+    return "AAUSER1TAG", "BBUSER2TAG"
+
+
+def _sweep_seed_dlc_review(conn) -> tuple[str, str]:
+    # game_id NULL on purpose: the queue's own user_id column is the only thing
+    # that can isolate a no-parent row (a parent-JOIN cannot).
+    seed_dlc_review(conn, user_id=1, addon_title="AAUSER1DLCREV")
+    seed_dlc_review(conn, user_id=2, addon_title="BBUSER2DLCREV")
+    return "AAUSER1DLCREV", "BBUSER2DLCREV"
+
+
+def _sweep_seed_bundle_review(conn) -> tuple[str, str]:
+    seed_bundle_review(conn, user_id=1, game_title="AAUSER1BUNDLE")
+    seed_bundle_review(conn, user_id=2, game_title="BBUSER2BUNDLE")
+    return "AAUSER1BUNDLE", "BBUSER2BUNDLE"
+
+
+def _sweep_seed_enrichment_review(conn) -> tuple[str, str]:
+    # upc_review.game_id is NOT NULL - isolation rides the parent game's owner.
+    a_game = seed_game(conn, user_id=1, title="AAUSER1UPCGAME")
+    seed_upc_review(conn, a_game)
+    b_game = seed_game(conn, user_id=2, title="BBUSER2UPCGAME")
+    seed_upc_review(conn, b_game)
+    return "AAUSER1UPCGAME", "BBUSER2UPCGAME"
+
+
+def _sweep_seed_export(conn) -> tuple[str, str]:
+    seed_game(conn, user_id=1, title="AAUSER1EXPORT")
+    seed_game(conn, user_id=2, title="BBUSER2EXPORT")
+    return "AAUSER1EXPORT", "BBUSER2EXPORT"
+
+
+READ_SWEEP = [
+    ("games", "/api/games", _sweep_seed_games),
+    ("slots", "/api/slots", _sweep_seed_slots),
+    ("tags", "/api/tags", _sweep_seed_tags),
+    ("dlc_review", "/api/dlc/review", _sweep_seed_dlc_review),
+    ("bundle_review", "/api/bundle-review", _sweep_seed_bundle_review),
+    ("enrichment_review", "/api/enrichment/review", _sweep_seed_enrichment_review),
+    ("data_export", "/api/data/export", _sweep_seed_export),
+]
+
+
+@pytest.mark.parametrize(
+    "url,seed_fn",
+    [(url, fn) for _, url, fn in READ_SWEEP],
+    ids=[label for label, _, _ in READ_SWEEP],
+)
+def test_read_route_excludes_other_users_rows(mu_db, url, seed_fn):
+    """As user 2: a user-1-owned row never appears in the body, while user 2's
+    own row does (proves the route is scoped, not merely emptied)."""
+    mark_u1, mark_u2 = seed_fn(mu_db)
+    body = client_as(2).get(url).get_data(as_text=True)
+    assert mark_u1 not in body
+    assert mark_u2 in body
+
+
+# --- WRITE sweep: single-row actions must 404 + leave the row untouched -----
+
+def _seed_dlc_review_u1(conn) -> int:
+    return seed_dlc_review(conn, user_id=1, addon_title="HijackDLCReview")
+
+
+def _dlc_review_untouched(conn, rid: int) -> bool:
+    r = conn.execute(
+        "SELECT resolved_at, dismissed_at FROM dlc_review_queue WHERE id = ?",
+        (rid,)).fetchone()
+    return r is not None and r["resolved_at"] is None and r["dismissed_at"] is None
+
+
+def _seed_bundle_review_u1(conn) -> int:
+    return seed_bundle_review(conn, user_id=1, game_title="HijackBundleReview")
+
+
+def _bundle_review_untouched(conn, rid: int) -> bool:
+    r = conn.execute(
+        "SELECT resolved_at, dismissed_at FROM bundle_review_queue WHERE id = ?",
+        (rid,)).fetchone()
+    return r is not None and r["resolved_at"] is None and r["dismissed_at"] is None
+
+
+def _seed_upc_review_u1(conn) -> int:
+    gid = seed_game(conn, user_id=1, title="HijackUPCGame")
+    return seed_upc_review(conn, gid)
+
+
+def _upc_review_untouched(conn, rid: int) -> bool:
+    r = conn.execute("SELECT status FROM upc_review WHERE id = ?", (rid,)).fetchone()
+    return r is not None and r["status"] == "pending"
+
+
+WRITE_SWEEP = [
+    ("dlc_review_resolve", "/api/dlc/review/{id}/resolve", {"create_new_dlc": True},
+     _seed_dlc_review_u1, _dlc_review_untouched),
+    ("dlc_review_dismiss", "/api/dlc/review/{id}/dismiss", {},
+     _seed_dlc_review_u1, _dlc_review_untouched),
+    ("bundle_review_approve", "/api/bundle-review/{id}/approve", {},
+     _seed_bundle_review_u1, _bundle_review_untouched),
+    ("bundle_review_dismiss", "/api/bundle-review/{id}/dismiss", {},
+     _seed_bundle_review_u1, _bundle_review_untouched),
+    ("enrichment_confirm", "/api/enrichment/review/{id}/confirm", {},
+     _seed_upc_review_u1, _upc_review_untouched),
+    ("enrichment_reject", "/api/enrichment/review/{id}/reject", {},
+     _seed_upc_review_u1, _upc_review_untouched),
+]
+
+
+@pytest.mark.parametrize(
+    "url_template,body,seed_fn,check_fn",
+    [(url, body, seed, check) for _, url, body, seed, check in WRITE_SWEEP],
+    ids=[label for label, _, _, _, _ in WRITE_SWEEP],
+)
+def test_write_route_404_for_other_users_row(mu_db, url_template, body, seed_fn, check_fn):
+    """As user 2: a single-row action targeting a user-1-owned row 404s (never
+    403) and leaves the row untouched."""
+    rid = seed_fn(mu_db)
+    resp = client_as(2).post(url_template.format(id=rid), json=body)
+    assert resp.status_code == 404
+    assert check_fn(mu_db, rid)
+
+
+# --- Numeric read routes (counts/aggregates reflect ONLY the acting user) ---
+
+def test_dlc_review_count_is_per_user(mu_db):
+    seed_dlc_review(mu_db, user_id=1, addon_title="U1-open")
+    seed_dlc_review(mu_db, user_id=2, addon_title="U2-open")
+    assert client_as(2).get("/api/dlc/review/count").get_json()["count"] == 1
+
+
+def test_stats_reflect_only_acting_users_library(mu_db):
+    seed_game(mu_db, user_id=1, title="A-One")
+    seed_game(mu_db, user_id=1, title="A-Two")
+    seed_game(mu_db, user_id=2, title="B-One")
+    stats = client_as(2).get("/api/stats").get_json()
+    assert stats["total_games"] == 1                     # only user 2's game
+    assert stats["by_status"].get("backlog") == 1
+
+
+# --- The picked_game_id injection (hole B) - NOT surfaced by a naive sweep ---
+
+def test_resolve_cannot_inject_another_users_picked_game_id(mu_db):
+    """User 2 owns the review row (so the row scope passes) but supplies user 1's
+    game as picked_game_id: the ownership check must reject it (404) and write no
+    DLC onto user 1's game."""
+    a_game = seed_game(mu_db, user_id=1, title="A-Victim")
+    rid = seed_dlc_review(mu_db, user_id=2, addon_title="Injected Pass")
+    resp = client_as(2).post(f"/api/dlc/review/{rid}/resolve", json={"game_id": a_game})
+    assert resp.status_code == 404
+    n = mu_db.execute("SELECT COUNT(*) FROM dlc WHERE game_id = ?", (a_game,)).fetchone()[0]
+    assert n == 0
+
+
+def test_resolve_cannot_inject_another_users_picked_dlc_id(mu_db):
+    """Same injection via picked_dlc_id: user 2's review row, but the picked DLC
+    hangs off user 1's game - rejected (404), user 1's DLC left un-owned."""
+    a_game = seed_game(mu_db, user_id=1, title="A-Victim2")
+    a_dlc = seed_dlc(mu_db, a_game, "A-Season-Pass", owned=0)
+    rid = seed_dlc_review(mu_db, user_id=2, addon_title="Injected Pass 2")
+    resp = client_as(2).post(f"/api/dlc/review/{rid}/resolve", json={"dlc_id": a_dlc})
+    assert resp.status_code == 404
+    owned = mu_db.execute("SELECT owned FROM dlc WHERE id = ?", (a_dlc,)).fetchone()["owned"]
+    assert owned == 0
+
+
+# --- Positive controls: shared / global data stays visible to BOTH users ----
+
+def test_positive_platforms_visible_to_both_users(mu_db):
+    """platforms is a global catalog (no user_id) - both users see it."""
+    p1 = {p["short_name"] for p in client_as(1).get("/api/platforms").get_json()}
+    p2 = {p["short_name"] for p in client_as(2).get("/api/platforms").get_json()}
+    assert "Switch" in p1 and "Switch" in p2
+
+
+def test_positive_collections_catalog_visible_when_user_owns_member(mu_db):
+    """The collections CATALOG is shared; a user sees any collection their own
+    games belong to (scoping must not over-restrict shared data)."""
+    b_game = seed_game(mu_db, user_id=2, title="B-CollGame")
+    seed_collection_membership(mu_db, b_game, 39, "Final Fantasy")
+    cols = client_as(2).get("/api/collections").get_json()["collections"]
+    assert 39 in {c["id"] for c in cols}
+
+
+def test_positive_barcode_registry_identity_visible_to_both(mu_db):
+    """barcode_registry is a SHARED global UPC->identity cache: the same scanned
+    UPC resolves to the same title/igdb for both users (ownership is derived
+    per-user, but identity is shared)."""
+    seed_registry(mu_db, upc="99887766", igdb_id=4242,
+                  title="Shared Registry Title", platform="PS")
+    for uid in (1, 2):
+        body = client_as(uid).get("/api/barcode/resolve?upc=99887766").get_json()
+        assert body["source"] == "cache"
+        assert body["candidates"][0]["title"] == "Shared Registry Title"

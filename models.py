@@ -736,6 +736,23 @@ def migrate_add_user_id_roots(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_add_user_id_review_queues(conn: sqlite3.Connection) -> None:
+    """Add user_id (backfilled to owner) to dlc_review_queue + bundle_review_queue.
+    Idempotent.
+
+    Both queues carry a NULLABLE game_id (an add-on/bundle the engine could not
+    link to a parent yet), so a parent-JOIN can never isolate their NULL-game_id
+    rows — each queue needs its OWN user_id column to scope by. A plain
+    ADD COLUMN suffices (no UNIQUE/CHECK obstacle); `_add_user_id_col` brackets
+    the ALTER with PRAGMA foreign_keys=OFF/ON so the REFERENCES-with-DEFAULT add
+    cannot crash on a non-empty production table. Must run AFTER
+    migrate_dlc_review_queue + migrate_bundle_review_queue create the tables.
+    """
+    for t in ("dlc_review_queue", "bundle_review_queue"):
+        _add_user_id_col(conn, t)
+    conn.commit()
+
+
 def _user_profile_transform(create_sql: str) -> str:
     """user_profile guards its singleton row with `id INTEGER PRIMARY KEY
     CHECK(id = 1)` (models.py:1414); that CHECK must be dropped (it would
@@ -1687,6 +1704,12 @@ def migrate_db():
     # Must run after migrate_slots/migrate_decider_chats above, which create
     # those tables -- tags exists from init_db, but slots does not.
     migrate_add_user_id_roots(conn)
+
+    # Add user_id to the two review queues (their game_id is nullable, so a
+    # parent-JOIN can't isolate NULL-game_id rows). Runs after their tables
+    # (migrate_dlc_review_queue / migrate_bundle_review_queue) and after
+    # migrate_users, which the FK REFERENCES users(id) needs.
+    migrate_add_user_id_review_queues(conn)
 
     migrate_upc_review(conn)
     migrate_upc_enrichment_state(conn)
