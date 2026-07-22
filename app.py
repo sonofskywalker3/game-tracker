@@ -326,7 +326,8 @@ def api_games():
     # FULL games table: "is this row a container" is a global fact, independent
     # of whatever status/platform/search filters narrowed the result set above.
     mode_row = conn.execute(
-        "SELECT collection_display_mode FROM user_profile WHERE id = 1").fetchone()
+        "SELECT collection_display_mode FROM user_profile WHERE user_id = ?",
+        (uid,)).fetchone()
     display_mode = (mode_row["collection_display_mode"] if mode_row else None) \
         or _DEFAULT_COLLECTION_DISPLAY_MODE
     if display_mode not in COLLECTION_DISPLAY_MODES:
@@ -591,21 +592,27 @@ def api_collections():
     """All IGDB collections that contain at least one owned game, with counts
     and a few covers for the tile art. Sorted by owned count, then name."""
     conn = get_db()
+    uid = identity.current_user_id()
+    # Catalog is shared, but membership is per-user: only count/list collections the
+    # acting user's own games belong to (JOIN games and filter on g.user_id).
     rows = conn.execute("""
         SELECT c.id, c.name, c.slug, COUNT(gc.game_id) AS owned_count
         FROM collections c
         JOIN game_collections gc ON gc.collection_id = c.id
+        JOIN games g ON g.id = gc.game_id
+        WHERE g.user_id = ?
         GROUP BY c.id
         ORDER BY owned_count DESC, c.name
-    """).fetchall()
+    """, (uid,)).fetchall()
     out = []
     for r in rows:
         covers = [x[0] for x in conn.execute(
             "SELECT g.cover_url FROM games g "
             "JOIN game_collections gc ON gc.game_id = g.id "
-            "WHERE gc.collection_id = ? AND g.cover_url IS NOT NULL AND g.cover_url != '' "
+            "WHERE gc.collection_id = ? AND g.user_id = ? "
+            "AND g.cover_url IS NOT NULL AND g.cover_url != '' "
             "ORDER BY g.original_release_ts IS NULL, g.original_release_ts, g.title "
-            "LIMIT 3", (r['id'],)).fetchall()]
+            "LIMIT 3", (r['id'], uid)).fetchall()]
         out.append({**dict(r), 'covers': covers})
     conn.close()
     return jsonify({'collections': out})
@@ -616,19 +623,21 @@ def api_collection_detail(collection_id):
     """One collection with its owned games in chronological order (original
     release — remasters sort at the original's date; undated games last)."""
     conn = get_db()
+    uid = identity.current_user_id()
     c = conn.execute("SELECT id, name, slug FROM collections WHERE id = ?",
                      (collection_id,)).fetchone()
     if not c:
         conn.close()
         return jsonify({'error': 'Collection not found'}), 404
+    # Membership is per-user: list only the acting user's games in this collection.
     games = conn.execute("""
         SELECT g.id, g.title, g.cover_url, g.original_release_ts, ur.status
         FROM games g
         JOIN game_collections gc ON gc.game_id = g.id
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
-        WHERE gc.collection_id = ?
+        WHERE gc.collection_id = ? AND g.user_id = ?
         ORDER BY g.original_release_ts IS NULL, g.original_release_ts, g.title
-    """, (collection_id,)).fetchall()
+    """, (collection_id, uid)).fetchall()
     conn.close()
     return jsonify({**dict(c), 'games': [dict(g) for g in games]})
 
@@ -958,7 +967,12 @@ def api_set_dlc_owned(dlc_id):
     data = request.get_json(silent=True) or {}
     owned = 1 if data.get('owned') else 0
     conn = get_db()
-    cur = conn.execute("UPDATE dlc SET owned = ? WHERE id = ?", (owned, dlc_id))
+    uid = identity.current_user_id()
+    # Gate on parent-game ownership: a DLC whose game the acting user doesn't own
+    # is a 404, never a cross-user write (the row keyed only on dlc_id before).
+    cur = conn.execute(
+        "UPDATE dlc SET owned = ? WHERE id = ? AND game_id IN "
+        "(SELECT id FROM games WHERE user_id = ?)", (owned, dlc_id, uid))
     conn.commit()
     found = cur.rowcount > 0
     conn.close()
@@ -1001,7 +1015,11 @@ def api_add_dlc(game_id):
 def api_delete_dlc(dlc_id):
     """Delete a DLC entry (manual or IGDB-sourced)."""
     conn = get_db()
-    cur = conn.execute("DELETE FROM dlc WHERE id = ?", (dlc_id,))
+    uid = identity.current_user_id()
+    # Same parent-game ownership gate as api_set_dlc_owned: unowned DLC -> 404.
+    cur = conn.execute(
+        "DELETE FROM dlc WHERE id = ? AND game_id IN "
+        "(SELECT id FROM games WHERE user_id = ?)", (dlc_id, uid))
     conn.commit()
     found = cur.rowcount > 0
     conn.close()
@@ -1014,10 +1032,12 @@ def api_delete_dlc(dlc_id):
 def api_dlc_review_count():
     """Open-queue size (resolved/dismissed excluded). Cheap; drives the badge."""
     conn = get_db()
+    uid = identity.current_user_id()
     n = conn.execute(
         "SELECT COUNT(*) FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
-    ).fetchone()[0]
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL "
+        "AND (game_id IS NULL OR game_id IN (SELECT id FROM games WHERE user_id = ?))",
+        (uid,)).fetchone()[0]
     conn.close()
     return jsonify({'count': n})
 
@@ -1029,14 +1049,20 @@ def api_dlc_review_list():
     scrape)."""
     import dlc_ownership
     conn = get_db()
+    uid = identity.current_user_id()
+    # Only surface open items whose parent game the acting user owns (or that are
+    # still unmatched, game_id IS NULL); candidate re-derivation reads only the
+    # acting user's library so cross-user titles/covers never leak in.
     items = conn.execute(
         "SELECT id, addon_title, source, external_id, source_title, reason, game_id "
         "FROM dlc_review_queue "
         "WHERE resolved_at IS NULL AND dismissed_at IS NULL "
-        "ORDER BY created_at, id"
-    ).fetchall()
+        "AND (game_id IS NULL OR game_id IN (SELECT id FROM games WHERE user_id = ?)) "
+        "ORDER BY created_at, id",
+        (uid,)).fetchall()
     library = [(r["id"], r["normalized_title"])
-               for r in conn.execute("SELECT id, normalized_title FROM games")]
+               for r in conn.execute(
+                   "SELECT id, normalized_title FROM games WHERE user_id = ?", (uid,))]
     out = []
     for it in items:
         candidates = {"games": [], "dlc": []}
@@ -1217,10 +1243,11 @@ def api_game_decider_chat(game_id: int):
         if request.method == 'POST':
             data = request.json or {}
             cid = decider.save_chat(conn, game_id, data.get('slot_id'),
-                                    data.get('slot_label'), data.get('messages') or [])
+                                    data.get('slot_label'), data.get('messages') or [],
+                                    user_id=uid)
             conn.commit()
             return jsonify({'success': True, 'id': cid}), 201
-        return jsonify({'chats': decider.list_chats(conn, game_id)})
+        return jsonify({'chats': decider.list_chats(conn, game_id, user_id=uid)})
     finally:
         conn.close()
 
@@ -1510,10 +1537,16 @@ def api_update_game(game_id):
 
             # Add new tags
             for tag_name in data['tags']:
-                # Get or create tag
-                tag = conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,)).fetchone()
+                # Get or create tag (tags are a per-user root: look up / create only
+                # within the acting user's namespace so a game never links to
+                # another user's tag row).
+                tag = conn.execute(
+                    "SELECT id FROM tags WHERE name = ? AND user_id = ?",
+                    (tag_name, uid)).fetchone()
                 if not tag:
-                    conn.execute("INSERT INTO tags (name, category) VALUES (?, 'custom')", (tag_name,))
+                    conn.execute(
+                        "INSERT INTO tags (name, category, user_id) VALUES (?, 'custom', ?)",
+                        (tag_name, uid))
                     tag_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 else:
                     tag_id = tag['id']
@@ -1690,14 +1723,17 @@ def api_normalize_titles():
 def api_duplicates():
     """Detect duplicate games for the dedup modal."""
     conn = get_db()
-    groups = dedup.find_duplicate_groups(conn)
+    uid = identity.current_user_id()
+    groups = dedup.find_duplicate_groups(conn, user_id=uid)
     referenced = {gid for group in groups["definite"] for gid in group}
     referenced |= {c["a"] for c in groups["candidates"]}
     referenced |= {c["b"] for c in groups["candidates"]}
 
     games = []
     for gid in referenced:
-        g = conn.execute("SELECT id, title, cover_url FROM games WHERE id = ?", (gid,)).fetchone()
+        g = conn.execute(
+            "SELECT id, title, cover_url FROM games WHERE id = ? AND user_id = ?",
+            (gid, uid)).fetchone()
         if not g:
             continue
         platforms = [r["short_name"] for r in conn.execute(
@@ -1747,7 +1783,7 @@ def api_merge_games():
         result = dedup.merge_games(
             conn, survivor_id, drop_ids,
             title=data.get('title'), curation=data.get('curation'))
-        dedup.refresh_normalized_titles(conn)
+        dedup.refresh_normalized_titles(conn, user_id=uid)
         return jsonify({'success': True, 'survivor_id': result['survivor_id']})
     except sqlite3.IntegrityError as e:
         return jsonify({'error': str(e)}), 400
@@ -1774,6 +1810,21 @@ def api_dismiss_duplicate():
         pairs.append((min(p[0], p[1]), max(p[0], p[1])))
 
     conn = get_db()
+    uid = identity.current_user_id()
+    # Both game ids in every dismissed pair must be the acting user's games, or a
+    # not_duplicates row could reference (and be keyed against) another user's game.
+    # A pair referencing an unknown/unowned game is a bad request (400), matching
+    # the endpoint's existing reject-unknown-game contract.
+    needed_ids = {gid for pair in pairs for gid in pair}
+    placeholders = ",".join("?" * len(needed_ids))
+    owned = {
+        r[0] for r in conn.execute(
+            f"SELECT id FROM games WHERE id IN ({placeholders}) AND user_id = ?",
+            (*needed_ids, uid))
+    }
+    if owned != needed_ids:
+        conn.close()
+        return jsonify({'error': 'each pair needs two of your own game ids'}), 400
     try:
         conn.executemany(
             "INSERT OR IGNORE INTO not_duplicates (game_id_lo, game_id_hi) VALUES (?, ?)",
@@ -1852,8 +1903,9 @@ def api_recommendations():
 def api_slots():
     """Full slate state: slot definitions + current games + ranked candidates."""
     conn = get_db()
-    state = slots.get_slots_state(conn)
-    recent = slots.recently_finished(conn)
+    uid = identity.current_user_id()
+    state = slots.get_slots_state(conn, user_id=uid)
+    recent = slots.recently_finished(conn, user_id=uid)
     conn.close()
     weekday, minute = slot_schedule.now_weekday_minute()
     active = slot_schedule.order_active(state, weekday, minute)  # mutates active slots' rank
@@ -1869,17 +1921,20 @@ def api_create_slot():
     """Create a new slot."""
     data = request.get_json() or {}
     conn = get_db()
-    next_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots").fetchone()[0]
+    uid = identity.current_user_id()
+    next_order = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM slots WHERE user_id = ?",
+        (uid,)).fetchone()[0]
     conn.execute(
         "INSERT INTO slots (label, sort_order, platforms, max_session_minutes, "
-        "min_session_minutes, streamable_only, prioritize_started, context_notes) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "min_session_minutes, streamable_only, prioritize_started, context_notes, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (data.get('label', 'New slot'), next_order,
          json.dumps(data.get('platforms', [])),
          data.get('max_session_minutes'), data.get('min_session_minutes'),
          1 if data.get('streamable_only') else 0,
          1 if data.get('prioritize_started', 1) else 0,
-         data.get('context_notes')))
+         data.get('context_notes'), uid))
     conn.commit()
     conn.close()
     return jsonify({'ok': True}), 201
@@ -1909,11 +1964,17 @@ def api_update_slot(slot_id: int):
         params.append(1 if data['completionist'] else 0)
     if not fields:
         return jsonify({'error': 'no fields'}), 400
-    params.append(slot_id)
     conn = get_db()
-    conn.execute(f"UPDATE slots SET {', '.join(fields)} WHERE id = ?", params)
+    uid = identity.current_user_id()
+    params.append(slot_id)
+    params.append(uid)
+    cur = conn.execute(
+        f"UPDATE slots SET {', '.join(fields)} WHERE id = ? AND user_id = ?", params)
     conn.commit()
+    changed = cur.rowcount
     conn.close()
+    if not changed:
+        return jsonify({'error': 'slot not found'}), 404
     return jsonify({'ok': True})
 
 
@@ -1925,7 +1986,7 @@ def api_reorder_slots():
     if not slot_ids:
         return jsonify({'error': 'slot_ids required'}), 400
     conn = get_db()
-    slots.reorder(conn, slot_ids)
+    slots.reorder(conn, slot_ids, user_id=identity.current_user_id())
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1960,7 +2021,9 @@ def api_create_slot_window(slot_id: int):
     if err:
         return jsonify({'error': err}), 400
     conn = get_db()
-    if conn.execute("SELECT 1 FROM slots WHERE id = ?", (slot_id,)).fetchone() is None:
+    uid = identity.current_user_id()
+    if conn.execute("SELECT 1 FROM slots WHERE id = ? AND user_id = ?",
+                    (slot_id, uid)).fetchone() is None:
         conn.close()
         return jsonify({'error': 'slot not found'}), 404
     cur = conn.execute(
@@ -1981,10 +2044,14 @@ def api_update_slot_window(slot_id: int, wid: int):
     if err:
         return jsonify({'error': err}), 400
     conn = get_db()
+    uid = identity.current_user_id()
+    # Child of slots: gate on the parent slot's owner so another user's window
+    # can't be edited (unowned -> rowcount 0 -> 404).
     cur = conn.execute(
         "UPDATE slot_schedule_window SET days = ?, start_min = ?, end_min = ? "
-        "WHERE id = ? AND slot_id = ?",
-        (int(data['days']), int(data['start_min']), int(data['end_min']), wid, slot_id))
+        "WHERE id = ? AND slot_id = ? "
+        "AND slot_id IN (SELECT id FROM slots WHERE user_id = ?)",
+        (int(data['days']), int(data['start_min']), int(data['end_min']), wid, slot_id, uid))
     conn.commit()
     changed = cur.rowcount
     conn.close()
@@ -1997,8 +2064,10 @@ def api_update_slot_window(slot_id: int, wid: int):
 def api_delete_slot_window(slot_id: int, wid: int):
     """Remove a schedule window from a slot."""
     conn = get_db()
+    uid = identity.current_user_id()
     cur = conn.execute(
-        "DELETE FROM slot_schedule_window WHERE id = ? AND slot_id = ?", (wid, slot_id))
+        "DELETE FROM slot_schedule_window WHERE id = ? AND slot_id = ? "
+        "AND slot_id IN (SELECT id FROM slots WHERE user_id = ?)", (wid, slot_id, uid))
     conn.commit()
     changed = cur.rowcount
     conn.close()
@@ -2019,10 +2088,11 @@ _DEFAULT_COLLECTION_DISPLAY_MODE = "members"
 def api_get_profile():
     """The single user_profile row; meal_windows parsed to a list."""
     conn = get_db()
+    uid = identity.current_user_id()
     row = conn.execute(
         "SELECT work_start_min, work_end_min, bed_time_min, meal_windows, "
         "collection_display_mode "
-        "FROM user_profile WHERE id = 1").fetchone()
+        "FROM user_profile WHERE user_id = ?", (uid,)).fetchone()
     conn.close()
     data = dict(row) if row else {f: None for f in _PROFILE_MINUTE_FIELDS}
     data["meal_windows"] = json.loads(data["meal_windows"]) if data.get("meal_windows") else []
@@ -2054,7 +2124,13 @@ def api_update_profile():
     if not fields:
         return jsonify({'error': 'no fields'}), 400
     conn = get_db()
-    conn.execute(f"UPDATE user_profile SET {', '.join(fields)} WHERE id = 1", params)
+    uid = identity.current_user_id()
+    # Per-user root keyed on user_id: ensure this user's row exists (new users have
+    # none), then update only it -- never the owner's singleton row.
+    conn.execute("INSERT OR IGNORE INTO user_profile (user_id) VALUES (?)", (uid,))
+    params.append(uid)
+    conn.execute(
+        f"UPDATE user_profile SET {', '.join(fields)} WHERE user_id = ?", params)
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2064,9 +2140,14 @@ def api_update_profile():
 def api_delete_slot(slot_id: int):
     """Delete a slot definition."""
     conn = get_db()
-    conn.execute("DELETE FROM slots WHERE id = ?", (slot_id,))
+    uid = identity.current_user_id()
+    cur = conn.execute(
+        "DELETE FROM slots WHERE id = ? AND user_id = ?", (slot_id, uid))
     conn.commit()
+    changed = cur.rowcount
     conn.close()
+    if not changed:
+        return jsonify({'error': 'slot not found'}), 404
     return jsonify({'ok': True})
 
 
@@ -2078,6 +2159,15 @@ def api_pin_slot(slot_id: int):
     if not game_id:
         return jsonify({'error': 'game_id required'}), 400
     conn = get_db()
+    uid = identity.current_user_id()
+    # Both the slot and the game being pinned must belong to the acting user.
+    slot_ok = conn.execute(
+        "SELECT 1 FROM slots WHERE id = ? AND user_id = ?", (slot_id, uid)).fetchone()
+    game_ok = conn.execute(
+        "SELECT 1 FROM games WHERE id = ? AND user_id = ?", (game_id, uid)).fetchone()
+    if not slot_ok or not game_ok:
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
     slots.pin_game(conn, slot_id, game_id, data.get('goal'))
     conn.close()
     return jsonify({'ok': True})
@@ -2091,6 +2181,11 @@ def api_slot_outcome(slot_id: int):
     if outcome not in ('beat', 'complete', 'dropped', 'swap'):
         return jsonify({'error': 'invalid outcome'}), 400
     conn = get_db()
+    uid = identity.current_user_id()
+    if conn.execute("SELECT 1 FROM slots WHERE id = ? AND user_id = ?",
+                    (slot_id, uid)).fetchone() is None:
+        conn.close()
+        return jsonify({'error': 'slot not found'}), 404
     slots.apply_outcome(conn, slot_id, outcome,
                         chase=bool(data.get('chase')), new_goal=data.get('new_goal'))
     conn.close()
@@ -2102,9 +2197,14 @@ def api_slot_goal(slot_id: int):
     """Edit the plaintext goal for a slot's current game."""
     data = request.get_json() or {}
     conn = get_db()
-    conn.execute("UPDATE slots SET goal = ? WHERE id = ?", (data.get('goal'), slot_id))
+    uid = identity.current_user_id()
+    cur = conn.execute("UPDATE slots SET goal = ? WHERE id = ? AND user_id = ?",
+                       (data.get('goal'), slot_id, uid))
     conn.commit()
+    changed = cur.rowcount
     conn.close()
+    if not changed:
+        return jsonify({'error': 'slot not found'}), 404
     return jsonify({'ok': True})
 
 
@@ -2116,6 +2216,11 @@ def api_slot_dismiss(slot_id: int):
     if not game_id:
         return jsonify({'error': 'game_id required'}), 400
     conn = get_db()
+    uid = identity.current_user_id()
+    if conn.execute("SELECT 1 FROM slots WHERE id = ? AND user_id = ?",
+                    (slot_id, uid)).fetchone() is None:
+        conn.close()
+        return jsonify({'error': 'slot not found'}), 404
     slots.dismiss_suggestion(conn, slot_id, game_id)
     conn.close()
     return jsonify({'ok': True})
@@ -2128,17 +2233,20 @@ def api_slot_chat(slot_id: int):
     data = request.get_json() or {}
     messages = data.get('messages') or []
     conn = get_db()
-    row = conn.execute("SELECT * FROM slots WHERE id = ?", (slot_id,)).fetchone()
+    uid = identity.current_user_id()
+    row = conn.execute("SELECT * FROM slots WHERE id = ? AND user_id = ?",
+                       (slot_id, uid)).fetchone()
     if row is None:
         conn.close()
         return jsonify({'error': 'slot not found'}), 404
-    result = decider.decide(conn, dict(row), messages)
+    result = decider.decide(conn, dict(row), messages, user_id=uid)
     if 'error' in result:
         conn.close()
         return jsonify({'error': result['error']}), 400
     games = []
     for gid in result['suggestions']:
-        g = conn.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        g = conn.execute("SELECT * FROM games WHERE id = ? AND user_id = ?",
+                         (gid, uid)).fetchone()
         if g:
             games.append(dict(g))
     conn.close()
@@ -2158,13 +2266,15 @@ def api_hltb_refresh():
 def api_tags():
     """Get all tags."""
     conn = get_db()
+    uid = identity.current_user_id()
     tags = conn.execute("""
         SELECT t.*, COUNT(gt.game_id) as game_count
         FROM tags t
         LEFT JOIN game_tags gt ON gt.tag_id = t.id
+        WHERE t.user_id = ?
         GROUP BY t.id
         ORDER BY t.category, t.name
-    """).fetchall()
+    """, (uid,)).fetchall()
     conn.close()
     return jsonify([dict(t) for t in tags])
 

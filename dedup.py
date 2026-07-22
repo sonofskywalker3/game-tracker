@@ -57,11 +57,24 @@ def strip_edition_key(key: str) -> str:
     return key
 
 
-def _dismissed_pairs(conn: sqlite3.Connection) -> set[frozenset[int]]:
+def _dismissed_pairs(conn: sqlite3.Connection,
+                     user_id: int | None = None) -> set[frozenset[int]]:
+    """Confirmed-distinct pairs. When ``user_id`` is given, gate to that user's
+    games (a not_duplicates pair is only meaningful when BOTH ids are theirs);
+    ``None`` keeps the unscoped read for legacy/CLI schemas predating games.user_id.
+    """
     try:
-        rows = conn.execute(
-            "SELECT game_id_lo, game_id_hi FROM not_duplicates"
-        ).fetchall()
+        if user_id is None:
+            rows = conn.execute(
+                "SELECT game_id_lo, game_id_hi FROM not_duplicates").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT nd.game_id_lo, nd.game_id_hi FROM not_duplicates nd "
+                "JOIN games glo ON glo.id = nd.game_id_lo "
+                "JOIN games ghi ON ghi.id = nd.game_id_hi "
+                "WHERE glo.user_id = ? AND ghi.user_id = ?",
+                (user_id, user_id),
+            ).fetchall()
     except sqlite3.OperationalError:  # table not migrated yet
         return set()
     return {frozenset((r[0], r[1])) for r in rows}
@@ -130,7 +143,8 @@ def titles_differ_only_by_number(a: str, b: str) -> bool:
     return _differ_only_by_number(base_key(a), base_key(b))
 
 
-def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
+def find_duplicate_groups(conn: sqlite3.Connection,
+                          user_id: int | None = None) -> dict:
     """Detect duplicate games. Returns {"definite": [[id,...]], "candidates": [...]}.
 
     definite  = identical base_key (auto-mergeable).
@@ -141,9 +155,16 @@ def find_duplicate_groups(conn: sqlite3.Connection) -> dict:
                  _differ_only_by_number). Pure read; computes fresh keys in memory
                  so stored normalized_title staleness does not matter.
     """
-    games = [(r["id"], r["title"]) for r in
-             conn.execute("SELECT id, title FROM games ORDER BY id").fetchall()]
-    dismissed = _dismissed_pairs(conn)
+    # Scope to the acting user when given; None keeps the unscoped read for
+    # legacy/CLI schemas that predate games.user_id (referencing it would raise).
+    if user_id is None:
+        game_rows = conn.execute("SELECT id, title FROM games ORDER BY id").fetchall()
+    else:
+        game_rows = conn.execute(
+            "SELECT id, title FROM games WHERE user_id = ? ORDER BY id",
+            (user_id,)).fetchall()
+    games = [(r["id"], r["title"]) for r in game_rows]
+    dismissed = _dismissed_pairs(conn, user_id)
     keys = {gid: base_key(title) for gid, title in games}
 
     by_key: dict[str, list[int]] = defaultdict(list)
@@ -384,23 +405,37 @@ def merge_games(conn: sqlite3.Connection, survivor_id: int, drop_ids: list[int],
     return plan
 
 
-def refresh_normalized_titles(conn: sqlite3.Connection, *, dry_run: bool = False) -> list[dict]:
-    """Recompute stored normalized_title = base_key(title) for all games.
+def refresh_normalized_titles(conn: sqlite3.Connection, *, dry_run: bool = False,
+                              user_id: int | None = None) -> list[dict]:
+    """Recompute stored normalized_title = base_key(title) for games.
 
     Safe to run after dedup (duplicates merged, so no UNIQUE collisions). On a
     residual collision, logs and skips that row instead of crashing. Returns the
-    changed rows as {"id", "old", "new"}.
+    changed rows as {"id", "old", "new"}. When ``user_id`` is given the rewrite is
+    scoped to that user (a merge never rewrites another user's rows); ``None`` keeps
+    the unscoped behavior for legacy/CLI schemas predating games.user_id.
     """
     changes = []
-    for row in conn.execute("SELECT id, title, normalized_title FROM games").fetchall():
+    if user_id is None:
+        src = conn.execute("SELECT id, title, normalized_title FROM games").fetchall()
+    else:
+        src = conn.execute(
+            "SELECT id, title, normalized_title FROM games WHERE user_id = ?",
+            (user_id,)).fetchall()
+    for row in src:
         new = base_key(row["title"])
         if new == row["normalized_title"]:
             continue
         changes.append({"id": row["id"], "old": row["normalized_title"], "new": new})
         if not dry_run:
             try:
-                conn.execute("UPDATE games SET normalized_title = ? WHERE id = ?",
-                             (new, row["id"]))
+                if user_id is None:
+                    conn.execute("UPDATE games SET normalized_title = ? WHERE id = ?",
+                                 (new, row["id"]))
+                else:
+                    conn.execute(
+                        "UPDATE games SET normalized_title = ? WHERE id = ? AND user_id = ?",
+                        (new, row["id"], user_id))
             except sqlite3.IntegrityError:
                 log.warning("normalized_title collision for game %s (%r) -> %r; skipped",
                             row["id"], row["title"], new)
