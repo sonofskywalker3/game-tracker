@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 import barcode
 from tests.helpers_multiuser import app_ctx_as, seed_barcode_review, seed_game
 
@@ -39,11 +41,14 @@ def test_seed_helper_inserts_pending_row(mu_db: sqlite3.Connection) -> None:
         2, "0123456789012", "Halo", "pending")
 
 
-def test_queue_upsert_then_pending_for_user(mu_db):
+def test_queue_upsert_then_pending_for_user(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-A", user_id=2, platform="PS",
                          igdb_id=42, title="Halo", cover_url="c.jpg", game_id=7)
     row = barcode.pending_for_user(mu_db, "U-A", 2)
     assert row["title"] == "Halo" and row["igdb_id"] == 42 and row["platform"] == "PS"
+    created_at = mu_db.execute(
+        "SELECT created_at FROM barcode_link_review WHERE user_id=2 AND upc='U-A'"
+    ).fetchone()[0]
     # A resubmission upserts the SAME row (UNIQUE(user_id, upc)), not a duplicate.
     barcode.queue_upsert(mu_db, upc="U-A", user_id=2, platform="XBOX", title="Halo 2")
     assert mu_db.execute(
@@ -51,17 +56,27 @@ def test_queue_upsert_then_pending_for_user(mu_db):
     ).fetchone()[0] == 1
     row2 = barcode.pending_for_user(mu_db, "U-A", 2)
     assert row2["title"] == "Halo 2" and row2["platform"] == "XBOX"
+    created_at2 = mu_db.execute(
+        "SELECT created_at FROM barcode_link_review WHERE user_id=2 AND upc='U-A'"
+    ).fetchone()[0]
+    assert created_at2 == created_at  # created_at is preserved across resubmission
 
 
-def test_pending_is_submitter_scoped(mu_db):
+def test_pending_is_submitter_scoped(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-B", user_id=2, title="Only Mine")
     assert barcode.pending_for_user(mu_db, "U-B", 2) is not None
     assert barcode.pending_for_user(mu_db, "U-B", 1) is None  # owner doesn't see it
 
 
-def test_resolve_uses_own_pending_but_not_others(mu_db):
+def test_resolve_uses_own_pending_but_not_others(
+    mu_db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
     barcode.queue_upsert(mu_db, upc="U-C", user_id=2, platform="PS",
                          igdb_id=55, title="Provisional Game")
+    # Neutralize the fall-through source chain so user 1's lookup (no cache, no
+    # pending row) can't fall through to barcode._product_via_sources and make
+    # live HTTP calls to UPCitemdb + Wikidata.
+    monkeypatch.setattr(barcode, "PRODUCT_SOURCES", (lambda u: None,))
     with app_ctx_as(2):
         res = barcode.resolve(mu_db, "U-C", user_id=2)
     assert res["source"] == "provisional"
@@ -73,7 +88,7 @@ def test_resolve_uses_own_pending_but_not_others(mu_db):
     assert other["source"] != "provisional"
 
 
-def test_resolve_provisional_derives_ownership_for_submitter(mu_db):
+def test_resolve_provisional_derives_ownership_for_submitter(mu_db: sqlite3.Connection) -> None:
     seed_game(mu_db, 2, "Owned Provisional", igdb_id=77)
     barcode.queue_upsert(mu_db, upc="U-D", user_id=2, igdb_id=77,
                          title="Owned Provisional", platform="PS")
@@ -82,7 +97,7 @@ def test_resolve_provisional_derives_ownership_for_submitter(mu_db):
     assert res["candidates"][0]["owned_game_id"] is not None
 
 
-def test_approve_writes_edited_identity_no_game_id(mu_db):
+def test_approve_writes_edited_identity_no_game_id(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-E", user_id=2, platform="PS",
                          igdb_id=10, title="Wrong Title", game_id=99)
     review_id = mu_db.execute(
@@ -99,7 +114,7 @@ def test_approve_writes_edited_identity_no_game_id(mu_db):
     assert row["resolved_at"] is not None
 
 
-def test_approved_resolves_for_everyone(mu_db):
+def test_approved_resolves_for_everyone(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-F", user_id=2, platform="PS",
                          igdb_id=11, title="Shared Now")
     review_id = mu_db.execute(
@@ -111,7 +126,7 @@ def test_approved_resolves_for_everyone(mu_db):
     assert res["candidates"][0]["title"] == "Shared Now"
 
 
-def test_reject_stops_provisional(mu_db):
+def test_reject_stops_provisional(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-G", user_id=2, title="Rejectme")
     review_id = mu_db.execute(
         "SELECT id FROM barcode_link_review WHERE upc='U-G'").fetchone()[0]
@@ -123,8 +138,7 @@ def test_reject_stops_provisional(mu_db):
     assert barcode.registry_get(mu_db, "U-G") is None          # no registry write
 
 
-def test_approve_reject_not_found_and_not_pending(mu_db):
-    import pytest
+def test_approve_reject_not_found_and_not_pending(mu_db: sqlite3.Connection) -> None:
     with pytest.raises(ValueError, match="not found"):
         barcode.approve(mu_db, 999999)
     barcode.queue_upsert(mu_db, upc="U-H", user_id=2, title="X")
@@ -136,7 +150,7 @@ def test_approve_reject_not_found_and_not_pending(mu_db):
         barcode.reject(mu_db, rid)
 
 
-def test_list_pending_only_pending(mu_db):
+def test_list_pending_only_pending(mu_db: sqlite3.Connection) -> None:
     barcode.queue_upsert(mu_db, upc="U-I", user_id=2, title="Pending One")
     barcode.queue_upsert(mu_db, upc="U-J", user_id=1, title="Pending Two")
     rid = mu_db.execute("SELECT id FROM barcode_link_review WHERE upc='U-J'").fetchone()[0]
