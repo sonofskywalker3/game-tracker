@@ -663,10 +663,11 @@ def api_collections_backfill():
     return jsonify(report)
 
 
-def _open_bundle_review_count(conn):
+def _open_bundle_review_count(conn, user_id):
     return conn.execute(
         "SELECT COUNT(*) FROM bundle_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL").fetchone()[0]
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ?",
+        (user_id,)).fetchone()[0]
 
 
 @app.route('/api/bundle-review')
@@ -674,7 +675,8 @@ def api_bundle_review_list():
     """Open bundle-split review items (low-confidence IGDB bundle fallbacks)."""
     import bundle_fallback
     conn = get_db()
-    items = bundle_fallback.pending_reviews(conn)
+    uid = identity.current_user_id()
+    items = bundle_fallback.pending_reviews(conn, user_id=uid)
     conn.close()
     return jsonify({'items': items, 'count': len(items)})
 
@@ -698,16 +700,17 @@ def api_bundle_review_approve(review_id):
         app.logger.warning("bundle review approve: IGDB token fetch failed: %s", exc)
         client_id = token = None
     conn = get_db()
+    uid = identity.current_user_id()
     try:
         report = bundle_fallback.approve_review(
             conn, review_id, client_id=client_id, token=token,
-            constituents=constituents)
+            constituents=constituents, user_id=uid)
     except ValueError as exc:
         conn.rollback()
         conn.close()
         msg = str(exc)
         return jsonify({'error': msg}), 404 if 'not found' in msg else 400
-    count = _open_bundle_review_count(conn)
+    count = _open_bundle_review_count(conn, uid)
     conn.close()
     return jsonify({'ok': True, 'count': count,
                     'constituents': report['constituents']})
@@ -718,8 +721,13 @@ def api_bundle_review_dismiss(review_id):
     """Dismiss a queued bundle split (the game stays a single row)."""
     import bundle_fallback
     conn = get_db()
-    bundle_fallback.dismiss_review(conn, review_id)
-    count = _open_bundle_review_count(conn)
+    uid = identity.current_user_id()
+    try:
+        bundle_fallback.dismiss_review(conn, review_id, user_id=uid)
+    except ValueError as exc:
+        conn.close()
+        return jsonify({'error': str(exc)}), 404
+    count = _open_bundle_review_count(conn, uid)
     conn.close()
     return jsonify({'ok': True, 'count': count})
 
@@ -765,17 +773,21 @@ def api_data_export():
     """Download the whole library as a CSV attachment (title, status, rating,
     priority, platforms, notes). Platforms are comma-joined short_names."""
     conn = get_db()
+    uid = identity.current_user_id()
     rows = conn.execute("""
         SELECT g.id, g.title, ur.status, ur.rating, ur.priority, ur.notes
         FROM games g
         LEFT JOIN user_ratings ur ON ur.game_id = g.id
+        WHERE g.user_id = ?
         ORDER BY g.title
-    """).fetchall()
+    """, (uid,)).fetchall()
     plats: dict[int, list] = {}
     for p in conn.execute(
             "SELECT gp.game_id, p.short_name FROM game_platforms gp "
             "JOIN platforms p ON p.id = gp.platform_id "
-            "ORDER BY gp.game_id, p.short_name").fetchall():
+            "JOIN games g ON g.id = gp.game_id "
+            "WHERE g.user_id = ? "
+            "ORDER BY gp.game_id, p.short_name", (uid,)).fetchall():
         plats.setdefault(p["game_id"], []).append(p["short_name"])
     conn.close()
 
@@ -1035,8 +1047,7 @@ def api_dlc_review_count():
     uid = identity.current_user_id()
     n = conn.execute(
         "SELECT COUNT(*) FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL "
-        "AND (game_id IS NULL OR game_id IN (SELECT id FROM games WHERE user_id = ?))",
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ?",
         (uid,)).fetchone()[0]
     conn.close()
     return jsonify({'count': n})
@@ -1050,14 +1061,14 @@ def api_dlc_review_list():
     import dlc_ownership
     conn = get_db()
     uid = identity.current_user_id()
-    # Only surface open items whose parent game the acting user owns (or that are
-    # still unmatched, game_id IS NULL); candidate re-derivation reads only the
-    # acting user's library so cross-user titles/covers never leak in.
+    # Only surface the acting user's own open items (scoped by the queue's
+    # user_id column — a NULL-game_id row still belongs to exactly one user);
+    # candidate re-derivation reads only the acting user's library so cross-user
+    # titles/covers never leak in.
     items = conn.execute(
         "SELECT id, addon_title, source, external_id, source_title, reason, game_id "
         "FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL "
-        "AND (game_id IS NULL OR game_id IN (SELECT id FROM games WHERE user_id = ?)) "
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ? "
         "ORDER BY created_at, id",
         (uid,)).fetchall()
     library = [(r["id"], r["normalized_title"])
@@ -1131,12 +1142,14 @@ def api_dlc_review_resolve(review_id):
     if chosen != 1:
         return jsonify({"error": "Pick exactly one of game_id, dlc_id, or create_new_dlc"}), 400
     conn = get_db()
+    uid = identity.current_user_id()
     try:
         match = dlc_review.resolve(
             conn, review_id,
             picked_game_id=picked_game_id,
             picked_dlc_id=picked_dlc_id,
             create_new_dlc=create_new_dlc,
+            user_id=uid,
         )
     except sqlite3.IntegrityError:
         conn.rollback()
@@ -1152,8 +1165,8 @@ def api_dlc_review_resolve(review_id):
     conn.commit()
     count = conn.execute(
         "SELECT COUNT(*) FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
-    ).fetchone()[0]
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ?",
+        (uid,)).fetchone()[0]
     conn.close()
     return jsonify({"ok": True, "marked": match.reason in ("created", "reconciled"),
                     "count": count})
@@ -1164,16 +1177,17 @@ def api_dlc_review_dismiss(review_id):
     """Mark a review item dismissed (not a real add-on)."""
     import dlc_review
     conn = get_db()
+    uid = identity.current_user_id()
     try:
-        dlc_review.dismiss(conn, review_id)
+        dlc_review.dismiss(conn, review_id, user_id=uid)
     except ValueError as exc:
         conn.close()
         return jsonify({"error": str(exc)}), 404
     conn.commit()
     count = conn.execute(
         "SELECT COUNT(*) FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
-    ).fetchone()[0]
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ?",
+        (uid,)).fetchone()[0]
     conn.close()
     return jsonify({"ok": True, "count": count})
 
@@ -1183,8 +1197,9 @@ def api_dlc_review_rematch():
     """Re-run the matcher over open review rows; resolve+own newly-matched ones."""
     import dlc_review
     conn = get_db()
+    uid = identity.current_user_id()
     try:
-        report = dlc_review.rematch_unresolved(conn)
+        report = dlc_review.rematch_unresolved(conn, user_id=uid)
     except sqlite3.IntegrityError:
         conn.rollback()
         conn.close()
@@ -1192,8 +1207,8 @@ def api_dlc_review_rematch():
     conn.commit()
     count = conn.execute(
         "SELECT COUNT(*) FROM dlc_review_queue "
-        "WHERE resolved_at IS NULL AND dismissed_at IS NULL"
-    ).fetchone()[0]
+        "WHERE resolved_at IS NULL AND dismissed_at IS NULL AND user_id = ?",
+        (uid,)).fetchone()[0]
     conn.close()
     return jsonify({"ok": True, "resolved": report.resolved,
                     "marked": report.marked, "count": count})
@@ -2296,50 +2311,61 @@ def api_platforms():
 
 @app.route('/api/stats')
 def api_stats():
-    """Get library statistics."""
+    """Get library statistics for the acting user only."""
     conn = get_db()
+    uid = identity.current_user_id()
 
     stats = {}
 
     # Total games
-    stats['total_games'] = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    stats['total_games'] = conn.execute(
+        "SELECT COUNT(*) FROM games WHERE user_id = ?", (uid,)).fetchone()[0]
 
-    # By status
+    # By status (user_ratings is a child of games — gate via the parent JOIN).
     status_counts = conn.execute("""
-        SELECT status, COUNT(*) as count
-        FROM user_ratings
-        GROUP BY status
-    """).fetchall()
+        SELECT ur.status, COUNT(*) as count
+        FROM user_ratings ur JOIN games g ON g.id = ur.game_id
+        WHERE g.user_id = ?
+        GROUP BY ur.status
+    """, (uid,)).fetchall()
     stats['by_status'] = {row['status']: row['count'] for row in status_counts}
 
-    # By platform
+    # By platform (game_platforms gated via the parent game's owner).
     platform_counts = conn.execute("""
         SELECT p.short_name, COUNT(gp.game_id) as count
         FROM platforms p
         LEFT JOIN game_platforms gp ON gp.platform_id = p.id
+        LEFT JOIN games g ON g.id = gp.game_id AND g.user_id = ?
         GROUP BY p.id
-    """).fetchall()
+    """, (uid,)).fetchall()
     stats['by_platform'] = {row['short_name']: row['count'] for row in platform_counts}
 
     # Average ratings
     stats['avg_user_rating'] = conn.execute(
-        "SELECT AVG(rating) FROM user_ratings WHERE rating IS NOT NULL"
+        "SELECT AVG(ur.rating) FROM user_ratings ur JOIN games g ON g.id = ur.game_id "
+        "WHERE ur.rating IS NOT NULL AND g.user_id = ?", (uid,)
     ).fetchone()[0]
 
     stats['avg_critic_score'] = conn.execute("""
         SELECT AVG(COALESCE(metacritic_score, opencritic_score))
         FROM games
-        WHERE metacritic_score IS NOT NULL OR opencritic_score IS NOT NULL
-    """).fetchone()[0]
+        WHERE (metacritic_score IS NOT NULL OR opencritic_score IS NOT NULL)
+          AND user_id = ?
+    """, (uid,)).fetchone()[0]
 
     # Games rated by user
     stats['games_rated'] = conn.execute(
-        "SELECT COUNT(*) FROM user_ratings WHERE rating IS NOT NULL"
+        "SELECT COUNT(*) FROM user_ratings ur JOIN games g ON g.id = ur.game_id "
+        "WHERE ur.rating IS NOT NULL AND g.user_id = ?", (uid,)
     ).fetchone()[0]
 
-    # DLC ownership counts
-    stats['dlc_total'] = conn.execute("SELECT COUNT(*) FROM dlc").fetchone()[0]
-    stats['dlc_owned'] = conn.execute("SELECT COUNT(*) FROM dlc WHERE owned = 1").fetchone()[0]
+    # DLC ownership counts (dlc is a child of games — gate via the parent JOIN).
+    stats['dlc_total'] = conn.execute(
+        "SELECT COUNT(*) FROM dlc d JOIN games g ON g.id = d.game_id "
+        "WHERE g.user_id = ?", (uid,)).fetchone()[0]
+    stats['dlc_owned'] = conn.execute(
+        "SELECT COUNT(*) FROM dlc d JOIN games g ON g.id = d.game_id "
+        "WHERE d.owned = 1 AND g.user_id = ?", (uid,)).fetchone()[0]
 
     conn.close()
     return jsonify(stats)
@@ -2592,11 +2618,14 @@ def api_enrichment_status():
 def api_enrichment_review():
     """List pending review candidates (game + candidate product)."""
     conn = get_db()
+    uid = identity.current_user_id()
+    # upc_review.game_id is NOT NULL, so the parent-game JOIN isolates by user.
     rows = conn.execute(
         "SELECT ur.id, ur.game_id, ur.platform, ur.upc, ur.product_title, "
         "       COALESCE(ur.cover_url, g.cover_url) AS cover_url, ur.reason, g.title "
         "FROM upc_review ur JOIN games g ON g.id = ur.game_id "
-        "WHERE ur.status = 'pending' ORDER BY g.title").fetchall()
+        "WHERE ur.status = 'pending' AND g.user_id = ? ORDER BY g.title",
+        (uid,)).fetchall()
     conn.close()
     return jsonify({'candidates': [dict(r) for r in rows]})
 
@@ -2605,10 +2634,12 @@ def api_enrichment_review():
 def api_enrichment_review_confirm(rid):
     """Link the candidate UPC to the game (registry_put) + clear the review row."""
     conn = get_db()
+    uid = identity.current_user_id()
     row = conn.execute(
         "SELECT ur.upc, ur.platform, ur.game_id, g.igdb_id, g.title, g.cover_url "
         "FROM upc_review ur JOIN games g ON g.id = ur.game_id "
-        "WHERE ur.id = ? AND ur.status = 'pending'", (rid,)).fetchone()
+        "WHERE ur.id = ? AND ur.status = 'pending' AND g.user_id = ?",
+        (rid, uid)).fetchone()
     if not row or not row["upc"]:
         conn.close()
         return jsonify({'error': 'No pending review row with a UPC'}), 404
@@ -2625,8 +2656,11 @@ def api_enrichment_review_confirm(rid):
 def api_enrichment_review_reject(rid):
     """Dismiss a review candidate so the drip never re-surfaces that pair."""
     conn = get_db()
+    uid = identity.current_user_id()
     cur = conn.execute(
-        "UPDATE upc_review SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (rid,))
+        "UPDATE upc_review SET status = 'dismissed' "
+        "WHERE id = ? AND status = 'pending' "
+        "AND game_id IN (SELECT id FROM games WHERE user_id = ?)", (rid, uid))
     conn.commit()
     changed = cur.rowcount
     conn.close()

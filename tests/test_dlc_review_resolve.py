@@ -25,6 +25,7 @@ def conn(tmp_path):
             normalized_title TEXT,
             cover_url TEXT,
             igdb_id INTEGER,
+            user_id INTEGER NOT NULL DEFAULT 1,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE dlc (
@@ -50,8 +51,10 @@ def conn(tmp_path):
             FOREIGN KEY (dlc_id) REFERENCES dlc(id) ON DELETE CASCADE
         );
     """)
-    # The review queue migration (idempotent, schema-only):
+    # The review queue migration (idempotent, schema-only) + the per-user column
+    # the real schema carries (Task 9: dlc_review scoping defaults to owner=1).
     models.migrate_dlc_review_queue(c)
+    c.execute("ALTER TABLE dlc_review_queue ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
     c.commit()
     yield c
     c.close()

@@ -206,6 +206,62 @@ def seed_registry(conn: sqlite3.Connection, *, upc: str, igdb_id: int | None = N
     conn.commit()
 
 
+def seed_dlc_review(conn: sqlite3.Connection, user_id: int, *,
+                    game_id: int | None = None, addon_title: str = "Season Pass",
+                    reason: str = "no parent", source: str | None = None,
+                    external_id: str | None = None) -> int:
+    """Insert an open dlc_review_queue row owned by ``user_id`` and return its id.
+
+    ``game_id`` is left NULL by default (the 'no parent' case) precisely because a
+    parent-JOIN can't isolate those rows -- the queue's own user_id column must.
+    """
+    cur = conn.execute(
+        "INSERT INTO dlc_review_queue "
+        "(addon_title, source, external_id, source_title, reason, game_id, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (addon_title, source, external_id, None, reason, game_id, user_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_bundle_review(conn: sqlite3.Connection, user_id: int, *,
+                       game_id: int | None = None, game_title: str = "Some Bundle",
+                       igdb_id: int = 9999, reason: str = "title_mismatch",
+                       constituents: list[str] | None = None) -> int:
+    """Insert an open bundle_review_queue row owned by ``user_id`` and return its id.
+
+    ``game_id`` defaults to NULL (SET NULL on game delete), so like the DLC queue
+    this row can only be isolated by the queue's own user_id column."""
+    cur = conn.execute(
+        "INSERT INTO bundle_review_queue "
+        "(game_id, game_title, igdb_id, bundle_name, constituents_json, reason, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (game_id, game_title, igdb_id, game_title,
+         json.dumps(constituents or ["Part One", "Part Two"]), reason, user_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def seed_upc_review(conn: sqlite3.Connection, game_id: int, *,
+                    platform: str = "PS", upc: str = "0001112223334",
+                    product_title: str = "Some Game (PS4)",
+                    status: str = "pending", reason: str = "candidate") -> int:
+    """Insert a upc_review row for ``game_id`` and return its id.
+
+    upc_review.game_id is NOT NULL, so isolation is via the parent game's owner
+    (no user_id column) -- the row inherits whichever user owns ``game_id``."""
+    cur = conn.execute(
+        "INSERT INTO upc_review "
+        "(game_id, platform, upc, product_title, cover_url, status, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (game_id, platform, upc, product_title, None, status, reason),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
 @contextmanager
 def app_ctx_as(user_id: int) -> Iterator[None]:
     """Push a request context with ``user_id`` bound as the acting user, so
