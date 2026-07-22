@@ -223,3 +223,9 @@ def test_route_approve_404_and_409(mu_db):
     assert client_as(1).post("/api/barcode/review/999999/approve", json={}).status_code == 404
     rid = seed_barcode_review(mu_db, 2, upc="R-G", status="rejected")
     assert client_as(1).post(f"/api/barcode/review/{rid}/approve", json={}).status_code == 409
+
+
+def test_settings_page_has_barcode_review_section(mu_db):
+    html = client_as(1).get("/settings").get_data(as_text=True)
+    assert 'id="barcode-review-section"' in html
+    assert 'loadBarcodeReviews' in html

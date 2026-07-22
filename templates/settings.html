@@ -187,6 +187,20 @@
         <div id="bundle-review-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
     </div>
 
+    <!-- Tester barcode links needing owner approval -->
+    <div id="barcode-review-section" class="bg-surface-light rounded-xl p-6 hidden">
+        <h2 class="text-lg font-medium text-white mb-4 flex items-center">
+            <span class="mr-2">🏷️</span>
+            Barcode Links — Needs Review
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+            Testers scanned these barcodes and proposed a game. Approving adds the
+            link to the shared registry for everyone (edit the fields first if the
+            match is wrong); rejecting removes it (the tester can resubmit).
+        </p>
+        <div id="barcode-review-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+    </div>
+
     <!-- Session Length AI Section -->
     <div class="bg-surface-light rounded-xl p-6">
         <h2 class="text-lg font-medium text-white mb-4 flex items-center">
@@ -370,6 +384,7 @@
         checkFetchStatus(); // Check if a fetch is already running
         loadEnrichment();
         loadBundleReviews();
+        loadBarcodeReviews();
         loadTraitsAi();
         loadProfile();
         loadCollectionDisplayMode();
@@ -855,6 +870,52 @@
         const r = await api.post(`/api/bundle-review/${id}/dismiss`, {});
         if (!r.ok) { alert(r.data?.error || 'Could not dismiss'); return; }
         await loadBundleReviews();
+    }
+
+    // --- Barcode-link review (tester submissions) ---
+    async function loadBarcodeReviews() {
+        // Owner-only: a non-owner GET returns 403 -> body has no .items -> hidden.
+        const res = await api.get('/api/barcode/review');
+        const items = res.items || [];
+        const section = document.getElementById('barcode-review-section');
+        section.classList.toggle('hidden', items.length === 0);
+        document.getElementById('barcode-review-list').innerHTML = items.map(i => `
+            <div class="bg-surface rounded-lg border border-gray-700 p-3">
+                <div class="text-[11px] text-gray-500 truncate">UPC ${escapeHtml(i.upc)} · submitter #${i.user_id}</div>
+                <input id="bc-title-${i.id}" value="${escapeHtml(i.title || '')}" placeholder="Title"
+                       class="mt-2 w-full bg-black/20 rounded border border-gray-600 px-2 py-1 text-xs text-white focus:border-accent focus:outline-none">
+                <div class="mt-2 flex gap-2">
+                    <input id="bc-platform-${i.id}" value="${escapeHtml(i.platform || '')}" placeholder="Platform"
+                           class="w-1/2 bg-black/20 rounded border border-gray-600 px-2 py-1 text-xs text-white focus:border-accent focus:outline-none">
+                    <input id="bc-igdb-${i.id}" value="${i.igdb_id ?? ''}" placeholder="IGDB id" inputmode="numeric"
+                           class="w-1/2 bg-black/20 rounded border border-gray-600 px-2 py-1 text-xs text-white focus:border-accent focus:outline-none">
+                </div>
+                <input id="bc-cover-${i.id}" value="${escapeHtml(i.cover_url || '')}" placeholder="Cover URL"
+                       class="mt-2 w-full bg-black/20 rounded border border-gray-600 px-2 py-1 text-xs text-white focus:border-accent focus:outline-none">
+                <div class="mt-2 flex gap-2">
+                    <button onclick="approveBarcode(${i.id})" class="text-xs bg-accent/80 hover:bg-accent text-white rounded px-2 py-1">Approve</button>
+                    <button onclick="rejectBarcode(${i.id})" class="text-xs bg-surface-light hover:bg-gray-600 rounded px-2 py-1">Reject</button>
+                </div>
+            </div>`).join('');
+    }
+
+    async function approveBarcode(id) {
+        const igdbRaw = (document.getElementById(`bc-igdb-${id}`).value || '').trim();
+        const body = {
+            title: (document.getElementById(`bc-title-${id}`).value || '').trim() || null,
+            platform: (document.getElementById(`bc-platform-${id}`).value || '').trim() || null,
+            igdb_id: igdbRaw ? parseInt(igdbRaw, 10) : null,
+            cover_url: (document.getElementById(`bc-cover-${id}`).value || '').trim() || null,
+        };
+        const r = await api.post(`/api/barcode/review/${id}/approve`, body);
+        if (!r.ok) { alert(r.data?.error || 'Could not approve'); return; }
+        await loadBarcodeReviews();
+    }
+
+    async function rejectBarcode(id) {
+        const r = await api.post(`/api/barcode/review/${id}/reject`, {});
+        if (!r.ok) { alert(r.data?.error || 'Could not reject'); return; }
+        await loadBarcodeReviews();
     }
 
     // --- CSV import (Data Management) ---
