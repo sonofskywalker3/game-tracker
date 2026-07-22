@@ -59,3 +59,13 @@ def current_user_id() -> int:
         return OWNER_USER_ID
     uid = getattr(g, "acting_user_id", None)
     return uid if uid is not None else OWNER_USER_ID
+
+
+def is_owner() -> bool:
+    """True when the acting user is the install owner (user #1).
+
+    The single seam for owner-only admin routes (install-wide bulk-maintenance
+    jobs). A bearer/API request binds no session user, so ``current_user_id()``
+    falls back to the owner and this returns True -- the owner's automation still
+    reaches those routes."""
+    return current_user_id() == OWNER_USER_ID
