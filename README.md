@@ -67,3 +67,7 @@ Get a Twitch/IGDB Client ID + Secret from the [Twitch developer console](https:/
 
 `config.json`, `*.db`, and the personal library CSVs are intentionally gitignored — your
 credentials and library data stay local.
+
+## Artwork
+
+Where each piece of artwork comes from and how it was made: [ART-SOURCES.md](ART-SOURCES.md).
